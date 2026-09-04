@@ -6,6 +6,7 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from app.auth import Actor, current_actor
 from app.db import SchemaReadiness, SchemaState, get_schema_readiness
 from app.main import app
 
@@ -189,7 +190,6 @@ async def test_worker_claim_and_approval_gate(
 
     approved = await client.post(
         f"/api/work-items/{work['id']}/approvals",
-        headers={"X-Kelpie-User": "release-manager", "X-Kelpie-Role": "approver"},
         json={"kind": "pull_request", "decision": "approve", "payload": {}},
     )
     assert approved.status_code == 200, approved.text
@@ -270,7 +270,6 @@ async def test_verified_bundle_is_stored_and_real_delivery_requires_github_app(
     assert awaiting.status_code == 200
     approval = await client.post(
         f"/api/work-items/{work['id']}/approvals",
-        headers={"X-Kelpie-User": "release-manager", "X-Kelpie-Role": "approver"},
         json={"kind": "pull_request", "decision": "approve", "payload": {}},
     )
     assert approval.status_code == 409
@@ -280,9 +279,14 @@ async def test_verified_bundle_is_stored_and_real_delivery_requires_github_app(
 @pytest.mark.asyncio
 async def test_viewer_cannot_approve(client: AsyncClient) -> None:
     work = await create_work(client)
+    app.dependency_overrides[current_actor] = lambda: Actor(
+        subject="observer",
+        role="viewer",
+        identity_provider="test",
+        organization="acme",
+    )
     response = await client.post(
         f"/api/work-items/{work['id']}/approvals",
-        headers={"X-Kelpie-User": "observer", "X-Kelpie-Role": "viewer"},
         json={"kind": "pull_request", "decision": "approve", "payload": {}},
     )
     assert response.status_code == 403
@@ -369,17 +373,27 @@ async def test_preview_registration_and_exclusive_console_lease(
     assert rejected.status_code == 422
     assert "allowed VM networks" in rejected.text
 
+    app.dependency_overrides[current_actor] = lambda: Actor(
+        subject="alice",
+        role="operator",
+        identity_provider="test",
+        organization="acme",
+    )
     acquired = await client.post(
         f"/api/work-items/{work['id']}/console-lease",
-        headers={"X-Kelpie-User": "alice"},
         json={"action": "acquire", "expected_version": 1},
     )
     assert acquired.status_code == 200, acquired.text
     assert acquired.json()["holder"] == "alice"
 
+    app.dependency_overrides[current_actor] = lambda: Actor(
+        subject="bob",
+        role="operator",
+        identity_provider="test",
+        organization="acme",
+    )
     conflict = await client.post(
         f"/api/work-items/{work['id']}/console-lease",
-        headers={"X-Kelpie-User": "bob"},
         json={"action": "acquire", "expected_version": 2},
     )
     assert conflict.status_code == 409

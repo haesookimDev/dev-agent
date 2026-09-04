@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -10,7 +10,22 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+aiosqlite:///./kelpie.db"
     database_schema_mode: Literal["validate", "bootstrap"] = "validate"
-    auth_mode: str = "development"
+    auth_mode: Literal["development", "oidc"] = "development"
+    development_subject: str = "local-admin"
+    development_organization: str = "local"
+    oidc_issuer_url: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""
+    oidc_organization_claim: str = "organization"
+    oidc_scopes: Annotated[list[str], NoDecode] = ["openid", "profile"]
+    oidc_allowed_algorithms: Annotated[list[str], NoDecode] = ["RS256"]
+    oidc_session_cookie_name: str = "kelpie_session"
+    oidc_login_cookie_name: str = "kelpie_oidc_state"
+    oidc_cookie_secure: bool = True
+    oidc_login_ttl_seconds: int = 300
+    oidc_session_ttl_seconds: int = 28800
+    oidc_clock_skew_seconds: int = 30
     worker_shared_secret: str = "development-worker-secret-change-me"
     github_webhook_secret: str = "development-webhook-secret"
     agent_trigger_label: str = "agent-ready"
@@ -55,10 +70,52 @@ class Settings(BaseSettings):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
 
+    @field_validator("oidc_allowed_algorithms", "oidc_scopes", mode="before")
+    @classmethod
+    def split_oidc_lists(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
+
     @field_validator("github_app_id", mode="before")
     @classmethod
     def empty_github_app_id(cls, value: object) -> object:
         return None if value == "" else value
+
+    @model_validator(mode="after")
+    def validate_oidc_configuration(self) -> Self:
+        if self.auth_mode != "oidc":
+            return self
+        required = {
+            "OIDC_ISSUER_URL": self.oidc_issuer_url,
+            "OIDC_CLIENT_ID": self.oidc_client_id,
+            "OIDC_REDIRECT_URI": self.oidc_redirect_uri,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise ValueError(f"OIDC mode requires {', '.join(missing)}")
+        if not self.oidc_issuer_url.startswith("https://"):
+            raise ValueError("OIDC_ISSUER_URL must use https")
+        if not self.oidc_redirect_uri.startswith("https://"):
+            raise ValueError("OIDC_REDIRECT_URI must use https")
+        if not self.dashboard_url.startswith("https://"):
+            raise ValueError("DASHBOARD_URL must use https in OIDC mode")
+        if not self.oidc_allowed_algorithms:
+            raise ValueError("OIDC_ALLOWED_ALGORITHMS must not be empty")
+        if "openid" not in self.oidc_scopes:
+            raise ValueError("OIDC_SCOPES must include openid")
+        if any(
+            algorithm.startswith("HS") or algorithm == "none"
+            for algorithm in self.oidc_allowed_algorithms
+        ):
+            raise ValueError("OIDC_ALLOWED_ALGORITHMS must use asymmetric signing")
+        if self.oidc_login_ttl_seconds < 60 or self.oidc_login_ttl_seconds > 900:
+            raise ValueError("OIDC_LOGIN_TTL_SECONDS must be between 60 and 900")
+        if self.oidc_session_ttl_seconds < 300 or self.oidc_session_ttl_seconds > 86400:
+            raise ValueError("OIDC_SESSION_TTL_SECONDS must be between 300 and 86400")
+        if self.oidc_clock_skew_seconds < 0 or self.oidc_clock_skew_seconds > 300:
+            raise ValueError("OIDC_CLOCK_SKEW_SECONDS must be between 0 and 300")
+        return self
 
 
 @lru_cache
