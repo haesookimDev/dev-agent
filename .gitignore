@@ -6,6 +6,7 @@ __pycache__/
 .mypy_cache/
 .venv/
 *.pyc
+*.tsbuildinfo
 *.db
 node_modules/
 .next/
