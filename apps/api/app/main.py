@@ -5,6 +5,7 @@ import ipaddress
 import json
 import logging
 import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -24,7 +25,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,10 +46,12 @@ from .models import (
     AgentEvent,
     Approval,
     Artifact,
+    AuthSession,
     ConsoleLease,
     DeliveryBundle,
     DeliveryJob,
     Feedback,
+    OIDCLoginAttempt,
     PreviewEndpoint,
     WebhookDelivery,
     WorkerHost,
@@ -62,6 +65,13 @@ from .observability import (
     configure_observability,
     metrics_payload,
     observe_approval,
+)
+from .oidc import (
+    OIDCAuthenticationError,
+    OIDCConfigurationError,
+    OIDCProvider,
+    code_challenge,
+    get_oidc_provider,
 )
 from .schemas import (
     ApprovalCreate,
@@ -131,6 +141,8 @@ app.add_middleware(CorrelationMiddleware)
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
 SchemaReadinessDep = Annotated[SchemaReadiness, Depends(get_schema_readiness)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+OIDCProviderDep = Annotated[OIDCProvider, Depends(get_oidc_provider)]
 
 
 async def get_work_item(
@@ -256,6 +268,21 @@ def validate_artifact_content(content_type: str, content: bytes) -> None:
         )
 
 
+def require_oidc_mode(config: Settings) -> None:
+    if config.auth_mode != "oidc":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "OIDC authentication is not enabled")
+
+
+def safe_return_path(value: str) -> str:
+    if not value.startswith("/") or value.startswith("//"):
+        return "/"
+    return value
+
+
+def aware_utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -273,6 +300,164 @@ async def readyz(response: Response, readiness: SchemaReadinessDep) -> dict[str,
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "not_ready", "database_schema": readiness.state}
     return {"status": "ok", "database_schema": readiness.state}
+
+
+@app.get("/auth/login", include_in_schema=False)
+async def oidc_login(
+    session: SessionDep,
+    config: SettingsDep,
+    provider: OIDCProviderDep,
+    return_to: str = "/",
+) -> RedirectResponse:
+    require_oidc_mode(config)
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(64)
+    try:
+        authorization_url = await provider.authorization_url(
+            state=state,
+            nonce=nonce,
+            code_challenge=code_challenge(verifier),
+        )
+    except OIDCConfigurationError as error:
+        logger.warning("OIDC login configuration failed: %s", error)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "identity provider is unavailable",
+        ) from error
+    session.add(
+        OIDCLoginAttempt(
+            state_hash=hashlib.sha256(state.encode()).hexdigest(),
+            nonce=nonce,
+            code_verifier=verifier,
+            return_to=safe_return_path(return_to),
+            expires_at=datetime.now(UTC) + timedelta(seconds=config.oidc_login_ttl_seconds),
+        )
+    )
+    await session.commit()
+    response = RedirectResponse(authorization_url, status_code=status.HTTP_302_FOUND)
+    response.set_cookie(
+        config.oidc_login_cookie_name,
+        state,
+        max_age=config.oidc_login_ttl_seconds,
+        httponly=True,
+        secure=config.oidc_cookie_secure,
+        samesite="lax",
+        path="/auth/callback",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/auth/callback", include_in_schema=False)
+async def oidc_callback(
+    request: Request,
+    session: SessionDep,
+    config: SettingsDep,
+    provider: OIDCProviderDep,
+    code: str = "",
+    state_value: Annotated[str, Query(alias="state")] = "",
+    error: str = "",
+) -> RedirectResponse:
+    require_oidc_mode(config)
+    cookie_state = request.cookies.get(config.oidc_login_cookie_name, "")
+    if error or not code or not state_value or not cookie_state:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC authentication failed")
+    if not hmac.compare_digest(state_value, cookie_state):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC state does not match")
+
+    state_hash = hashlib.sha256(state_value.encode()).hexdigest()
+    attempt = await session.get(OIDCLoginAttempt, state_hash, with_for_update=True)
+    if attempt is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC login attempt is invalid")
+    await session.delete(attempt)
+    await session.commit()
+    if aware_utc(attempt.expires_at) <= datetime.now(UTC):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC login attempt expired")
+
+    try:
+        identity = await provider.authenticate(
+            code=code,
+            code_verifier=attempt.code_verifier,
+            expected_nonce=attempt.nonce,
+        )
+    except OIDCConfigurationError as provider_error:
+        logger.warning("OIDC callback configuration failed: %s", provider_error)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "identity provider is unavailable",
+        ) from provider_error
+    except OIDCAuthenticationError as authentication_error:
+        logger.info("OIDC callback rejected: %s", authentication_error)
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "OIDC authentication failed",
+        ) from authentication_error
+
+    now = datetime.now(UTC)
+    expires_at = min(
+        identity.expires_at,
+        now + timedelta(seconds=config.oidc_session_ttl_seconds),
+    )
+    if expires_at <= now:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC ID token expired")
+
+    previous_token = request.cookies.get(config.oidc_session_cookie_name)
+    if previous_token:
+        previous_hash = hashlib.sha256(previous_token.encode()).hexdigest()
+        previous_session = await session.get(AuthSession, previous_hash)
+        if previous_session is not None:
+            await session.delete(previous_session)
+    session_token = secrets.token_urlsafe(32)
+    session.add(
+        AuthSession(
+            token_hash=hashlib.sha256(session_token.encode()).hexdigest(),
+            subject=identity.subject,
+            identity_provider=identity.issuer,
+            organization=identity.organization,
+            expires_at=expires_at,
+        )
+    )
+    await session.commit()
+
+    redirect_target = f"{config.dashboard_url.rstrip('/')}{attempt.return_to}"
+    response = RedirectResponse(redirect_target, status_code=status.HTTP_302_FOUND)
+    response.delete_cookie(config.oidc_login_cookie_name, path="/auth/callback")
+    response.set_cookie(
+        config.oidc_session_cookie_name,
+        session_token,
+        max_age=max(0, int((expires_at - now).total_seconds())),
+        httponly=True,
+        secure=config.oidc_cookie_secure,
+        samesite="strict",
+        path="/",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/auth/session", include_in_schema=False)
+async def auth_session(actor: ActorDep) -> dict[str, str]:
+    return {
+        "subject": actor.subject,
+        "identity_provider": actor.identity_provider,
+        "organization": actor.organization,
+        "role": actor.role,
+    }
+
+
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT, include_in_schema=False)
+async def logout(request: Request, session: SessionDep, config: SettingsDep) -> Response:
+    token = request.cookies.get(config.oidc_session_cookie_name)
+    if token:
+        authenticated = await session.get(AuthSession, hashlib.sha256(token.encode()).hexdigest())
+        if authenticated is not None:
+            await session.delete(authenticated)
+            await session.commit()
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(config.oidc_session_cookie_name, path="/")
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.post("/api/work-items", response_model=WorkItemView, status_code=status.HTTP_201_CREATED)

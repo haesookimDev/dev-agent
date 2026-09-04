@@ -12,12 +12,12 @@ export default async function WorkDetail({
   const { locale, id } = await params;
   if (!isLocale(locale)) notFound();
   const messages = getMessages(locale);
+  const returnTo = `/${locale}/work-items/${id}`;
   const [work, events, artifacts] = await Promise.all([
-    getWorkItem(id),
-    getEvents(id),
-    getArtifacts(id),
-  ]).catch(() => [null, [], []] as const);
-  if (!work) notFound();
+    getWorkItem(id, returnTo),
+    getEvents(id, returnTo),
+    getArtifacts(id, returnTo),
+  ]);
 
   return (
     <main className="detailPage">

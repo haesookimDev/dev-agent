@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Locale } from "../i18n";
 import { localeTag } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
-import { browserApi } from "../lib/api";
+import { authenticatedFetch, browserApi } from "../lib/browser-api";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
 
@@ -35,15 +35,18 @@ export function LiveRun({
   );
 
   useEffect(() => {
-    const stream = new EventSource(`${browserApi}/api/work-items/${work.id}/events?after=${lastEvent}`);
+    const stream = new EventSource(
+      `${browserApi}/api/work-items/${work.id}/events?after=${lastEvent}`,
+      { withCredentials: true },
+    );
     stream.onmessage = (message) => {
       const event = JSON.parse(message.data) as AgentEvent;
       setEvents((current) => current.some((item) => item.id === event.id) ? current : [...current, event]);
       if (event.event_type === "work.transitioned") {
-        fetch(`${browserApi}/api/work-items/${work.id}`, { headers: correlationHeaders }).then((response) => response.json()).then(setWork);
+        authenticatedFetch(`${browserApi}/api/work-items/${work.id}`, { headers: correlationHeaders }).then((response) => response.json()).then(setWork);
       }
       if (event.event_type === "artifact.uploaded") {
-        fetch(`${browserApi}/api/work-items/${work.id}/artifacts`, { headers: correlationHeaders }).then((response) => response.json()).then(setArtifacts);
+        authenticatedFetch(`${browserApi}/api/work-items/${work.id}/artifacts`, { headers: correlationHeaders }).then((response) => response.json()).then(setArtifacts);
       }
     };
     return () => stream.close();
@@ -57,7 +60,7 @@ export function LiveRun({
     setActionError("");
     const form = event.currentTarget;
     const data = new FormData(form);
-    const response = await fetch(`${browserApi}/api/work-items/${work.id}/feedback`, {
+    const response = await authenticatedFetch(`${browserApi}/api/work-items/${work.id}/feedback`, {
       method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
       body: JSON.stringify({ message: data.get("message"), channel: "web" }),
     });
@@ -73,8 +76,8 @@ export function LiveRun({
   async function approve() {
     setSending(true);
     setActionError("");
-    const response = await fetch(`${browserApi}/api/work-items/${work.id}/approvals`, {
-      method: "POST", headers: { "content-type": "application/json", "X-Kelpie-Role": "approver", ...correlationHeaders },
+    const response = await authenticatedFetch(`${browserApi}/api/work-items/${work.id}/approvals`, {
+      method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
       body: JSON.stringify({ kind: "pull_request", decision: "approve", payload: {} }),
     });
     if (response.ok) setWork(await response.json());

@@ -27,6 +27,34 @@ Downgrading below the current baseline is explicitly blocked because it would de
 
 Revision `20260904_0002` backfills existing work items and events by using the work-item ID as their correlation ID. Downgrading to `20260904_0001` removes only the new correlation columns and indexes and retains existing work data. To roll back, stop API traffic or switch to the previous API version that does not require the correlation fields before downgrading the migration.
 
+Revision `20260904_0003` adds tables for one-time OIDC login attempts and opaque authentication sessions. Downgrading to `20260904_0002` removes both tables and active login sessions while preserving work-item data. Switch to the previous API version before the downgrade and inform users that they must sign in again.
+
+## OIDC authentication
+
+Serve the dashboard and the API `/auth` and `/api` paths from the same public HTTPS origin in production. Dashboard Server Components forward the browser session cookie to the internal API, and browser requests and event streams include credentials. Do not expose the API on a separate public hostname or inject OIDC identity headers.
+
+Register an Authorization Code client with the identity provider and set its callback URI to `https://<control-host>/auth/callback`. PKCE S256 is always used, regardless of the client type. Configure a client secret unless the provider advertises `none` authentication for a public client in its metadata. The organization claim must be a non-empty scalar string.
+
+```dotenv
+AUTH_MODE=oidc
+OIDC_ISSUER_URL=https://identity.example.com
+OIDC_CLIENT_ID=kelpie-control
+OIDC_CLIENT_SECRET=<inject from secret manager>
+OIDC_REDIRECT_URI=https://control.example.com/auth/callback
+OIDC_ORGANIZATION_CLAIM=organization
+OIDC_SCOPES=openid,profile
+OIDC_ALLOWED_ALGORITHMS=RS256
+DASHBOARD_URL=https://control.example.com
+```
+
+The issuer, redirect URI, and discovered authorization, token, and JWKS endpoints must use HTTPS. The discovered issuer must exactly match configuration. Kelpie validates the ID-token signature, explicit algorithm allowlist, audience, expiry, issued-at time, nonce, authorized party, and organization claim. The allowlist cannot contain `none` or symmetric `HS*` algorithms.
+
+Start login at `/auth/login`. The `state`, `nonce`, and PKCE verifier are held in a one-time database record for five minutes. After authentication the browser receives only a random opaque token in a `Secure`, `HttpOnly`, `SameSite=Strict` cookie, while the database stores its SHA-256 hash. Session lifetime defaults to the earlier of eight hours or ID-token expiry. `/auth/logout` removes both the server session and cookie.
+
+The `trusted_headers` authentication mode has been removed. `X-Kelpie-User` and `X-Kelpie-Role` are not authentication inputs. Development mode also ignores request headers and uses only the fixed administrator identity from `DEVELOPMENT_SUBJECT` and `DEVELOPMENT_ORGANIZATION`; never expose it publicly.
+
+Until the repository-authorization batch lands, OIDC identities are treated as viewers and cannot approve work. The preview gateway also returns 503 in its default `disabled` mode until scoped OIDC preview grants are implemented. Use `KELPIE_GATEWAY_AUTH_MODE=development` only for an isolated local demo.
+
 ## Observability and correlation
 
 The API returns UUID-formatted `X-Request-ID` and `X-Kelpie-Correlation-ID` headers on every response. Valid incoming UUID values are preserved; invalid values are replaced. The correlation ID selected on the initial request is persisted on the work item and events and propagated through the worker, VM runner, web feedback, Slack status metadata, and background delivery. It is used only for tracing, never for authentication or authorization.
@@ -64,10 +92,10 @@ Mount the PEM at the configured path with read permission only for the API user.
 
 ## Production control plane
 
-- Put the API and dashboard behind an OIDC-aware reverse proxy. Set `AUTH_MODE=trusted_headers` and prevent direct network access to the API so clients cannot forge identity headers.
+- Serve the API and dashboard from the same public HTTPS origin and use `AUTH_MODE=oidc`. The reverse proxy must not create identity headers, and direct network access to the internal API address must be blocked.
 - Use a managed PostgreSQL service or encrypted volumes with point-in-time recovery. Run Alembic migrations before the API rollout and verify that `/readyz` succeeds.
 - Store worker, GitHub, Slack, object-store, DNS, and OIDC credentials in a secret manager. Never put them in Compose files or task VM images.
-- Terminate wildcard TLS at a dedicated preview gateway. Require application authentication before resolving a run target.
+- Do not expose the preview gateway until scoped OIDC preview grants are implemented. After that, terminate wildcard TLS at a dedicated gateway and validate the grant before resolving a run target.
 - Set `PREVIEW_ALLOWED_CIDRS` to the dedicated WireGuard/libvirt VM subnet. Never include control-plane, metadata, or general private-service networks.
 - Retain task VMs for 24 hours and artifacts for 30 days. A scheduled janitor must verify the work item is not active and then delete explicit, UUID-named volumes only.
 
