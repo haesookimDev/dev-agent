@@ -1,9 +1,12 @@
-.PHONY: dev test test-api test-runner test-worker test-gateway test-web lint
+.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web lint
 
 PYTHON ?= .venv/bin/python
 
 dev:
 	docker compose --profile demo up --build
+
+migrate-api:
+	$(PYTHON) -m alembic -c apps/api/alembic.ini upgrade head
 
 test: test-api test-runner test-worker test-gateway test-web
 
