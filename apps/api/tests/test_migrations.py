@@ -9,7 +9,7 @@ from alembic.config import Config
 from app.models import Base, WebhookDelivery
 
 API_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "20260904_0002"
+HEAD_REVISION = "20260904_0003"
 
 
 def migration_config(database_url: str) -> Config:
@@ -152,4 +152,19 @@ def test_correlation_downgrade_is_safe_and_baseline_downgrade_is_refused(
 
     assert current_revision(engine) == "20260904_0001"
     assert "work_items" in sa.inspect(engine).get_table_names()
+    engine.dispose()
+
+
+def test_oidc_session_migration_downgrade_preserves_existing_work(tmp_path: Path) -> None:
+    config = migration_config(sqlite_url(tmp_path))
+    command.upgrade(config, "head")
+    engine = sa.create_engine(sync_sqlite_url(tmp_path))
+
+    command.downgrade(config, "20260904_0002")
+
+    tables = set(sa.inspect(engine).get_table_names())
+    assert "auth_sessions" not in tables
+    assert "oidc_login_attempts" not in tables
+    assert "work_items" in tables
+    assert current_revision(engine) == "20260904_0002"
     engine.dispose()
