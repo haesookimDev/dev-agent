@@ -4,6 +4,7 @@ import "time"
 
 type WorkItem struct {
 	ID               string `json:"id"`
+	CorrelationID    string `json:"correlation_id"`
 	Title            string `json:"title"`
 	Requirement      string `json:"requirement"`
 	Repository       string `json:"repository"`

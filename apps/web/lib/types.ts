@@ -16,6 +16,7 @@ export type WorkStatus =
 
 export interface WorkItem {
   id: string;
+  correlation_id: string;
   source: "web" | "github" | "autonomous";
   source_external_id: string | null;
   title: string;
@@ -39,6 +40,7 @@ export interface WorkItem {
 export interface AgentEvent {
   id: number;
   work_item_id: string;
+  correlation_id: string;
   event_type: string;
   source: string;
   level: "debug" | "info" | "warning" | "error";

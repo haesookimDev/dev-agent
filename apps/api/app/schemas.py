@@ -18,6 +18,7 @@ class WorkItemView(BaseModel):
     model_config = {"from_attributes": True}
 
     id: str
+    correlation_id: str
     source: WorkSource
     source_external_id: str | None
     title: str
@@ -51,6 +52,7 @@ class EventView(EventCreate):
 
     id: int
     work_item_id: str
+    correlation_id: str
     created_at: datetime
 
 

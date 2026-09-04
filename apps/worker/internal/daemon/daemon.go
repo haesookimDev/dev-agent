@@ -68,20 +68,32 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 func (d *Daemon) execute(ctx context.Context, claim Claim) {
 	defer d.tracker.Release(d.config.RunResources)
-	d.logger.Info("starting work", "work_id", claim.WorkItem.ID, "title", claim.WorkItem.Title)
+	ctx = ContextWithCorrelationID(ctx, claim.WorkItem.CorrelationID)
+	d.logger.Info(
+		"starting work",
+		"work_id", claim.WorkItem.ID,
+		"correlation_id", claim.WorkItem.CorrelationID,
+		"title", claim.WorkItem.Title,
+	)
 	if err := d.executor.Execute(ctx, d.client, claim); err != nil {
-		d.logger.Error("work execution failed", "work_id", claim.WorkItem.ID, "error", err)
-		_ = d.client.Event(context.Background(), claim.WorkItem.ID, claim.LeaseToken, AgentEvent{
+		d.logger.Error(
+			"work execution failed",
+			"work_id", claim.WorkItem.ID,
+			"correlation_id", claim.WorkItem.CorrelationID,
+			"error", err,
+		)
+		failureContext := ContextWithCorrelationID(context.Background(), claim.WorkItem.CorrelationID)
+		_ = d.client.Event(failureContext, claim.WorkItem.ID, claim.LeaseToken, AgentEvent{
 			EventType: "worker.failed", Source: "worker", Level: "error", Message: err.Error(), Payload: map[string]any{},
 		})
-		current, readErr := d.client.ReadRun(context.Background(), claim.WorkItem.ID, claim.LeaseToken)
+		current, readErr := d.client.ReadRun(failureContext, claim.WorkItem.ID, claim.LeaseToken)
 		if readErr == nil && current.Status != "completed" && current.Status != "failed" && current.Status != "cancelled" {
 			failed, transitionErr := d.client.Transition(
-				context.Background(), claim.WorkItem.ID, claim.LeaseToken,
+				failureContext, claim.WorkItem.ID, claim.LeaseToken,
 				"failed", current.Version, "Worker executor failed",
 			)
 			if transitionErr == nil {
-				_ = d.client.Release(context.Background(), failed.ID, claim.LeaseToken)
+				_ = d.client.Release(failureContext, failed.ID, claim.LeaseToken)
 			}
 		}
 	}

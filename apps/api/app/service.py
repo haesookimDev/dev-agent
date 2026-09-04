@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .auth import hash_token
+from .correlation import current_correlation_id
 from .models import AgentEvent, ResourceLease, WorkerHost, WorkItem, WorkSource, WorkStatus, utcnow
 from .schemas import ClaimRequest, EventCreate, WorkItemCreate
 from .state_machine import InvalidTransition, ensure_transition
@@ -17,7 +18,14 @@ async def emit_event(
     work_item_id: str,
     event: EventCreate,
 ) -> AgentEvent:
-    record = AgentEvent(work_item_id=work_item_id, **event.model_dump())
+    item = await session.get(WorkItem, work_item_id)
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "work item not found")
+    record = AgentEvent(
+        work_item_id=work_item_id,
+        correlation_id=item.correlation_id,
+        **event.model_dump(),
+    )
     session.add(record)
     await session.flush()
     return record
@@ -32,6 +40,7 @@ async def create_work_item(
     source_external_id: str | None = None,
     github_installation_id: int | None = None,
     github_issue_number: int | None = None,
+    correlation_id: str | None = None,
 ) -> WorkItem:
     item = WorkItem(
         **payload.model_dump(),
@@ -40,6 +49,7 @@ async def create_work_item(
         source_external_id=source_external_id,
         github_installation_id=github_installation_id,
         github_issue_number=github_issue_number,
+        correlation_id=correlation_id or current_correlation_id(),
     )
     session.add(item)
     try:

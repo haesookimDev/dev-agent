@@ -29,6 +29,10 @@ export function LiveRun({
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState("");
   const lastEvent = events.at(-1)?.id ?? 0;
+  const correlationHeaders = useMemo(
+    () => ({ "X-Kelpie-Correlation-ID": work.correlation_id }),
+    [work.correlation_id],
+  );
 
   useEffect(() => {
     const stream = new EventSource(`${browserApi}/api/work-items/${work.id}/events?after=${lastEvent}`);
@@ -36,14 +40,14 @@ export function LiveRun({
       const event = JSON.parse(message.data) as AgentEvent;
       setEvents((current) => current.some((item) => item.id === event.id) ? current : [...current, event]);
       if (event.event_type === "work.transitioned") {
-        fetch(`${browserApi}/api/work-items/${work.id}`).then((response) => response.json()).then(setWork);
+        fetch(`${browserApi}/api/work-items/${work.id}`, { headers: correlationHeaders }).then((response) => response.json()).then(setWork);
       }
       if (event.event_type === "artifact.uploaded") {
-        fetch(`${browserApi}/api/work-items/${work.id}/artifacts`).then((response) => response.json()).then(setArtifacts);
+        fetch(`${browserApi}/api/work-items/${work.id}/artifacts`, { headers: correlationHeaders }).then((response) => response.json()).then(setArtifacts);
       }
     };
     return () => stream.close();
-  }, [work.id, lastEvent]);
+  }, [work.id, lastEvent, correlationHeaders]);
 
   const grouped = useMemo(() => [...events].reverse(), [events]);
 
@@ -54,7 +58,7 @@ export function LiveRun({
     const form = event.currentTarget;
     const data = new FormData(form);
     const response = await fetch(`${browserApi}/api/work-items/${work.id}/feedback`, {
-      method: "POST", headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
       body: JSON.stringify({ message: data.get("message"), channel: "web" }),
     });
     if (response.ok) {
@@ -70,7 +74,7 @@ export function LiveRun({
     setSending(true);
     setActionError("");
     const response = await fetch(`${browserApi}/api/work-items/${work.id}/approvals`, {
-      method: "POST", headers: { "content-type": "application/json", "X-Kelpie-Role": "approver" },
+      method: "POST", headers: { "content-type": "application/json", "X-Kelpie-Role": "approver", ...correlationHeaders },
       body: JSON.stringify({ kind: "pull_request", decision: "approve", payload: {} }),
     });
     if (response.ok) setWork(await response.json());

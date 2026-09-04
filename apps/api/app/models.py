@@ -47,6 +47,9 @@ class WorkItem(Base):
     __tablename__ = "work_items"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    correlation_id: Mapped[str] = mapped_column(
+        String(36), index=True, default=lambda: str(uuid.uuid4())
+    )
     source: Mapped[WorkSource] = mapped_column(Enum(WorkSource), index=True)
     source_external_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     title: Mapped[str] = mapped_column(String(300))
@@ -83,6 +86,7 @@ class AgentEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id", ondelete="CASCADE"))
+    correlation_id: Mapped[str] = mapped_column(String(36), index=True)
     event_type: Mapped[str] = mapped_column(String(100), index=True)
     source: Mapped[str] = mapped_column(String(100), default="control-plane")
     level: Mapped[str] = mapped_column(String(16), default="info")

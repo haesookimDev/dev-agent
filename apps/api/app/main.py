@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .auth import Actor, current_actor, require_approver, require_worker
 from .config import Settings, get_settings
+from .correlation import CorrelationMiddleware
 from .db import (
     SchemaReadiness,
     SessionLocal,
@@ -109,6 +110,7 @@ app = FastAPI(title="Kelpie Control Plane", version="0.1.0", lifespan=lifespan)
 settings = get_settings()
 slack = SlackNotifier(settings)
 github = GitHubAppClient(settings)
+app.add_middleware(CorrelationMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

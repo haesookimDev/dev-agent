@@ -16,6 +16,7 @@ import yaml
 @dataclass
 class Assignment:
     id: str
+    correlation_id: str
     title: str
     requirement: str
     repository: str
@@ -31,11 +32,14 @@ class Assignment:
 
 
 class ControlClient:
-    def __init__(self, base_url: str, work_id: str, lease: str):
+    def __init__(self, base_url: str, work_id: str, lease: str, correlation_id: str):
         self.work_id = work_id
         self.client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
-            headers={"X-Kelpie-Lease": lease},
+            headers={
+                "X-Kelpie-Lease": lease,
+                "X-Kelpie-Correlation-ID": correlation_id,
+            },
             timeout=30,
         )
 
@@ -388,7 +392,10 @@ async def clone_repository(assignment: Assignment, root: Path) -> Path:
 async def run() -> None:
     assignment = Assignment.from_environment()
     control = ControlClient(
-        os.environ["KELPIE_CONTROL_URL"], assignment.id, os.environ["KELPIE_LEASE_TOKEN"]
+        os.environ["KELPIE_CONTROL_URL"],
+        assignment.id,
+        os.environ["KELPIE_LEASE_TOKEN"],
+        assignment.correlation_id,
     )
     session: CodexAppServer | None = None
     try:

@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+type correlationContextKey struct{}
+
+func ContextWithCorrelationID(ctx context.Context, correlationID string) context.Context {
+	return context.WithValue(ctx, correlationContextKey{}, correlationID)
+}
+
 type Client struct {
 	baseURL string
 	token   string
@@ -40,6 +46,9 @@ func (c *Client) call(ctx context.Context, method, path string, body any, header
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	if correlationID, ok := ctx.Value(correlationContextKey{}).(string); ok && correlationID != "" {
+		request.Header.Set("X-Kelpie-Correlation-ID", correlationID)
+	}
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}

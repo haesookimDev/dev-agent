@@ -57,7 +57,10 @@ class SlackNotifier:
                     "unfurl_links": False,
                     "metadata": {
                         "event_type": "kelpie_work_status",
-                        "event_payload": {"work_item_id": work.id},
+                        "event_payload": {
+                            "work_item_id": work.id,
+                            "correlation_id": work.correlation_id,
+                        },
                     },
                 },
             )
