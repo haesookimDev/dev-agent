@@ -1,0 +1,23 @@
+version: 1
+resources:
+  cpu: 4
+  memory_mb: 8192
+  disk_gb: 40
+setup:
+  - npm ci
+verification:
+  commands:
+    - npm run lint
+    - npm run typecheck
+    - npm test
+    - npm run build
+  browser_paths:
+    - /
+preview:
+  command: npm run dev -- --hostname 0.0.0.0
+  port: 3000
+  health_path: /
+budget:
+  minutes: 240
+  replans: 3
+secrets: []
