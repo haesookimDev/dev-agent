@@ -9,7 +9,7 @@ export default async function Dashboard({ params }: { params: Promise<{ locale: 
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const messages = getMessages(locale);
-  const workItems = await listWorkItems().catch(() => []);
+  const workItems = await listWorkItems(`/${locale}`);
   const active = workItems.filter(
     (item) => !["completed", "failed", "cancelled"].includes(item.status),
   ).length;

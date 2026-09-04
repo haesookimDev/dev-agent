@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Locale } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
-import { browserApi } from "../lib/api";
+import { authenticatedFetch, browserApi } from "../lib/browser-api";
 
 export function CreateWork({
   locale,
@@ -22,7 +22,7 @@ export function CreateWork({
     setSubmitting(true);
     setError("");
     const data = new FormData(event.currentTarget);
-    const response = await fetch(`${browserApi}/api/work-items`, {
+    const response = await authenticatedFetch(`${browserApi}/api/work-items`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
