@@ -16,6 +16,8 @@
 
 ### MIG-001 · Version이 있는 Database Migration — M
 
+상태: 구현 완료 (2026-09-04)
+
 범위:
 
 - 현재 모든 Model의 Baseline Migration을 포함한 Alembic을 도입합니다.

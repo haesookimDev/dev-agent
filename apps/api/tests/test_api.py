@@ -6,6 +6,9 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from app.db import SchemaReadiness, SchemaState, get_schema_readiness
+from app.main import app
+
 
 async def create_work(client: AsyncClient, title: str = "Implement health endpoint") -> dict:
     response = await client.post(
@@ -36,6 +39,44 @@ async def register_worker(
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+@pytest.mark.asyncio
+async def test_readiness_rejects_schema_mismatch(client: AsyncClient) -> None:
+    async def outdated_schema() -> SchemaReadiness:
+        return SchemaReadiness(
+            state=SchemaState.OUTDATED,
+            current_heads=("old-revision",),
+            expected_heads=("new-revision",),
+        )
+
+    app.dependency_overrides[get_schema_readiness] = outdated_schema
+    response = await client.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "database_schema": "outdated",
+    }
+
+
+@pytest.mark.asyncio
+async def test_readiness_accepts_current_schema(client: AsyncClient) -> None:
+    async def current_schema() -> SchemaReadiness:
+        return SchemaReadiness(
+            state=SchemaState.CURRENT,
+            current_heads=("current-revision",),
+            expected_heads=("current-revision",),
+        )
+
+    app.dependency_overrides[get_schema_readiness] = current_schema
+    response = await client.get("/readyz")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "database_schema": "current",
+    }
 
 
 @pytest.mark.asyncio

@@ -24,10 +24,20 @@ services:
     volumes:
       - artifact-data:/data
 
+  api-migrate:
+    build: ./apps/api
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kelpie:kelpie@postgres:5432/kelpie
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build: ./apps/api
     environment:
       DATABASE_URL: postgresql+asyncpg://kelpie:kelpie@postgres:5432/kelpie
+      DATABASE_SCHEMA_MODE: validate
       AUTH_MODE: development
       WORKER_SHARED_SECRET: development-worker-secret-change-me
       GITHUB_WEBHOOK_SECRET: development-webhook-secret
@@ -38,13 +48,15 @@ services:
     volumes:
       - control-artifacts:/var/lib/kelpie/artifacts
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
       interval: 3s
       timeout: 3s
       retries: 20
     depends_on:
       postgres:
         condition: service_healthy
+      api-migrate:
+        condition: service_completed_successfully
 
   web:
     build: ./apps/web

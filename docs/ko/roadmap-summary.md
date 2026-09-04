@@ -22,7 +22,7 @@
 
 다음 Release는 P0와 P1의 최소 End-to-End 경로만 포함하는 것을 권장합니다.
 
-1. `create_all`을 Alembic으로 교체하고 Upgrade/Downgrade를 테스트합니다.
+1. **완료:** `create_all`을 Alembic으로 교체하고 Upgrade/Downgrade를 테스트합니다.
 2. OIDC 인증, 조직·저장소 권한, 변경 불가능한 승인 감사 기록을 추가합니다.
 3. Secret을 운영 Secret Provider로 옮기고 Worker 자격증명을 독립적으로 교체할 수 있게 합니다.
 4. OpenTelemetry Trace, Prometheus Metric, 구조화된 Correlation ID, 보존 기간 정리 작업을 추가합니다.

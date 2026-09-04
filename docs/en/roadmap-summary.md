@@ -22,7 +22,7 @@ Turn the current deployable vertical slice into a production-grade, multi-worker
 
 The next release should contain only P0 and the smallest P1 end-to-end path:
 
-1. Replace `create_all` with Alembic and test upgrade/downgrade paths.
+1. **Completed:** Replace `create_all` with Alembic and test upgrade/downgrade paths.
 2. Add OIDC authentication, organization/repository authorization, and immutable approval audit records.
 3. Move secrets to a production secret provider and rotate worker credentials independently.
 4. Add OpenTelemetry traces, Prometheus metrics, structured correlation IDs, and retention jobs.

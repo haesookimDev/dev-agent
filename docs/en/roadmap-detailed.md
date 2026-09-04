@@ -16,6 +16,8 @@ Effort uses relative sizes: S is a narrow change, M is a multi-component feature
 
 ### MIG-001 · Versioned database migrations — M
 
+Status: implemented (2026-09-04)
+
 Scope:
 
 - Introduce Alembic with a baseline migration for every current model.

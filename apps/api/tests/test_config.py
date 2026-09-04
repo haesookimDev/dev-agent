@@ -13,3 +13,7 @@ def test_comma_separated_list_environment_values(monkeypatch) -> None:
     assert settings.slack_approver_user_ids == ["U123", "U456"]
     assert settings.preview_allowed_cidrs == ["10.20.0.0/16", "10.30.0.0/16"]
     assert settings.github_app_id is None
+
+
+def test_database_schema_mode_defaults_to_validation() -> None:
+    assert Settings(_env_file=None).database_schema_mode == "validate"

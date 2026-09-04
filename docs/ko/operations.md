@@ -11,6 +11,20 @@
 
 `demo` Compose 프로필은 Mock Worker를 함께 시작하며 GitHub에 실제 쓰기 작업을 하지 않습니다.
 
+## Database Migration
+
+Compose 배포에서는 `api-migrate` 일회성 Service가 `alembic upgrade head`를 완료한 후에만 API가 시작됩니다. Compose 밖에서 배포할 때는 새 API를 Rollout하기 전에 동일한 `DATABASE_URL`을 사용하는 배포 환경에서 다음 명령을 실행합니다. API Container Image에서는 `alembic upgrade head`를 직접 실행할 수 있습니다.
+
+```bash
+make migrate-api
+```
+
+Migration은 PostgreSQL Transaction Advisory Lock을 획득하므로 여러 배포가 동시에 실행돼도 한 번에 하나만 Schema를 변경합니다. 실패한 Migration은 API Rollout을 중단하며 원인을 해결한 뒤 같은 명령을 다시 실행할 수 있습니다. `/healthz`는 Process 생존 여부를, `/readyz`는 Database 연결과 Alembic Head 일치 여부를 확인합니다.
+
+Migration 도입 전에 `create_all`로 만든 Database는 현재 Table과 Column이 Baseline과 모두 일치할 때 첫 Upgrade에서 데이터를 유지한 채 자동으로 채택됩니다. 일부 Table만 있거나 Column이 다르면 Migration이 실패하므로 Schema를 먼저 복구해야 합니다. `DATABASE_SCHEMA_MODE=bootstrap`은 비어 있는 일회성 개발 Database에서만 사용하고 운영 환경은 기본값인 `validate`를 유지합니다.
+
+현재 Baseline 아래로의 Downgrade는 모든 데이터를 삭제하므로 명시적으로 차단됩니다. 향후 Revision을 Rollback할 때는 먼저 PostgreSQL과 Object Store Backup을 만들고 해당 Revision이 문서화한 안전 범위 안에서만 `alembic downgrade <revision>`을 실행합니다. Baseline으로 되돌려야 하는 장애는 새 Database에 검증된 Backup을 복원해 복구합니다.
+
 ## GitHub App 전달
 
 저장소 Metadata 읽기와 Issues, Contents, Pull requests 읽기·쓰기 권한을 가진 GitHub App을 만들고 설치합니다. Webhook URL을 `https://<control-host>/webhooks/github`으로 설정하고 Issues Event를 구독합니다. App Webhook Secret과 `GITHUB_WEBHOOK_SECRET`에는 같은 무작위 값을 사용합니다. 다음 값은 API 프로세스에만 제공합니다.
@@ -26,7 +40,7 @@ PEM 파일은 API 사용자만 읽을 수 있도록 설정한 경로에 Mount합
 ## 운영 제어 플랫폼
 
 - API와 대시보드를 OIDC 인식 Reverse Proxy 뒤에 배치합니다. `AUTH_MODE=trusted_headers`를 설정하고 Client가 신원 Header를 위조할 수 없도록 API 직접 네트워크 접근을 차단합니다.
-- 관리형 PostgreSQL 또는 시점 복구를 지원하는 암호화 Volume을 사용합니다. 배포된 Schema를 변경하기 전에 Alembic Migration을 도입합니다.
+- 관리형 PostgreSQL 또는 시점 복구를 지원하는 암호화 Volume을 사용합니다. API Rollout 전에 Alembic Migration을 실행하고 `/readyz`가 성공하는지 확인합니다.
 - Worker, GitHub, Slack, Object Store, DNS, OIDC 자격증명을 Secret Manager에 보관합니다. Compose 파일이나 작업 VM Image에는 넣지 않습니다.
 - 전용 Preview Gateway에서 Wildcard TLS를 종료하고, 작업 대상을 해석하기 전에 사용자 인증을 요구합니다.
 - `PREVIEW_ALLOWED_CIDRS`에는 전용 WireGuard/libvirt VM Subnet만 지정합니다. 제어 플랫폼, Metadata, 일반 사설 서비스 네트워크를 포함하지 않습니다.
