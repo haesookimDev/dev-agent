@@ -42,7 +42,7 @@ func main() {
 		listen:      env("KELPIE_GATEWAY_LISTEN", ":8080"),
 		controlURL:  strings.TrimRight(env("KELPIE_CONTROL_URL", "http://api:8000"), "/"),
 		workerToken: os.Getenv("KELPIE_WORKER_TOKEN"),
-		authMode:    env("KELPIE_GATEWAY_AUTH_MODE", "trusted_headers"),
+		authMode:    env("KELPIE_GATEWAY_AUTH_MODE", "disabled"),
 	}
 	if len(configuration.workerToken) < 32 {
 		logger.Error("KELPIE_WORKER_TOKEN must contain at least 32 characters")
@@ -66,8 +66,12 @@ func main() {
 }
 
 func (g *gateway) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if g.config.authMode != "development" && request.Header.Get("X-Kelpie-User") == "" {
-		http.Error(response, "authentication required", http.StatusUnauthorized)
+	if g.config.authMode != "development" {
+		http.Error(
+			response,
+			"preview gateway authentication is not configured",
+			http.StatusServiceUnavailable,
+		)
 		return
 	}
 	host, _, err := net.SplitHostPort(request.Host)

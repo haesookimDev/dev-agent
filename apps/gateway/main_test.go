@@ -11,13 +11,14 @@ import (
 	"testing"
 )
 
-func TestGatewayRequiresIdentity(t *testing.T) {
-	handler := &gateway{config: config{authMode: "trusted_headers"}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+func TestGatewayRejectsForgedIdentityHeaderWhenAuthenticationIsDisabled(t *testing.T) {
+	handler := &gateway{config: config{authMode: "disabled"}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	request := httptest.NewRequest(http.MethodGet, "http://run.preview.localhost/", nil)
+	request.Header.Set("X-Kelpie-User", "forged-user")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", response.Code)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", response.Code)
 	}
 }
 
