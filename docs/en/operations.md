@@ -25,7 +25,7 @@ A database created by runtime `create_all` before migrations were introduced is 
 
 Downgrading below the current baseline is explicitly blocked because it would delete all data. Before rolling back a future revision, back up PostgreSQL and the object store, then run `alembic downgrade <revision>` only within the safe range documented by that revision. Recover incidents that require returning below the baseline by restoring a verified backup into a new database.
 
-Revision `20260904_0002` backfills existing work items and events by using the work-item ID as their correlation ID. Downgrading to `20260904_0001` removes only the new correlation columns and indexes and retains existing work data. Deploy an older API version that does not require the correlation fields after that downgrade.
+Revision `20260904_0002` backfills existing work items and events by using the work-item ID as their correlation ID. Downgrading to `20260904_0001` removes only the new correlation columns and indexes and retains existing work data. To roll back, stop API traffic or switch to the previous API version that does not require the correlation fields before downgrading the migration.
 
 ## Observability and correlation
 

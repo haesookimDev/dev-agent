@@ -25,7 +25,7 @@ Migration 도입 전에 `create_all`로 만든 Database는 현재 Table과 Colum
 
 현재 Baseline 아래로의 Downgrade는 모든 데이터를 삭제하므로 명시적으로 차단됩니다. 향후 Revision을 Rollback할 때는 먼저 PostgreSQL과 Object Store Backup을 만들고 해당 Revision이 문서화한 안전 범위 안에서만 `alembic downgrade <revision>`을 실행합니다. Baseline으로 되돌려야 하는 장애는 새 Database에 검증된 Backup을 복원해 복구합니다.
 
-`20260904_0002`는 기존 Work Item ID를 Correlation ID로 사용해 기존 Work Item과 Event를 역채움합니다. `20260904_0001`로 Downgrade하면 새 Correlation Column과 Index만 제거하고 기존 작업 데이터는 유지합니다. Downgrade 후에는 Correlation 필드를 요구하지 않는 이전 API Version을 함께 배포해야 합니다.
+`20260904_0002`는 기존 Work Item ID를 Correlation ID로 사용해 기존 Work Item과 Event를 역채움합니다. `20260904_0001`로 Downgrade하면 새 Correlation Column과 Index만 제거하고 기존 작업 데이터는 유지합니다. 롤백할 때는 API 트래픽을 중지하거나 Correlation 필드를 요구하지 않는 이전 API Version으로 먼저 전환한 뒤 Migration을 Downgrade해야 합니다.
 
 ## 관측성 및 Correlation
 
