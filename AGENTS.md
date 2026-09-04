@@ -51,6 +51,20 @@
 7. 검증 가능한 상태라면 즉시 커밋한 뒤 다음 단위로 넘어간다.
 8. 작업 완료 후 커밋 목록을 확인해 각 커밋이 독립적인 목적을 갖는지 다시 검토한다.
 
+## 검증 명령
+
+수정한 영역에 해당하는 검증을 반드시 실행한다.
+
+- API: `make test-api`
+- Runner: `make test-runner`
+- Worker: `make test-worker`
+- Gateway: `make test-gateway`
+- Web: `make test-web`
+- 정적 검사: `make lint`
+- 여러 컴포넌트에 걸친 변경: `make test`
+
+실행하지 못한 검증은 완료 보고에 실행하지 못한 명령과 그 사유를 명시한다.
+
 ## 스테이징 및 기존 변경 보호
 
 - 원칙적으로 `git add .`, `git add -A`, 와일드카드 전체 추가를 사용하지 않는다.
