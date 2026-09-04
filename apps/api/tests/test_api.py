@@ -123,6 +123,37 @@ async def test_invalid_correlation_headers_are_replaced(client: AsyncClient) -> 
 
 
 @pytest.mark.asyncio
+async def test_metrics_expose_low_cardinality_http_and_work_signals(
+    client: AsyncClient,
+    worker_headers: dict[str, str],
+) -> None:
+    await client.get("/healthz")
+    unmatched_path = "/unmatched/tenant-private-value"
+    await client.get(unmatched_path)
+    await create_work(client, title="Measure queue latency")
+    worker = await register_worker(client, worker_headers)
+    await client.post(
+        f"/api/workers/{worker['id']}/claim",
+        headers=worker_headers,
+        json={"cpu": 2, "memory_mb": 4096, "disk_gb": 30},
+    )
+
+    response = await client.get("/metrics")
+
+    assert response.status_code == 200
+    assert 'kelpie_http_requests_total{method="GET",route="/healthz",status="200"}' in response.text
+    assert 'kelpie_http_requests_total{method="GET",route="unmatched",status="404"}' in (
+        response.text
+    )
+    assert 'kelpie_work_claims_total{outcome="claimed"}' in response.text
+    assert "kelpie_work_queue_wait_seconds_count" in response.text
+    assert 'kelpie_work_transitions_total{from_status="queued",to_status="provisioning"}' in (
+        response.text
+    )
+    assert unmatched_path not in response.text
+
+
+@pytest.mark.asyncio
 async def test_worker_claim_and_approval_gate(
     client: AsyncClient, worker_headers: dict[str, str]
 ) -> None:
@@ -163,6 +194,8 @@ async def test_worker_claim_and_approval_gate(
     )
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "committing"
+    metrics = await client.get("/metrics")
+    assert 'kelpie_approvals_total{decision="approve",kind="pull_request"}' in metrics.text
 
 
 @pytest.mark.asyncio

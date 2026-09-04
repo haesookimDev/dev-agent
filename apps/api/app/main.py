@@ -57,6 +57,12 @@ from .models import (
     WorkStatus,
     utcnow,
 )
+from .observability import (
+    ObservabilityMiddleware,
+    configure_observability,
+    metrics_payload,
+    observe_approval,
+)
 from .schemas import (
     ApprovalCreate,
     ArtifactCreate,
@@ -91,6 +97,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     runtime_settings = get_settings()
+    configure_observability(runtime_settings)
     if runtime_settings.database_schema_mode == "bootstrap":
         await bootstrap_schema()
     readiness = await get_schema_readiness()
@@ -110,14 +117,16 @@ app = FastAPI(title="Kelpie Control Plane", version="0.1.0", lifespan=lifespan)
 settings = get_settings()
 slack = SlackNotifier(settings)
 github = GitHubAppClient(settings)
-app.add_middleware(CorrelationMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-Kelpie-Correlation-ID"],
 )
+app.add_middleware(ObservabilityMiddleware)
+app.add_middleware(CorrelationMiddleware)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
@@ -250,6 +259,12 @@ def validate_artifact_content(content_type: str, content: bytes) -> None:
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    content, content_type = metrics_payload()
+    return Response(content=content, headers={"Content-Type": content_type})
 
 
 @app.get("/readyz")
@@ -450,6 +465,7 @@ async def decide_approval(
     if should_deliver:
         await queue_delivery(session, item)
     await session.commit()
+    observe_approval(payload.kind, payload.decision)
     if should_deliver:
         background_tasks.add_task(deliver_work, item.id)
     if item.status in {WorkStatus.COMMITTING, WorkStatus.IMPLEMENTING}:
@@ -699,6 +715,7 @@ async def slack_command(
         if should_deliver:
             await queue_delivery(session, item)
         await session.commit()
+        observe_approval("pull_request", "approve")
         if should_deliver:
             background_tasks.add_task(deliver_work, item.id)
         return {"response_type": "ephemeral", "text": f"Approved {item.title}."}

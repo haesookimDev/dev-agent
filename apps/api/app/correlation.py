@@ -30,11 +30,19 @@ def valid_id(value: str | None) -> str | None:
 
 
 def current_correlation_id() -> str:
-    return _correlation_id.get() or new_id()
+    value = _correlation_id.get()
+    if value is None:
+        value = current_request_id()
+        _correlation_id.set(value)
+    return value
 
 
 def current_request_id() -> str:
-    return _request_id.get() or new_id()
+    value = _request_id.get()
+    if value is None:
+        value = new_id()
+        _request_id.set(value)
+    return value
 
 
 class CorrelationMiddleware:
