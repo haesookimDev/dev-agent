@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -29,7 +30,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .auth import Actor, current_actor, require_approver, require_worker
 from .config import Settings, get_settings
-from .db import SessionLocal, create_schema, get_session
+from .db import (
+    SchemaReadiness,
+    SessionLocal,
+    bootstrap_schema,
+    get_schema_readiness,
+    get_session,
+)
 from .delivery import deliver_work, resume_pending_deliveries
 from .integrations.github import GitHubAppClient
 from .integrations.slack import SlackNotifier, verify_signature
@@ -77,11 +84,24 @@ from .service import (
     validate_lease,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await create_schema()
-    await resume_pending_deliveries()
+    runtime_settings = get_settings()
+    if runtime_settings.database_schema_mode == "bootstrap":
+        await bootstrap_schema()
+    readiness = await get_schema_readiness()
+    if readiness.ready:
+        await resume_pending_deliveries()
+    else:
+        logger.warning(
+            "database schema is not ready: state=%s current_heads=%s expected_heads=%s",
+            readiness.state,
+            readiness.current_heads,
+            readiness.expected_heads,
+        )
     yield
 
 
@@ -99,6 +119,7 @@ app.add_middleware(
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
+SchemaReadinessDep = Annotated[SchemaReadiness, Depends(get_schema_readiness)]
 
 
 async def get_work_item(
@@ -227,6 +248,14 @@ def validate_artifact_content(content_type: str, content: bytes) -> None:
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz(response: Response, readiness: SchemaReadinessDep) -> dict[str, str]:
+    if not readiness.ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "not_ready", "database_schema": readiness.state}
+    return {"status": "ok", "database_schema": readiness.state}
 
 
 @app.post("/api/work-items", response_model=WorkItemView, status_code=status.HTTP_201_CREATED)

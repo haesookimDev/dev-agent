@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "sqlite+aiosqlite:///./kelpie.db"
+    database_schema_mode: Literal["validate", "bootstrap"] = "validate"
     auth_mode: str = "development"
     worker_shared_secret: str = "development-worker-secret-change-me"
     github_webhook_secret: str = "development-webhook-secret"
