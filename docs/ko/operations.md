@@ -27,6 +27,34 @@ Migration 도입 전에 `create_all`로 만든 Database는 현재 Table과 Colum
 
 `20260904_0002`는 기존 Work Item ID를 Correlation ID로 사용해 기존 Work Item과 Event를 역채움합니다. `20260904_0001`로 Downgrade하면 새 Correlation Column과 Index만 제거하고 기존 작업 데이터는 유지합니다. 롤백할 때는 API 트래픽을 중지하거나 Correlation 필드를 요구하지 않는 이전 API Version으로 먼저 전환한 뒤 Migration을 Downgrade해야 합니다.
 
+`20260904_0003`은 일회성 OIDC 로그인 시도와 불투명 인증 Session Table을 추가합니다. `20260904_0002`로 Downgrade하면 두 Table과 활성 로그인 Session이 제거되지만 Work Item 데이터는 유지됩니다. 이전 API Version으로 먼저 전환한 뒤 Downgrade하고, 사용자가 다시 로그인해야 함을 안내합니다.
+
+## OIDC 인증
+
+운영 환경에서는 대시보드와 API의 `/auth`, `/api` 경로를 같은 HTTPS 공개 Origin으로 제공합니다. 대시보드 Server Component가 Browser의 Session Cookie를 내부 API 요청에 전달하며, Browser 요청과 Event Stream도 자격증명을 포함합니다. API를 별도 공개 Hostname으로 노출하거나 OIDC 신원 Header를 주입하지 않습니다.
+
+Identity Provider에 Authorization Code Client를 등록하고 Callback URI를 `https://<control-host>/auth/callback`으로 지정합니다. PKCE S256은 Client 종류와 관계없이 항상 사용됩니다. Provider가 공개 Client의 `none` 인증을 Metadata에 선언하지 않는 한 Client Secret을 설정합니다. 조직 Claim은 비어 있지 않은 단일 문자열이어야 합니다.
+
+```dotenv
+AUTH_MODE=oidc
+OIDC_ISSUER_URL=https://identity.example.com
+OIDC_CLIENT_ID=kelpie-control
+OIDC_CLIENT_SECRET=<secret manager에서 주입>
+OIDC_REDIRECT_URI=https://control.example.com/auth/callback
+OIDC_ORGANIZATION_CLAIM=organization
+OIDC_SCOPES=openid,profile
+OIDC_ALLOWED_ALGORITHMS=RS256
+DASHBOARD_URL=https://control.example.com
+```
+
+Issuer, Redirect URI, 발견된 Authorization·Token·JWKS Endpoint는 HTTPS여야 합니다. 발견 문서의 Issuer는 설정값과 정확히 일치해야 하며, ID Token의 Signature, 허용 Algorithm, Audience, Expiry, Issued-at, Nonce, Authorized Party와 Organization Claim을 검증합니다. 허용 Algorithm에는 `none`이나 대칭 `HS*`를 지정할 수 없습니다.
+
+로그인 시작은 `/auth/login`이며 `state`, `nonce`, PKCE Verifier는 5분짜리 일회성 DB Record로 관리합니다. 인증 완료 후 Browser에는 무작위 불투명 Token만 `Secure`, `HttpOnly`, `SameSite=Strict` Cookie로 전달하고 DB에는 SHA-256 Hash만 저장합니다. 기본 Session 수명은 8시간과 ID Token 만료 시점 중 이른 값입니다. `/auth/logout`은 서버 Session과 Cookie를 함께 제거합니다.
+
+`trusted_headers` 인증 Mode는 제거되었습니다. `X-Kelpie-User`와 `X-Kelpie-Role`은 인증에 사용되지 않습니다. `development` Mode도 요청 Header를 무시하고 `DEVELOPMENT_SUBJECT`와 `DEVELOPMENT_ORGANIZATION`의 고정된 관리자 신원만 사용하므로 외부에 공개하지 않습니다.
+
+현재 OIDC 신원은 후속 저장소 권한 Batch가 적용되기 전까지 Viewer로 처리되며 승인을 수행할 수 없습니다. Preview Gateway 역시 OIDC 범위 Preview Grant가 구현되기 전까지 기본 `disabled` 상태로 503을 반환합니다. `KELPIE_GATEWAY_AUTH_MODE=development`는 격리된 로컬 Demo에서만 사용합니다.
+
 ## 관측성 및 Correlation
 
 API는 모든 응답에 UUID 형식의 `X-Request-ID`와 `X-Kelpie-Correlation-ID`를 반환합니다. 유효한 UUID로 들어온 Header는 유지하고 잘못된 값은 새 ID로 교체합니다. 최초 요청에서 정한 Correlation ID는 Work Item과 Event에 영속화되고 Worker, VM Runner, Web 피드백, Slack 상태 Metadata, Background Delivery까지 전달됩니다. 이 값은 추적 전용이며 인증이나 권한 결정에 사용하지 않습니다.
@@ -64,10 +92,10 @@ PEM 파일은 API 사용자만 읽을 수 있도록 설정한 경로에 Mount합
 
 ## 운영 제어 플랫폼
 
-- API와 대시보드를 OIDC 인식 Reverse Proxy 뒤에 배치합니다. `AUTH_MODE=trusted_headers`를 설정하고 Client가 신원 Header를 위조할 수 없도록 API 직접 네트워크 접근을 차단합니다.
+- API와 대시보드를 같은 HTTPS 공개 Origin으로 제공하고 `AUTH_MODE=oidc`를 사용합니다. Reverse Proxy는 신원 Header를 만들지 않으며 내부 API 주소에 대한 직접 네트워크 접근을 차단합니다.
 - 관리형 PostgreSQL 또는 시점 복구를 지원하는 암호화 Volume을 사용합니다. API Rollout 전에 Alembic Migration을 실행하고 `/readyz`가 성공하는지 확인합니다.
 - Worker, GitHub, Slack, Object Store, DNS, OIDC 자격증명을 Secret Manager에 보관합니다. Compose 파일이나 작업 VM Image에는 넣지 않습니다.
-- 전용 Preview Gateway에서 Wildcard TLS를 종료하고, 작업 대상을 해석하기 전에 사용자 인증을 요구합니다.
+- 범위가 제한된 OIDC Preview Grant가 구현되기 전에는 Preview Gateway를 외부에 공개하지 않습니다. 이후 전용 Gateway에서 Wildcard TLS를 종료하고 작업 대상을 해석하기 전에 Grant를 검증해야 합니다.
 - `PREVIEW_ALLOWED_CIDRS`에는 전용 WireGuard/libvirt VM Subnet만 지정합니다. 제어 플랫폼, Metadata, 일반 사설 서비스 네트워크를 포함하지 않습니다.
 - 작업 VM은 24시간, 검증 자료는 30일 보관하는 것을 기본값으로 사용합니다. 예약된 정리 작업은 활성 작업이 아님을 확인한 뒤 명시적인 UUID 이름의 Volume만 삭제해야 합니다.
 

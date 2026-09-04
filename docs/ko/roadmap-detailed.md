@@ -29,6 +29,8 @@
 
 ### IAM-001 · OIDC 신원 및 저장소 권한 — L
 
+상태: 첫 인증 Batch 구현 완료 (2026-09-04). Authorization Code + PKCE, OIDC ID Token 검증, 일회성 Nonce와 불투명 Session, 공개 신원 Header 제거를 포함합니다. 조직·저장소 권한 모델과 변경 불가능한 감사 기록은 남아 있습니다.
+
 범위:
 
 - Issuer, Audience, Signature, Expiry, Nonce, Organization Claim을 검증합니다.
