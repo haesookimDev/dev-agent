@@ -51,6 +51,8 @@ Done when a single Worker can be revoked without rotating every Worker and no se
 
 ### OBS-001 · Observability and correlation — M
 
+Status: first batch implemented (2026-09-04), including end-to-end correlation IDs, baseline OpenTelemetry traces, Prometheus metrics, and structured logs. External dependency readiness, alerts, and dashboards remain.
+
 Scope:
 
 - Propagate a correlation ID through webhook, work item, claim, VM, Codex turn, artifact, notification, and delivery.
@@ -218,7 +220,7 @@ Maintain adversarial scenarios for prompt injection, poisoned repositories, mali
 Create the first batch as separate issues in this dependency order:
 
 1. `MIG-001` database migrations.
-2. `OBS-001` correlation IDs and baseline metrics.
+2. **Completed:** `OBS-001` correlation IDs and baseline metrics.
 3. `IAM-001` OIDC and authorization model.
 4. `SEC-001` per-Worker credentials and secret provider.
 5. `IMG-001` reproducible VM image.

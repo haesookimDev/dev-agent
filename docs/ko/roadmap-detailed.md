@@ -51,6 +51,8 @@
 
 ### OBS-001 · Observability 및 Correlation — M
 
+상태: 첫 Batch 구현 완료 (2026-09-04). 전 구간 Correlation ID, 기본 OpenTelemetry Trace, Prometheus Metric, 구조화 Log를 포함합니다. 외부 의존성 Readiness, Alert, Dashboard는 남아 있습니다.
+
 범위:
 
 - Webhook, Work Item, Claim, VM, Codex Turn, Artifact, Notification, Delivery 전체에 Correlation ID를 전달합니다.
@@ -218,7 +220,7 @@ Prompt Injection, 오염된 Repository, 악성 Test, 유출 시도, 자기 승�
 다음 의존성 순서로 첫 번째 Batch를 별도 Issue로 만듭니다.
 
 1. `MIG-001` Database Migration
-2. `OBS-001` Correlation ID 및 기본 Metric
+2. **완료:** `OBS-001` Correlation ID 및 기본 Metric
 3. `IAM-001` OIDC 및 권한 모델
 4. `SEC-001` Worker별 자격증명 및 Secret Provider
 5. `IMG-001` 재현 가능한 VM Image

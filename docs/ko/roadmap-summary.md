@@ -25,7 +25,7 @@
 1. **완료:** `create_all`을 Alembic으로 교체하고 Upgrade/Downgrade를 테스트합니다.
 2. OIDC 인증, 조직·저장소 권한, 변경 불가능한 승인 감사 기록을 추가합니다.
 3. Secret을 운영 Secret Provider로 옮기고 Worker 자격증명을 독립적으로 교체할 수 있게 합니다.
-4. OpenTelemetry Trace, Prometheus Metric, 구조화된 Correlation ID, 보존 기간 정리 작업을 추가합니다.
+4. **부분 완료:** OpenTelemetry Trace, Prometheus Metric, 구조화된 Correlation ID를 추가했습니다. 외부 의존성 Readiness·Alert와 보존 기간 정리 작업은 남아 있습니다.
 5. Version이 고정된 Ubuntu Desktop Golden Image 하나를 만들고 실제 libvirt 실행을 완료합니다.
 6. WireGuard Preview Routing을 구축하고 Gateway 경계에서 noVNC 읽기 전용·입력 소유권을 강제합니다.
 7. 브라우저를 사용하는 작업 2개를 동시에 실행해 Display, 입력, Network, Disk, 자격증명이 서로 격리됨을 증명합니다.

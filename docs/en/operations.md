@@ -25,6 +25,31 @@ A database created by runtime `create_all` before migrations were introduced is 
 
 Downgrading below the current baseline is explicitly blocked because it would delete all data. Before rolling back a future revision, back up PostgreSQL and the object store, then run `alembic downgrade <revision>` only within the safe range documented by that revision. Recover incidents that require returning below the baseline by restoring a verified backup into a new database.
 
+Revision `20260904_0002` backfills existing work items and events by using the work-item ID as their correlation ID. Downgrading to `20260904_0001` removes only the new correlation columns and indexes and retains existing work data. Deploy an older API version that does not require the correlation fields after that downgrade.
+
+## Observability and correlation
+
+The API returns UUID-formatted `X-Request-ID` and `X-Kelpie-Correlation-ID` headers on every response. Valid incoming UUID values are preserved; invalid values are replaced. The correlation ID selected on the initial request is persisted on the work item and events and propagated through the worker, VM runner, web feedback, Slack status metadata, and background delivery. It is used only for tracing, never for authentication or authorization.
+
+Prometheus can scrape the following low-cardinality metrics from `GET /metrics`:
+
+- HTTP request count and duration by method, route template, and status
+- Worker claim outcomes and queue latency
+- Work-state transition count and duration in each state
+- Approval decisions, initial and retried delivery attempts, and delivery outcomes
+
+Work IDs, repository names, users, and correlation IDs are never metric labels. Do not expose `/metrics` publicly; restrict it to the internal Prometheus network with a reverse proxy or network policy.
+
+Logs use JSON by default and every request log includes the request and correlation IDs. Set the full trace ingestion URL when using an OTLP HTTP collector.
+
+```dotenv
+LOG_FORMAT=json
+OTEL_SERVICE_NAME=kelpie-api
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+```
+
+When the OTLP endpoint is empty, application spans are not exported, while Prometheus metrics and structured logs remain available. External object-store, SCM, and delivery-worker readiness, alert rules, and dashboards remain follow-up OBS-001 scope.
+
 ## GitHub App delivery
 
 Create and install a GitHub App with repository metadata read access and Issues, Contents, and Pull requests read/write access. Configure its webhook URL as `https://<control-host>/webhooks/github`, subscribe to Issues events, and use the same random value for the App webhook secret and `GITHUB_WEBHOOK_SECRET`. Then expose these only to the API process:

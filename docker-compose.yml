@@ -43,6 +43,9 @@ services:
       GITHUB_WEBHOOK_SECRET: development-webhook-secret
       CORS_ORIGINS: http://localhost:3000
       ARTIFACT_ROOT: /var/lib/kelpie/artifacts
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-kelpie-api}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
     ports:
       - "8000:8000"
     volumes:

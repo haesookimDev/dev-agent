@@ -25,7 +25,7 @@ The next release should contain only P0 and the smallest P1 end-to-end path:
 1. **Completed:** Replace `create_all` with Alembic and test upgrade/downgrade paths.
 2. Add OIDC authentication, organization/repository authorization, and immutable approval audit records.
 3. Move secrets to a production secret provider and rotate worker credentials independently.
-4. Add OpenTelemetry traces, Prometheus metrics, structured correlation IDs, and retention jobs.
+4. **Partially completed:** OpenTelemetry traces, Prometheus metrics, and structured correlation IDs are implemented. External dependency readiness, alerts, and retention jobs remain.
 5. Build one pinned Ubuntu desktop golden image and complete a real libvirt run.
 6. Establish WireGuard preview routing and enforce noVNC read-only/input ownership at the gateway boundary.
 7. Run two browser-using jobs concurrently and prove that display, input, network, disk, and credentials remain isolated.

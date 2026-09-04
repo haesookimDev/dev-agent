@@ -25,6 +25,31 @@ Migration 도입 전에 `create_all`로 만든 Database는 현재 Table과 Colum
 
 현재 Baseline 아래로의 Downgrade는 모든 데이터를 삭제하므로 명시적으로 차단됩니다. 향후 Revision을 Rollback할 때는 먼저 PostgreSQL과 Object Store Backup을 만들고 해당 Revision이 문서화한 안전 범위 안에서만 `alembic downgrade <revision>`을 실행합니다. Baseline으로 되돌려야 하는 장애는 새 Database에 검증된 Backup을 복원해 복구합니다.
 
+`20260904_0002`는 기존 Work Item ID를 Correlation ID로 사용해 기존 Work Item과 Event를 역채움합니다. `20260904_0001`로 Downgrade하면 새 Correlation Column과 Index만 제거하고 기존 작업 데이터는 유지합니다. Downgrade 후에는 Correlation 필드를 요구하지 않는 이전 API Version을 함께 배포해야 합니다.
+
+## 관측성 및 Correlation
+
+API는 모든 응답에 UUID 형식의 `X-Request-ID`와 `X-Kelpie-Correlation-ID`를 반환합니다. 유효한 UUID로 들어온 Header는 유지하고 잘못된 값은 새 ID로 교체합니다. 최초 요청에서 정한 Correlation ID는 Work Item과 Event에 영속화되고 Worker, VM Runner, Web 피드백, Slack 상태 Metadata, Background Delivery까지 전달됩니다. 이 값은 추적 전용이며 인증이나 권한 결정에 사용하지 않습니다.
+
+Prometheus는 `GET /metrics`에서 다음과 같은 저카디널리티 Metric을 수집할 수 있습니다.
+
+- HTTP 요청 수와 응답 시간: Method, Route Template, Status
+- Worker Claim 결과와 Queue 대기 시간
+- 작업 상태 전이 횟수와 각 상태 체류 시간
+- 승인 결정, Delivery 최초 시도·재시도, 성공·실패
+
+작업 ID, 저장소 이름, 사용자, Correlation ID는 Metric Label에 포함하지 않습니다. `/metrics`는 외부에 공개하지 말고 내부 Prometheus Network에서만 접근할 수 있게 Reverse Proxy 또는 Network Policy로 제한합니다.
+
+기본 Log 형식은 JSON이며 모든 요청 Log에 Request ID와 Correlation ID가 포함됩니다. OTLP HTTP Collector를 사용할 때는 Trace 수집 URL 전체를 설정합니다.
+
+```dotenv
+LOG_FORMAT=json
+OTEL_SERVICE_NAME=kelpie-api
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+```
+
+OTLP Endpoint를 비워 두면 Application Span은 외부로 전송하지 않지만 Prometheus Metric과 구조화 Log는 계속 제공됩니다. 외부 Object Store·SCM·Delivery Worker Readiness, Alert 기준, Dashboard는 OBS-001의 후속 범위입니다.
+
 ## GitHub App 전달
 
 저장소 Metadata 읽기와 Issues, Contents, Pull requests 읽기·쓰기 권한을 가진 GitHub App을 만들고 설치합니다. Webhook URL을 `https://<control-host>/webhooks/github`으로 설정하고 Issues Event를 구독합니다. App Webhook Secret과 `GITHUB_WEBHOOK_SECRET`에는 같은 무작위 값을 사용합니다. 다음 값은 API 프로세스에만 제공합니다.
