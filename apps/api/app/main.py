@@ -1,0 +1,1109 @@
+import asyncio
+import hashlib
+import hmac
+import ipaddress
+import json
+import os
+import uuid
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Annotated
+from urllib.parse import parse_qs, urlsplit
+
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .auth import Actor, current_actor, require_approver, require_worker
+from .config import Settings, get_settings
+from .db import SessionLocal, create_schema, get_session
+from .delivery import deliver_work, resume_pending_deliveries
+from .integrations.github import GitHubAppClient
+from .integrations.slack import SlackNotifier, verify_signature
+from .models import (
+    AgentEvent,
+    Approval,
+    Artifact,
+    ConsoleLease,
+    DeliveryBundle,
+    DeliveryJob,
+    Feedback,
+    PreviewEndpoint,
+    WebhookDelivery,
+    WorkerHost,
+    WorkItem,
+    WorkSource,
+    WorkStatus,
+    utcnow,
+)
+from .schemas import (
+    ApprovalCreate,
+    ArtifactCreate,
+    ArtifactView,
+    ClaimRequest,
+    ClaimResponse,
+    ConsoleLeaseRequest,
+    ConsoleLeaseView,
+    EventCreate,
+    EventView,
+    FeedbackCreate,
+    PreviewCreate,
+    PreviewView,
+    TransitionRequest,
+    WorkerHeartbeat,
+    WorkerRegistration,
+    WorkerView,
+    WorkItemCreate,
+    WorkItemView,
+)
+from .service import (
+    claim_next_work,
+    create_work_item,
+    emit_event,
+    transition_work_item,
+    validate_lease,
+)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await create_schema()
+    await resume_pending_deliveries()
+    yield
+
+
+app = FastAPI(title="Kelpie Control Plane", version="0.1.0", lifespan=lifespan)
+settings = get_settings()
+slack = SlackNotifier(settings)
+github = GitHubAppClient(settings)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+ActorDep = Annotated[Actor, Depends(current_actor)]
+
+
+async def get_work_item(
+    session: AsyncSession, work_item_id: str, *, lock: bool = False
+) -> WorkItem:
+    statement = select(WorkItem).where(WorkItem.id == work_item_id)
+    if lock:
+        statement = statement.with_for_update()
+    item = (await session.execute(statement)).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "work item not found")
+    return item
+
+
+async def validate_delivery_ready(session: AsyncSession, item: WorkItem) -> bool:
+    """Return whether central GitHub delivery is required for this run."""
+    worker = (
+        await session.get(WorkerHost, item.assigned_worker_id)
+        if item.assigned_worker_id
+        else None
+    )
+    if worker is not None and worker.labels.get("virtualization") == "mock":
+        return False
+    if await session.get(DeliveryBundle, item.id) is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "the runner has not uploaded a verified delivery bundle",
+        )
+    if not item.github_installation_id or not github.configured:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "GitHub App installation is not configured for this repository",
+        )
+    return True
+
+
+async def queue_delivery(session: AsyncSession, item: WorkItem) -> None:
+    job = await session.get(DeliveryJob, item.id)
+    if job is None:
+        session.add(DeliveryJob(work_item_id=item.id, state="pending"))
+        return
+    if job.state != "completed":
+        job.state = "retry"
+        job.error = None
+
+
+def write_delivery_bundle(root: str, work_item_id: str, content: bytes) -> Path:
+    directory = Path(root) / work_item_id
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / "delivery.patch"
+    temporary = directory / f"delivery.patch.{os.getpid()}.{os.urandom(8).hex()}.tmp"
+    temporary.write_bytes(content)
+    os.replace(temporary, destination)
+    return destination
+
+
+def read_delivery_bundle(root: str, object_path: str) -> bytes | None:
+    artifact_root = Path(root).resolve()
+    path = Path(object_path).resolve()
+    if not path.is_relative_to(artifact_root) or not path.is_file():
+        return None
+    return path.read_bytes()
+
+
+def write_artifact_content(root: str, object_key: str, content: bytes) -> Path:
+    destination = Path(root) / object_key
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(
+        f"{destination.name}.{os.getpid()}.{os.urandom(8).hex()}.tmp"
+    )
+    temporary.write_bytes(content)
+    os.replace(temporary, destination)
+    return destination
+
+
+def read_artifact_content(root: str, object_key: str) -> bytes | None:
+    artifact_root = Path(root).resolve()
+    path = (artifact_root / object_key).resolve()
+    if not path.is_relative_to(artifact_root) or not path.is_file():
+        return None
+    return path.read_bytes()
+
+
+def ensure_allowed_preview_target(target_url: str, allowed_cidrs: list[str]) -> None:
+    hostname = urlsplit(target_url).hostname
+    try:
+        address = ipaddress.ip_address(hostname or "")
+        networks = [ipaddress.ip_network(cidr, strict=False) for cidr in allowed_cidrs]
+    except ValueError as error:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "preview target must use a literal IP in an allowed VM network",
+        ) from error
+    if not any(address in network for network in networks):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "preview target is outside the allowed VM networks",
+        )
+
+
+def validate_artifact_content(content_type: str, content: bytes) -> None:
+    valid = True
+    if content_type == "image/png":
+        valid = content.startswith(b"\x89PNG\r\n\x1a\n")
+    elif content_type == "image/jpeg":
+        valid = content.startswith(b"\xff\xd8\xff")
+    elif content_type == "image/webp":
+        valid = len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    elif content_type == "application/json":
+        try:
+            json.loads(content)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            valid = False
+    elif content_type == "text/plain":
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            valid = False
+    if not valid:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "artifact content does not match its declared type",
+        )
+
+
+@app.get("/healthz")
+async def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/api/work-items", response_model=WorkItemView, status_code=status.HTTP_201_CREATED)
+async def submit_work(payload: WorkItemCreate, session: SessionDep, actor: ActorDep) -> WorkItem:
+    installation_id = await github.installation_for_repository(payload.repository)
+    item = await create_work_item(
+        session,
+        payload,
+        source=WorkSource.WEB,
+        requested_by=actor.subject,
+        github_installation_id=installation_id,
+    )
+    await session.commit()
+    return item
+
+
+@app.get("/api/work-items", response_model=list[WorkItemView])
+async def list_work_items(
+    session: SessionDep,
+    _: ActorDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[WorkItem]:
+    statement = select(WorkItem).order_by(WorkItem.created_at.desc()).limit(limit)
+    return list((await session.scalars(statement)).all())
+
+
+@app.get("/api/work-items/{work_item_id}", response_model=WorkItemView)
+async def read_work_item(work_item_id: str, session: SessionDep, _: ActorDep) -> WorkItem:
+    return await get_work_item(session, work_item_id)
+
+
+@app.get("/api/work-items/{work_item_id}/event-log", response_model=list[EventView])
+async def event_log(
+    work_item_id: str,
+    session: SessionDep,
+    _: ActorDep,
+    after: Annotated[int, Query(ge=0)] = 0,
+) -> list[AgentEvent]:
+    await get_work_item(session, work_item_id)
+    statement = (
+        select(AgentEvent)
+        .where(AgentEvent.work_item_id == work_item_id, AgentEvent.id > after)
+        .order_by(AgentEvent.id)
+        .limit(1000)
+    )
+    return list((await session.scalars(statement)).all())
+
+
+@app.get("/api/work-items/{work_item_id}/events")
+async def stream_events(
+    work_item_id: str,
+    session: SessionDep,
+    _: ActorDep,
+    after: Annotated[int, Query(ge=0)] = 0,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    await get_work_item(session, work_item_id)
+    cursor = max(after, int(last_event_id or 0))
+
+    async def generate():
+        nonlocal cursor
+        idle_ticks = 0
+        while True:
+            async with SessionLocal() as event_session:
+                statement = (
+                    select(AgentEvent)
+                    .where(AgentEvent.work_item_id == work_item_id, AgentEvent.id > cursor)
+                    .order_by(AgentEvent.id)
+                    .limit(100)
+                )
+                events = list((await event_session.scalars(statement)).all())
+            if events:
+                idle_ticks = 0
+                for event in events:
+                    cursor = event.id
+                    data = EventView.model_validate(event).model_dump_json()
+                    yield f"id: {event.id}\ndata: {data}\n\n"
+            else:
+                idle_ticks += 1
+                if idle_ticks >= 15:
+                    yield ": keepalive\n\n"
+                    idle_ticks = 0
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+    )
+
+
+@app.post("/api/work-items/{work_item_id}/feedback", response_model=WorkItemView)
+async def add_feedback(
+    work_item_id: str,
+    payload: FeedbackCreate,
+    session: SessionDep,
+    actor: ActorDep,
+) -> WorkItem:
+    item = await get_work_item(session, work_item_id, lock=True)
+    session.add(
+        Feedback(
+            work_item_id=work_item_id,
+            actor=actor.subject,
+            channel=payload.channel,
+            message=payload.message,
+        )
+    )
+    await emit_event(
+        session,
+        work_item_id,
+        EventCreate(
+            event_type="feedback.received",
+            source=actor.subject,
+            message=payload.message,
+            payload={"channel": payload.channel},
+        ),
+    )
+    if item.status in {
+        WorkStatus.AWAITING_FEEDBACK,
+        WorkStatus.AWAITING_APPROVAL,
+        WorkStatus.AWAITING_INPUT,
+    }:
+        await transition_work_item(
+            session,
+            item,
+            WorkStatus.IMPLEMENTING,
+            expected_version=item.version,
+            actor=actor.subject,
+            message="Feedback received; resuming implementation",
+        )
+    await session.commit()
+    return item
+
+
+@app.post("/api/work-items/{work_item_id}/approvals", response_model=WorkItemView)
+async def decide_approval(
+    work_item_id: str,
+    payload: ApprovalCreate,
+    session: SessionDep,
+    actor: Annotated[Actor, Depends(require_approver)],
+    background_tasks: BackgroundTasks,
+) -> WorkItem:
+    item = await get_work_item(session, work_item_id, lock=True)
+    target: WorkStatus | None = None
+    should_deliver = False
+    if payload.kind == "pull_request":
+        if item.status != WorkStatus.AWAITING_APPROVAL:
+            raise HTTPException(status.HTTP_409_CONFLICT, "work is not awaiting PR approval")
+        if payload.decision == "approve":
+            should_deliver = await validate_delivery_ready(session, item)
+            target = WorkStatus.COMMITTING
+        else:
+            target = WorkStatus.IMPLEMENTING
+    elif payload.kind == "budget":
+        if item.status != WorkStatus.BUDGET_EXHAUSTED:
+            raise HTTPException(status.HTTP_409_CONFLICT, "work has not exhausted its budget")
+        if payload.decision == "approve":
+            extension = int(payload.payload.get("minutes", 60))
+            if extension < 15 or extension > 24 * 60:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid budget extension"
+                )
+            item.budget_minutes += extension
+            target = WorkStatus.IMPLEMENTING
+    session.add(
+        Approval(
+            work_item_id=work_item_id,
+            kind=payload.kind,
+            decision=payload.decision,
+            actor=actor.subject,
+            payload=payload.payload,
+        )
+    )
+    await emit_event(
+        session,
+        work_item_id,
+        EventCreate(
+            event_type="approval.decided",
+            source=actor.subject,
+            message=f"{payload.kind}: {payload.decision}",
+            payload=payload.model_dump(),
+        ),
+    )
+    if target is not None:
+        await transition_work_item(
+            session,
+            item,
+            target,
+            expected_version=item.version,
+            actor=actor.subject,
+        )
+    if should_deliver:
+        await queue_delivery(session, item)
+    await session.commit()
+    if should_deliver:
+        background_tasks.add_task(deliver_work, item.id)
+    if item.status in {WorkStatus.COMMITTING, WorkStatus.IMPLEMENTING}:
+        background_tasks.add_task(slack.post_status, item)
+    return item
+
+
+@app.post("/webhooks/github")
+async def github_webhook(
+    request: Request,
+    session: SessionDep,
+    github_event: Annotated[str | None, Header(alias="X-GitHub-Event")] = None,
+    delivery_id: Annotated[str | None, Header(alias="X-GitHub-Delivery")] = None,
+    signature: Annotated[str | None, Header(alias="X-Hub-Signature-256")] = None,
+) -> Response:
+    body = await request.body()
+    expected = (
+        "sha256="
+        + hmac.new(settings.github_webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+    )
+    if not signature or not hmac.compare_digest(signature, expected):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid webhook signature")
+    if not github_event or not delivery_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "missing GitHub headers")
+    if await session.get(WebhookDelivery, delivery_id):
+        return Response(status_code=status.HTTP_200_OK)
+    session.add(WebhookDelivery(delivery_id=delivery_id, event_name=github_event))
+    payload = json.loads(body)
+    issue = payload.get("issue", {})
+    labels = {label.get("name") for label in issue.get("labels", [])}
+    eligible = github_event == "issues" and payload.get("action") in {"opened", "labeled"}
+    if not eligible or settings.agent_trigger_label not in labels:
+        await session.commit()
+        return Response(status_code=status.HTTP_202_ACCEPTED)
+    repository = payload.get("repository", {}).get("full_name", "")
+    number = issue.get("number")
+    if not repository or not number:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid issue payload")
+    source_id = f"github:{repository}:{number}"
+    existing = (
+        await session.execute(select(WorkItem).where(WorkItem.source_external_id == source_id))
+    ).scalar_one_or_none()
+    if existing is None:
+        work_payload = WorkItemCreate(
+            title=issue.get("title") or f"Issue #{number}",
+            requirement=issue.get("body") or issue.get("title") or "Implement the issue",
+            repository=repository,
+        )
+        await create_work_item(
+            session,
+            work_payload,
+            source=WorkSource.GITHUB,
+            requested_by=issue.get("user", {}).get("login", "github"),
+            source_external_id=source_id,
+            github_installation_id=payload.get("installation", {}).get("id"),
+            github_issue_number=number,
+        )
+    await session.commit()
+    return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+@app.post("/api/workers/register", response_model=WorkerView)
+async def register_worker(
+    payload: WorkerRegistration,
+    session: SessionDep,
+    _: Annotated[None, Depends(require_worker)],
+) -> WorkerHost:
+    worker = (
+        await session.execute(select(WorkerHost).where(WorkerHost.name == payload.name))
+    ).scalar_one_or_none()
+    if worker is None:
+        worker = WorkerHost(
+            **payload.model_dump(),
+            cpu_available=payload.cpu_total,
+            memory_mb_available=payload.memory_mb_total,
+        )
+        session.add(worker)
+    else:
+        worker.cpu_total = payload.cpu_total
+        worker.memory_mb_total = payload.memory_mb_total
+        worker.disk_gb_available = payload.disk_gb_available
+        worker.labels = payload.labels
+        worker.last_seen_at = utcnow()
+    await session.commit()
+    return worker
+
+
+@app.post("/api/workers/{worker_id}/heartbeat", response_model=WorkerView)
+async def worker_heartbeat(
+    worker_id: str,
+    payload: WorkerHeartbeat,
+    session: SessionDep,
+    _: Annotated[None, Depends(require_worker)],
+) -> WorkerHost:
+    worker = await session.get(WorkerHost, worker_id)
+    if worker is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "worker not found")
+    for name, value in payload.model_dump().items():
+        setattr(worker, name, value)
+    worker.last_seen_at = utcnow()
+    await session.commit()
+    return worker
+
+
+@app.post("/api/workers/{worker_id}/claim", response_model=ClaimResponse | None)
+async def claim_work(
+    worker_id: str,
+    payload: ClaimRequest,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    _: Annotated[None, Depends(require_worker)],
+) -> ClaimResponse | None:
+    worker = await session.get(WorkerHost, worker_id)
+    if worker is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "worker not found")
+    result = await claim_next_work(session, worker, payload, config.lease_seconds)
+    await session.commit()
+    if result is None:
+        return None
+    item, token, lease = result
+    return ClaimResponse(work_item=item, lease_token=token, lease_expires_at=lease.expires_at)
+
+
+@app.post("/api/runs/{work_item_id}/events", response_model=EventView)
+async def ingest_worker_event(
+    work_item_id: str,
+    payload: EventCreate,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> AgentEvent:
+    await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    await get_work_item(session, work_item_id)
+    event = await emit_event(session, work_item_id, payload)
+    await session.commit()
+    return event
+
+
+@app.post("/api/runs/{work_item_id}/transition", response_model=WorkItemView)
+async def worker_transition(
+    work_item_id: str,
+    payload: TransitionRequest,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    background_tasks: BackgroundTasks,
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> WorkItem:
+    lease = await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    item = await get_work_item(session, work_item_id, lock=True)
+    await transition_work_item(
+        session,
+        item,
+        payload.status,
+        expected_version=payload.expected_version,
+        actor=f"worker:{lease.worker_id}",
+        message=payload.message,
+        payload=payload.payload,
+    )
+    await session.commit()
+    if item.status in {
+        WorkStatus.AWAITING_APPROVAL,
+        WorkStatus.BUDGET_EXHAUSTED,
+        WorkStatus.FAILED,
+        WorkStatus.COMPLETED,
+    }:
+        background_tasks.add_task(slack.post_status, item)
+    return item
+
+
+@app.post("/webhooks/slack/commands")
+async def slack_command(
+    request: Request,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    timestamp: Annotated[str | None, Header(alias="X-Slack-Request-Timestamp")] = None,
+    signature: Annotated[str | None, Header(alias="X-Slack-Signature")] = None,
+) -> dict:
+    body = await request.body()
+    verify_signature(body, timestamp, signature, settings.slack_signing_secret)
+    form = {key: values[0] for key, values in parse_qs(body.decode()).items()}
+    user_id = form.get("user_id", "unknown")
+    parts = form.get("text", "").strip().split(maxsplit=2)
+    usage = "Usage: /kelpie feedback <work-id> <message> or /kelpie approve <work-id>"
+    if len(parts) < 2:
+        return {"response_type": "ephemeral", "text": usage}
+    action, work_item_id = parts[:2]
+    item = await get_work_item(session, work_item_id, lock=True)
+    actor = f"slack:{user_id}"
+    if action == "feedback" and len(parts) == 3:
+        message = parts[2]
+        session.add(
+            Feedback(
+                work_item_id=work_item_id,
+                actor=actor,
+                channel="slack",
+                message=message,
+            )
+        )
+        await emit_event(
+            session,
+            work_item_id,
+            EventCreate(
+                event_type="feedback.received",
+                source=actor,
+                message=message,
+                payload={"channel": "slack"},
+            ),
+        )
+        if item.status in {
+            WorkStatus.AWAITING_FEEDBACK,
+            WorkStatus.AWAITING_APPROVAL,
+            WorkStatus.AWAITING_INPUT,
+        }:
+            await transition_work_item(
+                session,
+                item,
+                WorkStatus.IMPLEMENTING,
+                expected_version=item.version,
+                actor=actor,
+                message="Slack feedback received; resuming implementation",
+            )
+        await session.commit()
+        return {"response_type": "ephemeral", "text": f"Feedback sent to {item.title}."}
+    if action == "approve":
+        if user_id not in settings.slack_approver_user_ids:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Slack user is not an approver")
+        if item.status != WorkStatus.AWAITING_APPROVAL:
+            raise HTTPException(status.HTTP_409_CONFLICT, "work is not awaiting approval")
+        should_deliver = await validate_delivery_ready(session, item)
+        session.add(
+            Approval(
+                work_item_id=work_item_id,
+                kind="pull_request",
+                decision="approve",
+                actor=actor,
+                payload={},
+            )
+        )
+        await transition_work_item(
+            session,
+            item,
+            WorkStatus.COMMITTING,
+            expected_version=item.version,
+            actor=actor,
+            message="Commit and pull request approved from Slack",
+        )
+        if should_deliver:
+            await queue_delivery(session, item)
+        await session.commit()
+        if should_deliver:
+            background_tasks.add_task(deliver_work, item.id)
+        return {"response_type": "ephemeral", "text": f"Approved {item.title}."}
+    return {"response_type": "ephemeral", "text": usage}
+
+
+@app.get("/api/runs/{work_item_id}", response_model=WorkItemView)
+async def lease_read_work(
+    work_item_id: str,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> WorkItem:
+    await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    item = await get_work_item(session, work_item_id)
+    await session.commit()
+    return item
+
+
+@app.get("/api/runs/{work_item_id}/commands")
+async def runner_commands(
+    work_item_id: str,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    after_feedback: Annotated[int, Query(ge=0)] = 0,
+    after_approval: Annotated[int, Query(ge=0)] = 0,
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> dict:
+    await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    item = await get_work_item(session, work_item_id)
+    feedback_statement = (
+        select(Feedback)
+        .where(Feedback.work_item_id == work_item_id, Feedback.id > after_feedback)
+        .order_by(Feedback.id)
+    )
+    approval_statement = (
+        select(Approval)
+        .where(Approval.work_item_id == work_item_id, Approval.id > after_approval)
+        .order_by(Approval.id)
+    )
+    feedback = list((await session.scalars(feedback_statement)).all())
+    approvals = list((await session.scalars(approval_statement)).all())
+    await session.commit()
+    return {
+        "status": item.status.value,
+        "version": item.version,
+        "feedback": [
+            {
+                "id": entry.id,
+                "actor": entry.actor,
+                "channel": entry.channel,
+                "message": entry.message,
+            }
+            for entry in feedback
+        ],
+        "approvals": [
+            {
+                "id": entry.id,
+                "actor": entry.actor,
+                "kind": entry.kind,
+                "decision": entry.decision,
+                "payload": entry.payload,
+            }
+            for entry in approvals
+        ],
+    }
+
+
+@app.post("/api/runs/{work_item_id}/release", status_code=status.HTTP_204_NO_CONTENT)
+async def release_run(
+    work_item_id: str,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> Response:
+    lease = await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    item = await get_work_item(session, work_item_id, lock=True)
+    if item.status not in {WorkStatus.COMPLETED, WorkStatus.FAILED, WorkStatus.CANCELLED}:
+        raise HTTPException(status.HTTP_409_CONFLICT, "only terminal work can release its lease")
+    worker = await session.get(WorkerHost, lease.worker_id)
+    if worker is not None:
+        worker.cpu_available = min(worker.cpu_total, worker.cpu_available + lease.cpu)
+        worker.memory_mb_available = min(
+            worker.memory_mb_total, worker.memory_mb_available + lease.memory_mb
+        )
+        worker.disk_gb_available += lease.disk_gb
+        worker.active_runs = max(0, worker.active_runs - 1)
+    lease.state = "released"
+    await emit_event(
+        session,
+        work_item_id,
+        EventCreate(event_type="lease.released", message="Worker resources released"),
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/runs/{work_item_id}/delivery-bundle", status_code=status.HTTP_201_CREATED)
+async def upload_delivery_bundle(
+    work_item_id: str,
+    request: Request,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> dict[str, str | int]:
+    await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    item = await get_work_item(session, work_item_id, lock=True)
+    if item.status not in {WorkStatus.VERIFYING, WorkStatus.AWAITING_APPROVAL}:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "delivery bundles are accepted only after implementation verification",
+        )
+    content_length = request.headers.get("content-length")
+    maximum_size = 20 * 1024 * 1024
+    if content_length:
+        try:
+            declared_size = int(content_length)
+        except ValueError as error:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "invalid content-length"
+            ) from error
+        if declared_size > maximum_size:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "bundle exceeds 20 MiB")
+    content = await request.body()
+    if not content:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "delivery bundle is empty")
+    if len(content) > maximum_size:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "bundle exceeds 20 MiB")
+    checksum = hashlib.sha256(content).hexdigest()
+    path = await asyncio.to_thread(
+        write_delivery_bundle, config.artifact_root, work_item_id, content
+    )
+    bundle = await session.get(DeliveryBundle, work_item_id)
+    if bundle is None:
+        bundle = DeliveryBundle(
+            work_item_id=work_item_id,
+            object_path=str(path),
+            sha256=checksum,
+            size_bytes=len(content),
+        )
+        session.add(bundle)
+    else:
+        bundle.object_path = str(path)
+        bundle.sha256 = checksum
+        bundle.size_bytes = len(content)
+    await emit_event(
+        session,
+        work_item_id,
+        EventCreate(
+            event_type="delivery.bundle_uploaded",
+            source="vm-runner",
+            message="Verified patch bundle uploaded",
+            payload={"sha256": checksum, "size_bytes": len(content)},
+        ),
+    )
+    await session.commit()
+    return {"sha256": checksum, "size_bytes": len(content)}
+
+
+@app.get("/api/work-items/{work_item_id}/delivery-bundle")
+async def download_delivery_bundle(
+    work_item_id: str,
+    session: SessionDep,
+    _: ActorDep,
+    config: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    await get_work_item(session, work_item_id)
+    bundle = await session.get(DeliveryBundle, work_item_id)
+    if bundle is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "delivery bundle not found")
+    content = await asyncio.to_thread(
+        read_delivery_bundle, config.artifact_root, bundle.object_path
+    )
+    if content is None:
+        raise HTTPException(status.HTTP_410_GONE, "delivery bundle is unavailable")
+    return Response(
+        content=content,
+        media_type="text/x-diff",
+        headers={"Content-Disposition": f'attachment; filename="{work_item_id}.patch"'},
+    )
+
+
+@app.post("/api/runs/{work_item_id}/artifacts", status_code=status.HTTP_201_CREATED)
+async def register_artifact(
+    work_item_id: str,
+    payload: ArtifactCreate,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> dict[str, str]:
+    await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    await get_work_item(session, work_item_id)
+    artifact = Artifact(work_item_id=work_item_id, **payload.model_dump())
+    session.add(artifact)
+    await emit_event(
+        session,
+        work_item_id,
+        EventCreate(
+            event_type="artifact.created",
+            message=payload.name,
+            payload={"artifact_id": artifact.id, "kind": payload.kind},
+        ),
+    )
+    await session.commit()
+    return {"id": artifact.id}
+
+
+@app.post("/api/runs/{work_item_id}/artifacts/upload", status_code=status.HTTP_201_CREATED)
+async def upload_artifact(
+    work_item_id: str,
+    request: Request,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    background_tasks: BackgroundTasks,
+    name: Annotated[str, Query(min_length=1, max_length=255)],
+    kind: Annotated[str, Query(min_length=1, max_length=64)] = "evidence",
+    content_type: Annotated[str, Query(min_length=1, max_length=128)] = "image/png",
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> ArtifactView:
+    await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    await get_work_item(session, work_item_id)
+    if Path(name).name != name or any(character in name for character in '"/\\\r\n'):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid artifact name")
+    allowed_types = {"image/png", "image/jpeg", "image/webp", "text/plain", "application/json"}
+    if content_type not in allowed_types:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "unsupported artifact type")
+    maximum_size = 10 * 1024 * 1024
+    declared = request.headers.get("content-length")
+    if declared and declared.isdecimal() and int(declared) > maximum_size:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "artifact exceeds 10 MiB")
+    content = await request.body()
+    if not content:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "artifact is empty")
+    if len(content) > maximum_size:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "artifact exceeds 10 MiB")
+    validate_artifact_content(content_type, content)
+    artifact_id = str(uuid.uuid4())
+    suffix = Path(name).suffix.lower()[:12]
+    object_key = f"{work_item_id}/artifacts/{artifact_id}{suffix}"
+    path = await asyncio.to_thread(
+        write_artifact_content, config.artifact_root, object_key, content
+    )
+    artifact = Artifact(
+        id=artifact_id,
+        work_item_id=work_item_id,
+        kind=kind,
+        name=name,
+        content_type=content_type,
+        object_key=object_key,
+        size_bytes=len(content),
+    )
+    session.add(artifact)
+    await emit_event(
+        session,
+        work_item_id,
+        EventCreate(
+            event_type="artifact.uploaded",
+            source="vm-runner",
+            message=name,
+            payload={"artifact_id": artifact_id, "kind": kind, "content_type": content_type},
+        ),
+    )
+    await session.commit()
+    if content_type.startswith("image/"):
+        background_tasks.add_task(slack.upload_image, path, f"{name} · {work_item_id[:8]}")
+    return ArtifactView.model_validate(artifact)
+
+
+@app.get("/api/work-items/{work_item_id}/artifacts", response_model=list[ArtifactView])
+async def list_artifacts(
+    work_item_id: str,
+    session: SessionDep,
+    _: ActorDep,
+) -> list[Artifact]:
+    await get_work_item(session, work_item_id)
+    statement = (
+        select(Artifact)
+        .where(Artifact.work_item_id == work_item_id)
+        .order_by(Artifact.created_at.desc())
+    )
+    return list((await session.scalars(statement)).all())
+
+
+@app.get("/api/work-items/{work_item_id}/artifacts/{artifact_id}")
+async def download_artifact(
+    work_item_id: str,
+    artifact_id: str,
+    session: SessionDep,
+    _: ActorDep,
+    config: Annotated[Settings, Depends(get_settings)],
+) -> Response:
+    artifact = await session.get(Artifact, artifact_id)
+    if artifact is None or artifact.work_item_id != work_item_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
+    content = await asyncio.to_thread(
+        read_artifact_content, config.artifact_root, artifact.object_key
+    )
+    if content is None:
+        raise HTTPException(status.HTTP_410_GONE, "artifact content is unavailable")
+    return Response(
+        content=content,
+        media_type=artifact.content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{artifact.name}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.post("/api/runs/{work_item_id}/preview", response_model=PreviewView)
+async def register_preview(
+    work_item_id: str,
+    payload: PreviewCreate,
+    session: SessionDep,
+    config: Annotated[Settings, Depends(get_settings)],
+    lease_token: Annotated[str | None, Header(alias="X-Kelpie-Lease")] = None,
+) -> PreviewEndpoint:
+    await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
+    await get_work_item(session, work_item_id)
+    ensure_allowed_preview_target(payload.target_url, config.preview_allowed_cidrs)
+    if payload.console_target_url:
+        ensure_allowed_preview_target(payload.console_target_url, config.preview_allowed_cidrs)
+    endpoint = (
+        await session.execute(
+            select(PreviewEndpoint).where(PreviewEndpoint.work_item_id == work_item_id)
+        )
+    ).scalar_one_or_none()
+    hostname = f"{work_item_id}.{config.preview_domain}"
+    expiry = datetime.now(UTC) + timedelta(seconds=payload.ttl_seconds)
+    if endpoint is None:
+        endpoint = PreviewEndpoint(
+            work_item_id=work_item_id,
+            hostname=hostname,
+            target_url=payload.target_url,
+            console_target_url=payload.console_target_url,
+            expires_at=expiry,
+        )
+        session.add(endpoint)
+    else:
+        endpoint.target_url = payload.target_url
+        endpoint.console_target_url = payload.console_target_url
+        endpoint.expires_at = expiry
+    console = await session.get(ConsoleLease, work_item_id)
+    if console is None:
+        session.add(
+            ConsoleLease(
+                work_item_id=work_item_id,
+                holder_type="agent",
+                holder="agent",
+                expires_at=expiry,
+            )
+        )
+    await emit_event(
+        session,
+        work_item_id,
+        EventCreate(
+            event_type="preview.registered",
+            message=f"Preview available at https://{hostname}",
+            payload={"hostname": hostname, "console": bool(payload.console_target_url)},
+        ),
+    )
+    await session.commit()
+    return endpoint
+
+
+@app.post("/api/work-items/{work_item_id}/console-lease", response_model=ConsoleLeaseView)
+async def console_lease(
+    work_item_id: str,
+    payload: ConsoleLeaseRequest,
+    session: SessionDep,
+    actor: ActorDep,
+) -> ConsoleLease:
+    await get_work_item(session, work_item_id)
+    lease = await session.get(ConsoleLease, work_item_id, with_for_update=True)
+    if lease is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "console is not registered")
+    if payload.expected_version is not None and lease.version != payload.expected_version:
+        raise HTTPException(status.HTTP_409_CONFLICT, "console lease version mismatch")
+    if payload.action == "acquire":
+        if lease.holder_type == "user" and lease.holder != actor.subject:
+            raise HTTPException(status.HTTP_409_CONFLICT, "console is held by another user")
+        lease.holder_type = "user"
+        lease.holder = actor.subject
+        message = "Agent UI input paused; console transferred to user"
+    else:
+        if lease.holder_type != "user" or lease.holder != actor.subject:
+            raise HTTPException(status.HTTP_409_CONFLICT, "actor does not hold the console")
+        lease.holder_type = "agent"
+        lease.holder = "agent"
+        message = "Console returned to agent"
+    lease.version += 1
+    lease.expires_at = datetime.now(UTC) + timedelta(minutes=15)
+    await emit_event(
+        session,
+        work_item_id,
+        EventCreate(
+            event_type="console.transferred",
+            source=actor.subject,
+            message=message,
+            payload={"holder_type": lease.holder_type, "holder": lease.holder},
+        ),
+    )
+    await session.commit()
+    return lease
+
+
+@app.get("/internal/previews/resolve")
+async def resolve_preview(
+    session: SessionDep,
+    _: Annotated[None, Depends(require_worker)],
+    host: str,
+    console: bool = False,
+) -> dict[str, str | bool]:
+    endpoint = (
+        await session.execute(
+            select(PreviewEndpoint).where(PreviewEndpoint.hostname == host.lower())
+        )
+    ).scalar_one_or_none()
+    if endpoint is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "preview not found")
+    expires_at = endpoint.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if expires_at < datetime.now(UTC):
+        raise HTTPException(status.HTTP_410_GONE, "preview expired")
+    target = endpoint.console_target_url if console else endpoint.target_url
+    if not target:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "console not available")
+    read_only = True
+    if console:
+        lease = await session.get(ConsoleLease, endpoint.work_item_id)
+        if lease is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "console lease is unavailable")
+        read_only = lease.holder_type != "user"
+    return {
+        "target_url": target,
+        "work_item_id": endpoint.work_item_id,
+        "read_only": read_only,
+    }

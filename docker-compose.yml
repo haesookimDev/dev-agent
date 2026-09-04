@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: kelpie
+      POSTGRES_USER: kelpie
+      POSTGRES_PASSWORD: kelpie
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kelpie"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: kelpie
+      MINIO_ROOT_PASSWORD: kelpie-development-only
+    ports:
+      - "9001:9001"
+    volumes:
+      - artifact-data:/data
+
+  api:
+    build: ./apps/api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://kelpie:kelpie@postgres:5432/kelpie
+      AUTH_MODE: development
+      WORKER_SHARED_SECRET: development-worker-secret-change-me
+      GITHUB_WEBHOOK_SECRET: development-webhook-secret
+      CORS_ORIGINS: http://localhost:3000
+      ARTIFACT_ROOT: /var/lib/kelpie/artifacts
+    ports:
+      - "8000:8000"
+    volumes:
+      - control-artifacts:/var/lib/kelpie/artifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build: ./apps/web
+    environment:
+      KELPIE_API_URL: http://api:8000
+      NEXT_PUBLIC_KELPIE_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  mock-worker:
+    profiles: ["demo"]
+    build: ./apps/worker
+    environment:
+      KELPIE_CONTROL_URL: http://api:8000
+      KELPIE_WORKER_TOKEN: development-worker-secret-change-me
+      KELPIE_WORKER_NAME: demo-worker
+      KELPIE_EXECUTOR: mock
+      KELPIE_POLL_SECONDS: 1
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  preview-gateway:
+    profiles: ["preview"]
+    build: ./apps/gateway
+    environment:
+      KELPIE_CONTROL_URL: http://api:8000
+      KELPIE_WORKER_TOKEN: development-worker-secret-change-me
+      KELPIE_GATEWAY_AUTH_MODE: development
+    ports:
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  artifact-data:
+  control-artifacts:

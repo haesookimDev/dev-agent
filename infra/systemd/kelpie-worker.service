@@ -1,0 +1,29 @@
+[Unit]
+Description=Kelpie KVM Worker
+After=network-online.target libvirtd.service wg-quick@kelpie.service
+Wants=network-online.target
+Requires=libvirtd.service
+
+[Service]
+Type=simple
+User=kelpie
+Group=kelpie
+SupplementaryGroups=libvirt kvm
+EnvironmentFile=/etc/kelpie/worker.env
+ExecStart=/usr/local/bin/kelpie-worker
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/kelpie
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
