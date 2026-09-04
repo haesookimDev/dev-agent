@@ -19,8 +19,11 @@ export function statusProgress(status: WorkStatus): number {
   const index = steps.indexOf(status);
   return index < 0 ? 0 : Math.round((index / (steps.length - 1)) * 100);
 }
-export function statusLabel(status: WorkStatus): string {
-  return status.replaceAll("_", " ");
+export function statusLabel(
+  status: WorkStatus,
+  labels?: Record<WorkStatus, string>,
+): string {
+  return labels?.[status] ?? status.replaceAll("_", " ");
 }
 
 export function isAttentionStatus(status: WorkStatus): boolean {
