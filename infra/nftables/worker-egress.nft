@@ -1,0 +1,11 @@
+table inet kelpie {
+  chain vm_forward {
+    type filter hook forward priority 0; policy accept;
+    ip daddr 10.0.0.0/8 drop
+    ip daddr 172.16.0.0/12 drop
+    ip daddr 192.168.0.0/16 drop
+    ip daddr 169.254.169.254 drop
+    ip6 daddr fc00::/7 drop
+    ct state established,related accept
+  }
+}
