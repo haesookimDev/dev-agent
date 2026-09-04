@@ -1,0 +1,15 @@
+[Unit]
+Description=Kelpie VM Agent Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kelpie
+WorkingDirectory=/workspace
+EnvironmentFile=/run/kelpie/assignment.env
+ExecStart=/usr/local/bin/kelpie-runner
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
