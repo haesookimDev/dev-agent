@@ -51,4 +51,4 @@ Runner는 만료 시간이 있는 Preview 대상과 선택적인 noVNC 대상을
 
 ## 현재 구현 경계
 
-현재 버티컬 슬라이스에는 GitHub 이슈·직접 요구사항 수집, 영속 오케스트레이션, Mock/libvirt 실행기 경계, Codex 실행, 독립 명령 검증, 실시간 관찰, Web/Slack 피드백, 통제된 GitHub 전달, Wildcard Preview Routing, Version이 있는 Database Migration이 포함됩니다. 운영 배포를 위해 조직 OIDC 연동, VM Preview용 WireGuard 경로, 강화된 noVNC 입력 필터, 자동 Golden Image Build, 보존 기간 Worker가 추가로 필요합니다. GitLab 전달과 자율 이슈 탐색은 이후 Provider Adapter로 개발합니다.
+현재 버티컬 슬라이스에는 GitHub 이슈·직접 요구사항 수집, 영속 오케스트레이션, Mock/libvirt 실행기 경계, Codex 실행, 독립 명령 검증, 실시간 관찰, Web/Slack 피드백, 통제된 GitHub 전달, Wildcard Preview Routing, Version이 있는 Database Migration, 작업 전 구간 Correlation ID, 기본 Trace·Metric·구조화 Log가 포함됩니다. 운영 배포를 위해 조직 OIDC 연동, 외부 의존성 Readiness와 Alert, VM Preview용 WireGuard 경로, 강화된 noVNC 입력 필터, 자동 Golden Image Build, 보존 기간 Worker가 추가로 필요합니다. GitLab 전달과 자율 이슈 탐색은 이후 Provider Adapter로 개발합니다.

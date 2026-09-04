@@ -7,7 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .auth import hash_token
+from .correlation import current_correlation_id
 from .models import AgentEvent, ResourceLease, WorkerHost, WorkItem, WorkSource, WorkStatus, utcnow
+from .observability import observe_claim, observe_transition
 from .schemas import ClaimRequest, EventCreate, WorkItemCreate
 from .state_machine import InvalidTransition, ensure_transition
 
@@ -17,7 +19,14 @@ async def emit_event(
     work_item_id: str,
     event: EventCreate,
 ) -> AgentEvent:
-    record = AgentEvent(work_item_id=work_item_id, **event.model_dump())
+    item = await session.get(WorkItem, work_item_id)
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "work item not found")
+    record = AgentEvent(
+        work_item_id=work_item_id,
+        correlation_id=item.correlation_id,
+        **event.model_dump(),
+    )
     session.add(record)
     await session.flush()
     return record
@@ -32,6 +41,7 @@ async def create_work_item(
     source_external_id: str | None = None,
     github_installation_id: int | None = None,
     github_issue_number: int | None = None,
+    correlation_id: str | None = None,
 ) -> WorkItem:
     item = WorkItem(
         **payload.model_dump(),
@@ -40,6 +50,7 @@ async def create_work_item(
         source_external_id=source_external_id,
         github_installation_id=github_installation_id,
         github_issue_number=github_issue_number,
+        correlation_id=correlation_id or current_correlation_id(),
     )
     session.add(item)
     try:
@@ -75,9 +86,13 @@ async def transition_work_item(
     except InvalidTransition as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
     previous = item.status
+    transitioned_at = utcnow()
+    previous_updated_at = item.updated_at
+    if previous_updated_at.tzinfo is None:
+        previous_updated_at = previous_updated_at.replace(tzinfo=UTC)
     item.status = target
     item.version += 1
-    item.updated_at = utcnow()
+    item.updated_at = transitioned_at
     await emit_event(
         session,
         item.id,
@@ -89,6 +104,11 @@ async def transition_work_item(
         ),
     )
     await session.flush()
+    observe_transition(
+        previous.value,
+        target.value,
+        (transitioned_at - previous_updated_at).total_seconds(),
+    )
     return item
 
 
@@ -103,6 +123,7 @@ async def claim_next_work(
         or worker.memory_mb_available < request.memory_mb
         or worker.disk_gb_available < request.disk_gb
     ):
+        observe_claim("insufficient_resources")
         return None
     statement = (
         select(WorkItem)
@@ -113,7 +134,12 @@ async def claim_next_work(
     )
     item = (await session.execute(statement)).scalar_one_or_none()
     if item is None:
+        observe_claim("empty")
         return None
+    created_at = item.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    observe_claim("claimed", queued_seconds=(datetime.now(UTC) - created_at).total_seconds())
     token = secrets.token_urlsafe(32)
     expiry = datetime.now(UTC) + timedelta(seconds=lease_seconds)
     item.assigned_worker_id = worker.id

@@ -4,12 +4,15 @@ import re
 import tempfile
 from pathlib import Path
 
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 from sqlalchemy import select
 
 from .config import get_settings
 from .db import SessionLocal
 from .integrations.github import GitHubAppClient
 from .models import DeliveryBundle, DeliveryJob, WorkItem, WorkStatus, utcnow
+from .observability import observe_delivery_attempt, observe_delivery_outcome, tracer
 from .schemas import EventCreate
 from .service import emit_event, transition_work_item
 
@@ -61,6 +64,16 @@ def prepare_delivery_workspace(
 
 async def deliver_work(work_item_id: str) -> None:
     async with SessionLocal() as session:
+        work = await session.get(WorkItem, work_item_id)
+    attributes = {"kelpie.work_id": work_item_id}
+    if work is not None:
+        attributes["kelpie.correlation_id"] = work.correlation_id
+    with tracer.start_as_current_span("delivery.run", attributes=attributes):
+        await _deliver_work(work_item_id)
+
+
+async def _deliver_work(work_item_id: str) -> None:
+    async with SessionLocal() as session:
         job = await session.get(DeliveryJob, work_item_id, with_for_update=True)
         work = await session.get(WorkItem, work_item_id)
         bundle = await session.get(DeliveryBundle, work_item_id)
@@ -68,10 +81,12 @@ async def deliver_work(work_item_id: str) -> None:
             return
         if work.status != WorkStatus.COMMITTING:
             return
+        attempt_type = "retry" if job.attempts > 0 or job.state == "retry" else "initial"
         job.state = "running"
         job.attempts += 1
         job.updated_at = utcnow()
         await session.commit()
+        observe_delivery_attempt(attempt_type)
 
     try:
         if not work.github_installation_id:
@@ -165,7 +180,11 @@ async def deliver_work(work_item_id: str) -> None:
             job.state = "completed"
             job.error = None
             await session.commit()
+            observe_delivery_outcome("completed")
     except Exception as error:
+        span = trace.get_current_span()
+        span.record_exception(error)
+        span.set_status(Status(StatusCode.ERROR, str(error)))
         async with SessionLocal() as session:
             current = await session.get(WorkItem, work_item_id, with_for_update=True)
             job = await session.get(DeliveryJob, work_item_id, with_for_update=True)
@@ -194,6 +213,7 @@ async def deliver_work(work_item_id: str) -> None:
                         message="GitHub delivery failed",
                     )
             await session.commit()
+        observe_delivery_outcome("failed")
 
 
 async def resume_pending_deliveries() -> None:

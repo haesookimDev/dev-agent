@@ -122,8 +122,8 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client *Client, claim Clai
 	}
 	assignmentEncoded := base64.URLEncoding.EncodeToString(assignment)
 	environment := fmt.Sprintf(
-		"KELPIE_CONTROL_URL=%s\nKELPIE_LEASE_TOKEN=%s\nKELPIE_ASSIGNMENT=%s\nKELPIE_WORK_ROOT=/workspace\n",
-		e.config.ControlURL, claim.LeaseToken, assignmentEncoded,
+		"KELPIE_CONTROL_URL=%s\nKELPIE_LEASE_TOKEN=%s\nKELPIE_CORRELATION_ID=%s\nKELPIE_ASSIGNMENT=%s\nKELPIE_WORK_ROOT=/workspace\n",
+		e.config.ControlURL, claim.LeaseToken, claim.WorkItem.CorrelationID, assignmentEncoded,
 	)
 	environmentEncoded := base64.StdEncoding.EncodeToString([]byte(environment))
 	cloudConfig := fmt.Sprintf(`#cloud-config
@@ -158,7 +158,12 @@ runcmd:
 	if err != nil {
 		return err
 	}
-	e.logger.Info("vm provisioned", "work_id", work.ID, "domain", name)
+	e.logger.Info(
+		"vm provisioned",
+		"work_id", work.ID,
+		"correlation_id", work.CorrelationID,
+		"domain", name,
+	)
 	if err := client.Event(ctx, work.ID, claim.LeaseToken, AgentEvent{
 		EventType: "vm.provisioned", Source: "libvirt", Level: "info", Message: "VM is ready",
 		Payload: map[string]any{"domain": name, "run_dir": runDir},

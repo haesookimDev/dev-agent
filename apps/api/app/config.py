@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
     worker_offline_seconds: int = 45
     lease_seconds: int = 120
+    log_format: Literal["json", "text"] = "json"
+    otel_service_name: str = "kelpie-api"
+    otel_exporter_otlp_traces_endpoint: str = ""
 
     @field_validator("cors_origins", mode="before")
     @classmethod

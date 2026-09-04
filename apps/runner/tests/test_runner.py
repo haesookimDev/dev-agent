@@ -1,14 +1,37 @@
 import asyncio
+import base64
 import json
 import subprocess
 from pathlib import Path
 
 from kelpie_runner.main import (
+    Assignment,
     create_delivery_bundle,
     evidence_files,
     redact,
     verification_commands,
 )
+
+
+def test_assignment_includes_correlation_id(monkeypatch) -> None:
+    assignment = {
+        "id": "work-id",
+        "correlation_id": "33333333-3333-4333-8333-333333333333",
+        "title": "Trace work",
+        "requirement": "Propagate the identifier",
+        "repository": "acme/service",
+        "version": 2,
+        "budget_minutes": 240,
+        "replan_limit": 3,
+    }
+    monkeypatch.setenv(
+        "KELPIE_ASSIGNMENT",
+        base64.urlsafe_b64encode(json.dumps(assignment).encode()).decode(),
+    )
+
+    parsed = Assignment.from_environment()
+
+    assert parsed.correlation_id == assignment["correlation_id"]
 
 
 def test_redact_nested_secrets() -> None:

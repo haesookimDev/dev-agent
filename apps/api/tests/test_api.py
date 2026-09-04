@@ -81,9 +81,23 @@ async def test_readiness_accepts_current_schema(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_direct_request_is_queued_and_visible(client: AsyncClient) -> None:
-    work = await create_work(client)
+    correlation_id = "22222222-2222-4222-8222-222222222222"
+    response = await client.post(
+        "/api/work-items",
+        headers={"X-Kelpie-Correlation-ID": correlation_id},
+        json={
+            "title": "Implement health endpoint",
+            "requirement": "Implement and test a health endpoint",
+            "repository": "acme/service",
+        },
+    )
+    assert response.status_code == 201
+    work = response.json()
     assert work["status"] == "queued"
     assert work["version"] == 1
+    assert work["correlation_id"] == correlation_id
+    assert response.headers["X-Kelpie-Correlation-ID"] == correlation_id
+    assert uuid.UUID(response.headers["X-Request-ID"])
 
     listed = await client.get("/api/work-items")
     assert listed.status_code == 200
@@ -92,6 +106,51 @@ async def test_direct_request_is_queued_and_visible(client: AsyncClient) -> None
     events = await client.get(f"/api/work-items/{work['id']}/event-log")
     assert events.status_code == 200
     assert events.json()[0]["event_type"] == "work.created"
+    assert events.json()[0]["correlation_id"] == correlation_id
+
+
+@pytest.mark.asyncio
+async def test_invalid_correlation_headers_are_replaced(client: AsyncClient) -> None:
+    response = await client.get(
+        "/healthz",
+        headers={"X-Request-ID": "invalid", "X-Kelpie-Correlation-ID": "../../secret"},
+    )
+
+    assert response.status_code == 200
+    assert uuid.UUID(response.headers["X-Request-ID"])
+    assert uuid.UUID(response.headers["X-Kelpie-Correlation-ID"])
+    assert response.headers["X-Kelpie-Correlation-ID"] == response.headers["X-Request-ID"]
+
+
+@pytest.mark.asyncio
+async def test_metrics_expose_low_cardinality_http_and_work_signals(
+    client: AsyncClient,
+    worker_headers: dict[str, str],
+) -> None:
+    await client.get("/healthz")
+    unmatched_path = "/unmatched/tenant-private-value"
+    await client.get(unmatched_path)
+    await create_work(client, title="Measure queue latency")
+    worker = await register_worker(client, worker_headers)
+    await client.post(
+        f"/api/workers/{worker['id']}/claim",
+        headers=worker_headers,
+        json={"cpu": 2, "memory_mb": 4096, "disk_gb": 30},
+    )
+
+    response = await client.get("/metrics")
+
+    assert response.status_code == 200
+    assert 'kelpie_http_requests_total{method="GET",route="/healthz",status="200"}' in response.text
+    assert 'kelpie_http_requests_total{method="GET",route="unmatched",status="404"}' in (
+        response.text
+    )
+    assert 'kelpie_work_claims_total{outcome="claimed"}' in response.text
+    assert "kelpie_work_queue_wait_seconds_count" in response.text
+    assert 'kelpie_work_transitions_total{from_status="queued",to_status="provisioning"}' in (
+        response.text
+    )
+    assert unmatched_path not in response.text
 
 
 @pytest.mark.asyncio
@@ -108,6 +167,7 @@ async def test_worker_claim_and_approval_gate(
     assert claim.status_code == 200, claim.text
     assignment = claim.json()
     assert assignment["work_item"]["status"] == "provisioning"
+    assert assignment["work_item"]["correlation_id"] == work["correlation_id"]
     lease_headers = {"X-Kelpie-Lease": assignment["lease_token"]}
 
     current = assignment["work_item"]
@@ -134,6 +194,8 @@ async def test_worker_claim_and_approval_gate(
     )
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "committing"
+    metrics = await client.get("/metrics")
+    assert 'kelpie_approvals_total{decision="approve",kind="pull_request"}' in metrics.text
 
 
 @pytest.mark.asyncio
