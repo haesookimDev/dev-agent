@@ -28,6 +28,7 @@ UI에서는 작업 현황과 다음 행동을 우선하고, 빈 상태·오류·
 npm ci --prefix apps/web
 npx --prefix apps/web playwright install chromium
 npm run test:e2e --prefix apps/web
+npm run test:e2e:preview --prefix apps/web
 ```
 
 Playwright는 실제 Chromium·Next.js·API·Mock Worker를 실행합니다. 매번 임시 SQLite DB를 마이그레이션하고 무작위 테스트 Worker 자격증명을 사용하며 종료 시 자신이 만든 프로세스·데이터만 정리합니다. `13100`(Web), `18100`(API) 포트는 비워 두세요. 같은 체크아웃에서 실행 중인 `next dev`도 먼저 종료해야 합니다. `.venv/bin/python` 대신 다른 Python을 쓸 때만 `KELPIE_E2E_PYTHON`을 지정합니다. Linux에서는 `playwright install --with-deps chromium`으로 시스템 라이브러리도 설치합니다.
@@ -35,6 +36,8 @@ Playwright는 실제 Chromium·Next.js·API·Mock Worker를 실행합니다. 매
 작업 생성·실시간 이벤트·피드백·재검증·승인·자원 해제, 검색·필터·언어·좁은 화면, 통신·권한 오류 후 재시도, 연결 복구, 잘못된 작업 주소를 검증합니다. 테스트 Worker는 단일 실행 슬롯으로 고정하고 각 테스트는 `e2e/fixtures`의 자동 자원 해제 Fixture를 사용합니다. 실패 시 `apps/web/test-results`에 스크린샷과 Trace가 남습니다. `apps/web/playwright-report`의 HTML 보고서는 생성물이므로 커밋하지 않습니다. E2E 이후 운영 빌드를 수행하면 개발용으로 자동 갱신된 `next-env.d.ts`도 운영 기준으로 재생성됩니다.
 
 Playwright는 단위 테스트가 다루지 못하는 실제 브라우저와 서비스 간 계약을 검증하기 위한 개발 의존성입니다. 런타임 의존성을 추가하지 않습니다. `apps/web/AGENTS.md`의 영어 관리 블록은 설치된 Next.js가 생성한 원문을 유지하며, 해당 버전의 로컬 문서를 우선 확인하도록 합니다.
+
+별도의 [OIDC Preview 여정](preview-access.md)은 단기 인증서와 합성 IdP를 생성해 TLS·일회용 교환·실제 WebSocket·권한 회수를 검사합니다. 다른 포트와 임시 DB를 사용하며 기존 브라우저 여정 뒤에 순차 실행합니다. OIDC Code·Cookie가 포함될 수 있는 Trace는 저장하지 않습니다. 네트워크·VM 격리 검증을 대신하지 않습니다.
 
 ## CI와 머지
 

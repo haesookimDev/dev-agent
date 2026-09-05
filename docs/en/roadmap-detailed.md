@@ -29,7 +29,7 @@ Done when a production-like deployment upgrades without data loss and a schema m
 
 ### IAM-001 · OIDC identity and repository authorization — L
 
-Status: authentication batch (2026-09-04) and organization/repository RBAC batch (2026-09-05) implemented. This includes registered memberships, repository-specific role elevation, cross-organization denial, registered GitHub installations, linked Slack principals, and permission revocation. The [append-only feedback audit batch](feedback-audit.md) (2026-09-06) is implemented. Console/approval/cancellation/delivery audits and scoped OIDC preview grants remain.
+Status: authentication batch (2026-09-04) and organization/repository RBAC batch (2026-09-05) implemented. This includes registered memberships, repository-specific role elevation, cross-organization denial, registered GitHub installations, linked Slack principals, and permission revocation. [Feedback audit](feedback-audit.md), [console/approval audit](control-action-audit.md), and [OIDC HTTP Preview grants](preview-access.md) (2026-09-06) are implemented. Cancellation/delivery audits and actual deployment-environment Preview validation remain.
 
 Scope:
 

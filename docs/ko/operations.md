@@ -71,7 +71,7 @@ Issuer, Redirect URI, 발견된 Authorization·Token·JWKS Endpoint는 HTTPS여�
 
 OIDC 로그인에는 등록된 조직과 구성원이 필요합니다. `(Issuer, Organization Claim)`으로 조직을 찾고 `(Issuer, Subject)`로 Principal을 식별하며, ID Token의 임의 Role Claim은 사용하지 않습니다. 세션과 이벤트 스트림은 구성원·권한을 다시 확인하므로 회수된 권한은 다음 요청 또는 다음 이벤트 조회부터 적용됩니다. 작업을 변경하는 Cookie 인증 요청은 `DASHBOARD_URL`의 Origin과 일치하는 `Origin` Header가 필요합니다.
 
-Preview Gateway는 OIDC 범위 Preview Grant가 구현되기 전까지 기본 `disabled` 상태로 503을 반환합니다. `KELPIE_GATEWAY_AUTH_MODE=development`는 격리된 로컬 Demo에서만 사용합니다.
+[OIDC HTTP Preview](preview-access.md)는 세션·작업에 한정된 일회용 Grant와 TLS Gateway를 제공합니다. 기본 `disabled`와 API `PREVIEW_ACCESS_ENABLED=false`를 유지하며, 별도 Site의 새 전용 Domain·사설 Routing·TLS가 준비된 경우에만 활성화합니다. `KELPIE_GATEWAY_AUTH_MODE=development`는 격리된 로컬 Demo에서만 사용합니다. OIDC Console 접근은 아직 차단됩니다.
 
 ## 조직·저장소 권한 설정
 
@@ -138,7 +138,7 @@ PEM 파일은 API 사용자만 읽을 수 있도록 설정한 경로에 Mount합
 - API와 대시보드를 같은 HTTPS 공개 Origin으로 제공하고 `AUTH_MODE=oidc`를 사용합니다. Reverse Proxy는 신원 Header를 만들지 않으며 내부 API 주소에 대한 직접 네트워크 접근을 차단합니다.
 - 관리형 PostgreSQL 또는 시점 복구를 지원하는 암호화 Volume을 사용합니다. API Rollout 전에 Alembic Migration을 실행하고 `/readyz`가 성공하는지 확인합니다.
 - Worker, GitHub, Slack, Object Store, DNS, OIDC 자격증명을 Secret Manager에 보관합니다. Compose 파일이나 작업 VM Image에는 넣지 않습니다.
-- 범위가 제한된 OIDC Preview Grant가 구현되기 전에는 Preview Gateway를 외부에 공개하지 않습니다. 이후 전용 Gateway에서 Wildcard TLS를 종료하고 작업 대상을 해석하기 전에 Grant를 검증해야 합니다.
+- Preview 공개 전 [OIDC Grant·Domain·TLS·Network 조건](preview-access.md)을 충족해야 합니다. 전용 Gateway가 Wildcard TLS를 종료하고 작업 대상을 해석하기 전에 현재 세션·권한을 검증합니다. HTTP Offload나 공개된 사설 Target으로 이 경계를 우회하지 않습니다.
 - `PREVIEW_ALLOWED_CIDRS`에는 전용 WireGuard/libvirt VM Subnet만 지정합니다. 제어 플랫폼, Metadata, 일반 사설 서비스 네트워크를 포함하지 않습니다.
 - 작업 VM은 24시간, 검증 자료는 30일 보관하는 것을 기본값으로 사용합니다. 예약된 정리 작업은 활성 작업이 아님을 확인한 뒤 명시적인 UUID 이름의 Volume만 삭제해야 합니다.
 

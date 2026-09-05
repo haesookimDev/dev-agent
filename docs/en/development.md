@@ -28,6 +28,7 @@ Install the API development environment (`.venv`), Go and Web dependencies, then
 npm ci --prefix apps/web
 npx --prefix apps/web playwright install chromium
 npm run test:e2e --prefix apps/web
+npm run test:e2e:preview --prefix apps/web
 ```
 
 Playwright runs actual Chromium, Next.js, API and Mock Worker processes. Each run migrates a temporary SQLite database, uses a random test Worker credential and cleans up only its own processes and data. Keep ports `13100` (Web) and `18100` (API) free. Stop any `next dev` instance in the same checkout first. Set `KELPIE_E2E_PYTHON` only to override `.venv/bin/python`. On Linux, use `playwright install --with-deps chromium` to install system libraries too.
@@ -35,6 +36,8 @@ Playwright runs actual Chromium, Next.js, API and Mock Worker processes. Each ru
 Coverage includes creation, live events, feedback, re-verification, approval and resource release; search, filters, language and narrow layouts; network/permission failure retries; stream recovery; and invalid work addresses. The test Worker has one execution slot; every test uses the automatic resource-release fixture from `e2e/fixtures`. Failures preserve screenshots and traces in `apps/web/test-results`. The HTML report in `apps/web/playwright-report` is generated and must not be committed. A production build after E2E also regenerates the development-updated `next-env.d.ts` for production.
 
 Playwright is a development dependency for real browser/service contracts that unit tests cannot exercise. No runtime dependency is added. The English managed block in `apps/web/AGENTS.md` preserves the installed Next.js generator's original text and requires consulting version-matched local documentation first.
+
+The separate [OIDC Preview journey](preview-access.md) generates short-lived certificates and a synthetic IdP to verify TLS, one-time exchange, real WebSockets and revocation. It uses distinct ports and a temporary database, running sequentially after the existing browser suite. Traces that could contain OIDC codes/cookies are not retained. It does not replace network/VM isolation verification.
 
 ## CI and merging
 

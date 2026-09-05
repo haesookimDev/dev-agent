@@ -71,7 +71,7 @@ The `trusted_headers` authentication mode has been removed. `X-Kelpie-User` and 
 
 OIDC login requires a registered organization and membership. Organizations are identified by `(issuer, organization claim)` and principals by `(issuer, subject)`; arbitrary role claims in ID tokens are not used. Sessions and event streams recheck membership and authorization, so revocation applies on the next request or event query. Cookie-authenticated work mutations require an `Origin` header matching the origin of `DASHBOARD_URL`.
 
-The preview gateway returns 503 in its default `disabled` mode until scoped OIDC preview grants are implemented. Use `KELPIE_GATEWAY_AUTH_MODE=development` only for an isolated local demo.
+[OIDC HTTP Preview](preview-access.md) provides session/work-scoped single-use grants and a TLS gateway. Defaults remain `disabled` and API `PREVIEW_ACCESS_ENABLED=false`; enable only after configuring a fresh dedicated domain on a separate site, private routing and TLS. Use `KELPIE_GATEWAY_AUTH_MODE=development` only for an isolated local demo. OIDC console access remains blocked.
 
 ## Organization and repository authorization
 
@@ -138,7 +138,7 @@ Mount the PEM at the configured path with read permission only for the API user.
 - Serve the API and dashboard from the same public HTTPS origin and use `AUTH_MODE=oidc`. The reverse proxy must not create identity headers, and direct network access to the internal API address must be blocked.
 - Use a managed PostgreSQL service or encrypted volumes with point-in-time recovery. Run Alembic migrations before the API rollout and verify that `/readyz` succeeds.
 - Store worker, GitHub, Slack, object-store, DNS, and OIDC credentials in a secret manager. Never put them in Compose files or task VM images.
-- Do not expose the preview gateway until scoped OIDC preview grants are implemented. After that, terminate wildcard TLS at a dedicated gateway and validate the grant before resolving a run target.
+- Meet the [OIDC grant/domain/TLS/network requirements](preview-access.md) before exposing Preview. The dedicated gateway terminates wildcard TLS and validates current session/access before resolving a target. Do not bypass this boundary through HTTP offload or publicly reachable private targets.
 - Set `PREVIEW_ALLOWED_CIDRS` to the dedicated WireGuard/libvirt VM subnet. Never include control-plane, metadata, or general private-service networks.
 - Retain task VMs for 24 hours and artifacts for 30 days. A scheduled janitor must verify the work item is not active and then delete explicit, UUID-named volumes only.
 
