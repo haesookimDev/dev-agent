@@ -15,6 +15,19 @@ const work: WorkItem = {
 };
 
 describe.each(["ko", "en"] as const)("%s work progress", (locale) => {
+  it.each([
+    ["queued", null, true], ["queued", "worker-one", false],
+    ["provisioning", "worker-one", false], ["awaiting_approval", "worker-one", false],
+    ["cancelled", null, false], ["completed", "worker-one", false],
+  ] as const)("offers cancellation only for unassigned queued work: %s / %s", (status, assigned, shown) => {
+    const html = renderToStaticMarkup(createElement(LiveRun, {
+      initialWork: { ...work, status, assigned_worker_id: assigned }, initialEvents: [], initialArtifacts: [], locale, messages: getMessages(locale),
+    }));
+    expect(html.includes('class="cancelWork"')).toBe(shown);
+    expect(html).not.toContain('class="formError"');
+    if (shown) expect(html).toContain(getMessages(locale).run.cancelHint);
+  });
+
   it.each(["failed", "cancelled"] as const)("does not render a completion percentage for %s", (status) => {
     const html = renderToStaticMarkup(createElement(LiveRun, {
       initialWork: { ...work, status }, initialEvents: [], initialArtifacts: [], locale, messages: getMessages(locale),
