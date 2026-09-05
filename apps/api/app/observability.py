@@ -15,10 +15,12 @@ from prometheus_client.exposition import generate_latest
 
 from .config import Settings
 from .correlation import current_correlation_id, current_request_id
+from .recovery_observability import DeliveryRecoveryMetrics
 
 logger = logging.getLogger(__name__)
 
 REGISTRY = CollectorRegistry()
+DELIVERY_RECOVERY = DeliveryRecoveryMetrics(REGISTRY)
 HTTP_REQUESTS = Counter(
     "kelpie_http_requests_total",
     "HTTP requests handled by the control plane.",
