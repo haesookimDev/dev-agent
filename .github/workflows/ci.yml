@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    name: Python
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: kelpie_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d kelpie_ci"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            apps/api/pyproject.toml
+            apps/runner/pyproject.toml
+      - name: Install dependencies
+        run: python -m pip install -e './apps/api[dev]' -e './apps/runner[dev]'
+      - name: Test and lint Python
+        run: |
+          make test-api test-runner PYTHON=python
+          python -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests
+      - name: Verify PostgreSQL migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
+        run: |
+          python -m alembic -c apps/api/alembic.ini upgrade head
+          python -m alembic -c apps/api/alembic.ini check
+          python -m alembic -c apps/api/alembic.ini downgrade -1
+          python -m alembic -c apps/api/alembic.ini upgrade head
+          python -m alembic -c apps/api/alembic.ini check
+
+  go:
+    name: Go
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: apps/worker/go.mod
+          # Both modules currently use only the standard library, without go.sum.
+          cache: false
+      - name: Test and vet Go
+        run: |
+          make test-worker test-gateway
+          (cd apps/worker && go vet ./...)
+          (cd apps/gateway && go vet ./...)
+
+  web:
+    name: Web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install dependencies
+        run: npm ci --prefix apps/web
+      - name: Test, lint and build Web
+        run: |
+          make test-web
+          npm run lint --prefix apps/web
+          npm run build --prefix apps/web
