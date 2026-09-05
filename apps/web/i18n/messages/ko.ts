@@ -15,6 +15,16 @@ export const ko = {
     switchLanguage: "English",
     switchLanguageAria: "영어로 전환",
   },
+  pageState: {
+    missing: "작업을 찾을 수 없습니다",
+    missingHint: "주소를 확인하거나 대시보드에서 접근 가능한 작업을 선택하세요.",
+    error: "페이지를 불러오지 못했습니다",
+    errorHint: "서버 연결과 접근 권한을 확인한 뒤 다시 시도하세요.",
+    loading: "작업 공간을 불러오는 중",
+    loadingHint: "최신 작업 상태를 확인하고 있습니다.",
+    retry: "다시 시도",
+    back: "대시보드로 돌아가기",
+  },
   dashboard: {
     eyebrow: "개발 현황",
     title: "작업 대시보드",

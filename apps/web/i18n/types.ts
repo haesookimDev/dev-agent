@@ -15,6 +15,16 @@ export interface MessageCatalog {
     switchLanguage: string;
     switchLanguageAria: string;
   };
+  pageState: {
+    missing: string;
+    missingHint: string;
+    error: string;
+    errorHint: string;
+    loading: string;
+    loadingHint: string;
+    retry: string;
+    back: string;
+  };
   dashboard: {
     eyebrow: string;
     title: string;

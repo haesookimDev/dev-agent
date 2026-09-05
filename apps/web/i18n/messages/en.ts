@@ -15,6 +15,16 @@ export const en = {
     switchLanguage: "한국어",
     switchLanguageAria: "Switch to Korean",
   },
+  pageState: {
+    missing: "Work item not found",
+    missingHint: "Check the address or choose an accessible work item from your dashboard.",
+    error: "Unable to load this page",
+    errorHint: "Check the server connection and your access permissions, then try again.",
+    loading: "Loading your workspace",
+    loadingHint: "Checking the latest work status.",
+    retry: "Try again",
+    back: "Back to dashboard",
+  },
   dashboard: {
     eyebrow: "Development overview",
     title: "Work dashboard",

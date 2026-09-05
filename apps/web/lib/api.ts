@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { AgentEvent, Artifact, WorkItem } from "./types";
 
 const serverApi = process.env.KELPIE_API_URL ?? "http://localhost:8000";
@@ -14,6 +14,7 @@ async function get<T>(path: string, returnTo: string): Promise<T> {
   if (response.status === 401) {
     redirect(`${publicApi}/auth/login?return_to=${encodeURIComponent(returnTo)}`);
   }
+  if (response.status === 404) notFound();
   if (!response.ok) throw new Error(`Kelpie API returned ${response.status}`);
   return response.json() as Promise<T>;
 }
