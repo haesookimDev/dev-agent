@@ -11,6 +11,16 @@
 
 `demo` Compose 프로필은 Mock Worker를 함께 시작하며 GitHub에 실제 쓰기 작업을 하지 않습니다.
 
+## Worker 자원 보고 순서
+
+Worker는 heartbeat의 자원 Snapshot과 전송, Claim과 로컬 예약, Release와 로컬 반납을 같은 Process Lock으로 직렬화합니다. 따라서 완료된 작업의 API 반납 직후 오래된 heartbeat가 가용 자원을 덮어써 다음 작업을 주기적 heartbeat까지 대기시키지 않습니다. 실행 자체와 일반 작업 Event는 이 Lock을 점유하지 않습니다.
+
+Release가 성공한 경우에만 해당 작업의 로컬 예약을 한 번 해제합니다. 실행 실패 후 상태 조회·종료 전환·반납을 확인하지 못하면 예약을 유지하므로 실행 슬롯이 계속 부족할 수 있습니다. API 연결과 임대 상태, 실제 VM의 생존 여부를 확인하고 복구하세요. 예약을 없애려고 Worker를 재시작하거나 DB의 자원 수치를 임의로 수정하지 않습니다.
+
+이 순서 보장은 한 Worker Process 안의 동시 요청에 한정됩니다. 재시작 복구, 같은 신원을 공유하는 여러 Daemon, 응답을 잃은 Claim, VM 종료·보존 공간 회수의 확인은 별도 수명주기 작업입니다. API의 Release 응답만으로 물리적 VM 삭제가 검증된 것은 아닙니다.
+
+API 형식·DB Schema·환경변수는 바뀌지 않습니다. 적용 시에는 해당 Worker의 새 작업 유입을 중지하고 활성 작업을 안전하게 정리한 후 새 Binary로 교체합니다. 롤백은 같은 조건에서 이전 Binary로 되돌릴 수 있지만 자원 보고 경쟁 조건이 다시 생기므로 원인 수정 후 재배포를 우선합니다.
+
 ## Database Migration
 
 Compose 배포에서는 `api-migrate` 일회성 Service가 `alembic upgrade head`를 완료한 후에만 API가 시작됩니다. Compose 밖에서 배포할 때는 새 API를 Rollout하기 전에 동일한 `DATABASE_URL`을 사용하는 배포 환경에서 다음 명령을 실행합니다. API Container Image에서는 `alembic upgrade head`를 직접 실행할 수 있습니다.

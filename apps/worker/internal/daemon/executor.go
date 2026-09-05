@@ -16,12 +16,20 @@ import (
 )
 
 type Executor interface {
-	Execute(context.Context, *Client, Claim) error
+	Execute(context.Context, RunClient, Claim) error
+}
+
+// Executors receive work-scoped operations, including coordinated lease release.
+type RunClient interface {
+	Event(context.Context, string, string, AgentEvent) error
+	Transition(context.Context, string, string, string, int, string) (WorkItem, error)
+	ReadRun(context.Context, string, string) (WorkItem, error)
+	Release(context.Context, string, string) error
 }
 
 type MockExecutor struct{}
 
-func (MockExecutor) Execute(ctx context.Context, client *Client, claim Claim) error {
+func (MockExecutor) Execute(ctx context.Context, client RunClient, claim Claim) error {
 	work := claim.WorkItem
 	steps := []struct{ status, message string }{
 		{"analyzing", "Analyzing requirements and repository"},
@@ -92,7 +100,7 @@ type LibvirtExecutor struct {
 
 var safeID = regexp.MustCompile(`^[a-f0-9-]{36}$`)
 
-func (e LibvirtExecutor) Execute(ctx context.Context, client *Client, claim Claim) error {
+func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Claim) error {
 	if !safeID.MatchString(claim.WorkItem.ID) {
 		return errors.New("unsafe work item id")
 	}

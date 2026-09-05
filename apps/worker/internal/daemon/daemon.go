@@ -4,15 +4,18 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 )
 
 type Daemon struct {
-	config   Config
-	logger   *slog.Logger
-	client   *Client
-	tracker  *Tracker
-	executor Executor
+	config  Config
+	logger  *slog.Logger
+	client  *Client
+	tracker *Tracker
+	// Serialize remote resource writes with the matching local accounting.
+	resourcesMu sync.Mutex
+	executor    Executor
 }
 
 func New(config Config, logger *slog.Logger) *Daemon {
@@ -45,22 +48,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-heartbeat.C:
-			available, active := d.tracker.Available()
-			if err := d.client.Heartbeat(ctx, worker.ID, available, active); err != nil {
+			if err := d.heartbeat(ctx, worker.ID); err != nil {
 				d.logger.Warn("heartbeat failed", "error", err)
 			}
 		case <-poll.C:
-			if !d.tracker.Reserve(d.config.RunResources) {
-				continue
-			}
-			claim, err := d.client.Claim(ctx, worker.ID, d.config.RunResources)
+			claim, err := d.claim(ctx, worker.ID)
 			if err != nil {
-				d.tracker.Release(d.config.RunResources)
 				d.logger.Warn("claim failed", "error", err)
 				continue
 			}
 			if claim == nil {
-				d.tracker.Release(d.config.RunResources)
 				continue
 			}
 			go d.execute(ctx, *claim)
@@ -69,7 +66,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 }
 
 func (d *Daemon) execute(ctx context.Context, claim Claim) {
-	defer d.tracker.Release(d.config.RunResources)
+	client := &reservedRunClient{Client: d.client, daemon: d, claim: claim}
 	ctx = ContextWithCorrelationID(ctx, claim.WorkItem.CorrelationID)
 	d.logger.Info(
 		"starting work",
@@ -77,7 +74,7 @@ func (d *Daemon) execute(ctx context.Context, claim Claim) {
 		"correlation_id", claim.WorkItem.CorrelationID,
 		"title", claim.WorkItem.Title,
 	)
-	if err := d.executor.Execute(ctx, d.client, claim); err != nil {
+	if err := d.executor.Execute(ctx, client, claim); err != nil {
 		d.logger.Error(
 			"work execution failed",
 			"work_id", claim.WorkItem.ID,
@@ -85,18 +82,24 @@ func (d *Daemon) execute(ctx context.Context, claim Claim) {
 			"error", err,
 		)
 		failureContext := ContextWithCorrelationID(context.Background(), claim.WorkItem.CorrelationID)
-		_ = d.client.Event(failureContext, claim.WorkItem.ID, claim.LeaseToken, AgentEvent{
+		_ = client.Event(failureContext, claim.WorkItem.ID, claim.LeaseToken, AgentEvent{
 			EventType: "worker.failed", Source: "worker", Level: "error", Message: err.Error(), Payload: map[string]any{},
 		})
-		current, readErr := d.client.ReadRun(failureContext, claim.WorkItem.ID, claim.LeaseToken)
-		if readErr == nil && current.Status != "completed" && current.Status != "failed" && current.Status != "cancelled" {
-			failed, transitionErr := d.client.Transition(
+		current, readErr := client.ReadRun(failureContext, claim.WorkItem.ID, claim.LeaseToken)
+		if readErr != nil {
+			return
+		}
+		if current.Status != "completed" && current.Status != "failed" && current.Status != "cancelled" {
+			_, transitionErr := client.Transition(
 				failureContext, claim.WorkItem.ID, claim.LeaseToken,
 				"failed", current.Version, "Worker executor failed",
 			)
-			if transitionErr == nil {
-				_ = d.client.Release(failureContext, failed.ID, claim.LeaseToken)
+			if transitionErr != nil {
+				return
 			}
+		}
+		if err := client.Release(failureContext, claim.WorkItem.ID, claim.LeaseToken); err != nil {
+			d.logger.Warn("resource release failed; reservation retained", "work_id", claim.WorkItem.ID, "error", err)
 		}
 	}
 }
