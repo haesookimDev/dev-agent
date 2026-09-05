@@ -9,7 +9,7 @@ from alembic.config import Config
 from app.models import Base, WebhookDelivery
 
 API_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "20260904_0003"
+HEAD_REVISION = "20260905_0004"
 
 
 def migration_config(database_url: str) -> Config:
@@ -117,6 +117,16 @@ def test_correlation_migration_backfills_existing_work_and_events(tmp_path: Path
         ).scalar_one()
     assert work_correlation == work_id
     assert event_correlation == work_id
+    with engine.connect() as connection:
+        assert connection.execute(sa.text(
+            "SELECT organization_id FROM work_items WHERE id = :id"
+        ), {"id": work_id}).scalar_one() == "legacy"
+        assert connection.execute(sa.text("SELECT count(*) FROM memberships")).scalar_one() == 0
+    command.downgrade(config, "20260904_0003")
+    with engine.connect() as connection:
+        assert connection.execute(sa.text(
+            "SELECT title FROM work_items WHERE id = :id"
+        ), {"id": work_id}).scalar_one() == "Existing work"
     engine.dispose()
 
 
