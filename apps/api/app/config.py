@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     slack_approver_user_ids: Annotated[list[str], NoDecode] = []
     dashboard_url: str = "http://localhost:3000"
     preview_domain: str = "preview.localhost"
+    preview_access_enabled: bool = False
     preview_allowed_cidrs: Annotated[list[str], NoDecode] = ["10.0.0.0/8"]
     artifact_root: str = "/var/lib/kelpie/artifacts"
     github_app_id: int | None = None
