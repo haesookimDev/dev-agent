@@ -87,6 +87,10 @@ export interface MessageCatalog {
     feedbackPlaceholder: string;
     feedbackSubmit: string;
     feedbackError: string;
+    feedbackConflict: string;
+    feedbackClosedTitle: string;
+    feedbackClosed: string;
+    unsentFeedback: string;
     networkError: string;
     permissionError: string;
     feedbackSent: string;

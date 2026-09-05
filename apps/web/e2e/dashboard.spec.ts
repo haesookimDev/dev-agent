@@ -1,6 +1,6 @@
 import { expect, test } from "./fixtures";
 
-test("create, stream, feedback, re-verify and approve work using real services", async ({ page }) => {
+test("create, stream, feedback, re-verify and approve work using real services", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/en");
@@ -18,6 +18,21 @@ test("create, stream, feedback, re-verify and approve work using real services",
   await page.getByRole("button", { name: /^Approve commit & PR/ }).click();
   await expect(page.locator(".runStatus")).toContainText("Completed");
   await expect(page.getByRole("heading", { name: "Worker resources released", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Feedback closed", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Send to agent/ })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Feedback", exact: true })).toHaveCount(0);
+  const workId = page.url().split("/").at(-1);
+  const late = await request.post(`http://127.0.0.1:18100/api/work-items/${workId}/feedback`, { data: {
+    message: "Must not accept feedback after delivery",
+  } });
+  expect(late.status()).toBe(409);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Feedback closed", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Switch to Korean" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "피드백이 마감되었습니다", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^에이전트에게 전송/ })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
 

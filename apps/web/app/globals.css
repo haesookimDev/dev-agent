@@ -139,6 +139,10 @@ form button { width: 100%; justify-content: space-between; margin-top: 1px; }
 .event h3 { font-size: 12px; font-weight: 550; white-space: pre-wrap; overflow-wrap: anywhere; margin: 7px 0 4px; }
 .event p { color: #8392a7; font-size: 9px; overflow-wrap: anywhere; }
 .controlPanel { padding: 24px; }
+.feedbackClosed { margin-top: 22px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: #f6f8fc; }
+.feedbackClosed h3 { margin: 0 0 8px; font-size: 13px; }
+.feedbackClosed p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.controlPanel textarea:read-only { background: #f6f8fc; }
 .approve, .prLink { width: 100%; margin-top: 20px; justify-content: space-between; }
 .prLink { color: #176344; background: #e8f6ef; border-color: #c3e6d4; }
 .artifactList { margin-top: 22px; padding-top: 17px; border-top: 1px solid var(--line); }
