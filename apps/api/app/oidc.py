@@ -203,14 +203,15 @@ class OIDCProvider:
         }
         auth: httpx.BasicAuth | None = None
         methods = metadata.get("token_endpoint_auth_methods_supported", ["client_secret_basic"])
-        if self.settings.oidc_client_secret:
+        client_secret = self.settings.read_secret("oidc_client_secret")
+        if client_secret:
             if "client_secret_basic" in methods:
                 auth = httpx.BasicAuth(
                     self.settings.oidc_client_id,
-                    self.settings.oidc_client_secret,
+                    client_secret,
                 )
             elif "client_secret_post" in methods:
-                data["client_secret"] = self.settings.oidc_client_secret
+                data["client_secret"] = client_secret
             else:
                 raise OIDCConfigurationError(
                     "OIDC provider does not support the configured client authentication"
@@ -252,6 +253,7 @@ def _cached_provider(
     issuer_url: str,
     client_id: str,
     client_secret: str,
+    client_secret_file: str,
     redirect_uri: str,
     organization_claim: str,
     scopes: tuple[str, ...],
@@ -264,6 +266,7 @@ def _cached_provider(
         oidc_issuer_url=issuer_url,
         oidc_client_id=client_id,
         oidc_client_secret=client_secret,
+        oidc_client_secret_file=client_secret_file,
         oidc_redirect_uri=redirect_uri,
         oidc_organization_claim=organization_claim,
         oidc_scopes=list(scopes),
@@ -280,7 +283,8 @@ def get_oidc_provider(
     return _cached_provider(
         settings.oidc_issuer_url,
         settings.oidc_client_id,
-        settings.oidc_client_secret,
+        settings.oidc_client_secret if not settings.oidc_client_secret_file else "",
+        settings.oidc_client_secret_file,
         settings.oidc_redirect_uri,
         settings.oidc_organization_claim,
         tuple(settings.oidc_scopes),

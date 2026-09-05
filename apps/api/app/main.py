@@ -25,7 +25,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,6 +101,7 @@ from .schemas import (
     WorkItemCreate,
     WorkItemView,
 )
+from .secrets import SecretUnavailableError
 from .service import (
     claim_next_work,
     create_work_item,
@@ -145,6 +146,15 @@ app.add_middleware(
 )
 app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(CorrelationMiddleware)
+
+
+@app.exception_handler(SecretUnavailableError)
+async def secret_unavailable(_: Request, __: SecretUnavailableError) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "configured secret is unavailable"},
+        headers={"Cache-Control": "no-store"},
+    )
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
@@ -699,7 +709,8 @@ async def github_webhook(
     body = await request.body()
     expected = (
         "sha256="
-        + hmac.new(config.github_webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+        + hmac.new(config.read_secret("github_webhook_secret", required=True).encode(),
+                   body, hashlib.sha256).hexdigest()
     )
     if not signature or not hmac.compare_digest(signature, expected):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid webhook signature")
@@ -867,7 +878,7 @@ async def slack_command(
     signature: Annotated[str | None, Header(alias="X-Slack-Signature")] = None,
 ) -> dict:
     body = await request.body()
-    verify_signature(body, timestamp, signature, config.slack_signing_secret)
+    verify_signature(body, timestamp, signature, config.read_secret("slack_signing_secret"))
     form = {key: values[0] for key, values in parse_qs(body.decode()).items()}
     user_id = form.get("user_id", "unknown")
     parts = form.get("text", "").strip().split(maxsplit=2)
