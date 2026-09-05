@@ -18,7 +18,10 @@ test("create, stream, feedback, re-verify and approve work using real services",
   expect(acceptedFeedback.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Check the empty state before delivery.", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Mock revision ready for approval", exact: true })).toBeVisible();
+  const approvalResponse = page.waitForResponse((response) => response.url().endsWith("/approvals") && response.request().method() === "POST");
   await page.getByRole("button", { name: /^Approve commit & PR/ }).click();
+  const acceptedApproval = await approvalResponse;
+  expect(acceptedApproval.status()).toBe(200);
   await expect(page.locator(".runStatus")).toContainText("Completed");
   await expect(page.getByRole("heading", { name: "Worker resources released", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Feedback closed", exact: true })).toBeVisible();
@@ -29,8 +32,9 @@ test("create, stream, feedback, re-verify and approve work using real services",
   expect(auditResponse.status()).toBe(200);
   expect(auditResponse.headers()["cache-control"]).toBe("no-store");
   const audit = await auditResponse.json();
-  expect(audit).toHaveLength(1);
+  expect(audit).toHaveLength(2);
   expect(audit[0]).toMatchObject({ action: "feedback.created", transport: "web", identity_provider: "development", effective_role: "administrator", required_role: "operator", request_id: acceptedFeedback.headers()["x-request-id"] });
+  expect(audit[1]).toMatchObject({ action: "approval.decided", transport: "web", identity_provider: "development", required_role: "approver", request_id: acceptedApproval.headers()["x-request-id"], details: { kind: "pull_request", decision: "approve", work_status_before: "awaiting_approval", work_status_after: "committing", delivery_queued: false, delivery_bundle_sha256: null } });
   expect(JSON.stringify(audit)).not.toContain("Check the empty state before delivery.");
   const late = await request.post(`http://127.0.0.1:18100/api/work-items/${workId}/feedback`, { data: {
     message: "Must not accept feedback after delivery",

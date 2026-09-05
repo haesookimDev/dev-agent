@@ -29,7 +29,13 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .audit import record_feedback_audit
+from .audit import (
+    ApprovalState,
+    ConsoleOwnership,
+    record_approval_audit,
+    record_console_audit,
+    record_feedback_audit,
+)
 from .auth import (
     Actor,
     actor_from_identity,
@@ -665,12 +671,16 @@ async def add_feedback(
 async def decide_approval(
     work_item_id: str,
     payload: ApprovalCreate,
+    request: Request,
     session: SessionDep,
     actor: ActorDep,
     background_tasks: BackgroundTasks,
 ) -> WorkItem:
-    item = await authorized_work(session, actor, work_item_id, Role.APPROVER, lock=True)
+    item, decision = await authorized_work_with_decision(
+        session, actor, work_item_id, Role.APPROVER, lock=True,
+    )
     await ensure_worker_not_quarantined(session, item)
+    before = ApprovalState.capture(item)
     target: WorkStatus | None = None
     should_deliver = False
     if payload.kind == "pull_request":
@@ -692,15 +702,14 @@ async def decide_approval(
                 )
             item.budget_minutes += extension
             target = WorkStatus.IMPLEMENTING
-    session.add(
-        Approval(
-            work_item_id=work_item_id,
-            kind=payload.kind,
-            decision=payload.decision,
-            actor=actor.subject,
-            payload=payload.payload,
-        )
+    approval = Approval(
+        work_item_id=work_item_id,
+        kind=payload.kind,
+        decision=payload.decision,
+        actor=actor.subject,
+        payload=payload.payload,
     )
+    session.add(approval)
     await emit_event(
         session,
         work_item_id,
@@ -721,6 +730,10 @@ async def decide_approval(
         )
     if should_deliver:
         await queue_delivery(session, item)
+    await record_approval_audit(
+        session, request, item, actor, decision, approval, before,
+        transport="web", delivery_queued=should_deliver,
+    )
     await session.commit()
     observe_approval(payload.kind, payload.decision)
     if should_deliver:
@@ -971,15 +984,15 @@ async def slack_command(
         if item.status != WorkStatus.AWAITING_APPROVAL:
             raise HTTPException(status.HTTP_409_CONFLICT, "work is not awaiting approval")
         should_deliver = await validate_delivery_ready(session, item)
-        session.add(
-            Approval(
-                work_item_id=work_item_id,
-                kind="pull_request",
-                decision="approve",
-                actor=actor,
-                payload={},
-            )
+        before = ApprovalState.capture(item)
+        approval = Approval(
+            work_item_id=work_item_id,
+            kind="pull_request",
+            decision="approve",
+            actor=actor,
+            payload={},
         )
+        session.add(approval)
         await transition_work_item(
             session,
             item,
@@ -990,6 +1003,10 @@ async def slack_command(
         )
         if should_deliver:
             await queue_delivery(session, item)
+        await record_approval_audit(
+            session, request, item, identity, decision, approval, before,
+            transport="slack", delivery_queued=should_deliver,
+        )
         await session.commit()
         observe_approval("pull_request", "approve")
         if should_deliver:
@@ -1360,18 +1377,22 @@ async def register_preview(
 
 @app.post("/api/work-items/{work_item_id}/console-lease", response_model=ConsoleLeaseView)
 async def console_lease(
+    request: Request,
     work_item_id: str,
     payload: ConsoleLeaseRequest,
     session: SessionDep,
     actor: ActorDep,
 ) -> ConsoleLease:
-    item = await authorized_work(session, actor, work_item_id, Role.OPERATOR, lock=True)
+    item, decision = await authorized_work_with_decision(
+        session, actor, work_item_id, Role.OPERATOR, lock=True,
+    )
     await ensure_worker_not_quarantined(session, item)
     lease = await session.get(ConsoleLease, work_item_id, with_for_update=True)
     if lease is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "console is not registered")
     if payload.expected_version is not None and lease.version != payload.expected_version:
         raise HTTPException(status.HTTP_409_CONFLICT, "console lease version mismatch")
+    before = ConsoleOwnership.capture(lease)
     if payload.action == "acquire":
         if lease.holder_type == "user" and lease.holder != actor.subject:
             raise HTTPException(status.HTTP_409_CONFLICT, "console is held by another user")
@@ -1395,6 +1416,9 @@ async def console_lease(
             message=message,
             payload={"holder_type": lease.holder_type, "holder": lease.holder},
         ),
+    )
+    record_console_audit(
+        session, request, item, actor, decision, lease, before, action=payload.action,
     )
     await session.commit()
     return lease

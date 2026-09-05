@@ -41,7 +41,7 @@ SQLite의 UPDATE/DELETE/REPLACE/UPSERT와 PostgreSQL의 UPDATE/DELETE/TRUNCATE/U
 
 ## Migration과 Rollback
 
-1. DB를 백업하고 API Rollout 전에 `make migrate-api`로 `20260906_0006`을 적용한 뒤 Alembic `check`를 실행합니다. 새 환경변수나 의존성은 없습니다.
+1. 이 Batch는 `20260906_0006`을 도입했습니다. 현재 Rollout은 백업 후 `make migrate-api`와 Alembic `check`로 [후속 Console·승인 Migration](control-action-audit.md)까지 적용합니다. 새 환경변수나 의존성은 없습니다.
 2. 빈 감사 테이블만 Online Downgrade할 수 있습니다. 검사 동안 PostgreSQL Table Lock 또는 SQLite Writer Lock을 잡습니다. 기록이 있으면 Downgrade를 거부하고 데이터와 Revision을 유지합니다. Offline Downgrade도 거부합니다.
 3. 기록이 쌓인 뒤에는 데이터를 삭제하거나 Revision을 수동으로 낮추지 말고 현재 Schema와 Guard를 유지한 전진 수정으로 복구합니다. 이전 API는 최신 Schema를 Ready로 인정하지 않으므로 단순 Binary Rollback도 서비스 복구 수단이 아닙니다. 계획된 보존·보관·복구 절차를 먼저 마련해야 합니다.
 
@@ -57,4 +57,4 @@ SQLite의 UPDATE/DELETE/REPLACE/UPSERT와 PostgreSQL의 UPDATE/DELETE/TRUNCATE/U
 ![한국어 데스크톱의 피드백 활동](../assets/feedback-audit/ko-desktop.png)
 ![영어 좁은 화면의 피드백 활동](../assets/feedback-audit/en-mobile.png)
 
-다음 감사 Batch는 Console 소유권, 승인, 취소, 전달을 다룹니다. 거부 시도 감사, 감사 보존·외부 보관 정책, OIDC Preview Grant, 실제 KVM·WireGuard·동시 VM 격리 등 남은 MVP 항목은 완료 처리하지 않습니다.
+[후속 Batch에서 Console 소유권과 승인 감사](control-action-audit.md)를 추가했습니다. 취소·전달·거부 시도 감사, 감사 보존·외부 보관 정책, OIDC Preview Grant, 실제 KVM·WireGuard·동시 VM 격리 등 남은 MVP 항목은 완료 처리하지 않습니다.

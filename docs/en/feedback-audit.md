@@ -41,7 +41,7 @@ Selected fields from a synthetic response (full contract at `/openapi.json`):
 
 ## Migration and rollback
 
-1. Back up the database, run `make migrate-api` to apply `20260906_0006` before API rollout, then run Alembic `check`. No new environment variables or dependencies.
+1. This batch introduced `20260906_0006`. For current rollout, back up first and use `make migrate-api` plus Alembic `check` to include the [subsequent console/approval migration](control-action-audit.md). No new environment variables or dependencies.
 2. Online downgrade is allowed only for an empty audit table. A PostgreSQL table lock or SQLite writer lock protects the check. Existing records cause refusal, preserving data and revision. Offline downgrade is also refused.
 3. Once records exist, retain the current schema/guards and recover with a forward fix, not data deletion or manual revision stamping. Older APIs do not consider the newer schema ready, so binary rollback alone cannot restore service. Establish an approved retention/archive/recovery procedure first.
 
@@ -57,4 +57,4 @@ Implementation `30f866d`, browser tests `5d4a444`, CI `3fb75b8`. Subsequent docu
 ![Korean desktop feedback activity](../assets/feedback-audit/ko-desktop.png)
 ![English narrow-screen feedback activity](../assets/feedback-audit/en-mobile.png)
 
-The next audit batch covers console ownership, approvals, cancellation and delivery. Denied-attempt auditing, audit retention/external archiving, OIDC preview grants, real KVM/WireGuard/concurrent-VM isolation and other remaining MVP items are not marked complete.
+The [subsequent batch adds console ownership and approval audits](control-action-audit.md). Cancellation/delivery/denied-attempt auditing, audit retention/external archiving, OIDC preview grants, real KVM/WireGuard/concurrent-VM isolation and other remaining MVP items are not marked complete.
