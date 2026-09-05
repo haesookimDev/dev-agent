@@ -28,7 +28,7 @@ kelpie_delivery_startup_recovery_state{kelpie_delivery_startup_recovery_state="c
 kelpie_delivery_startup_recovery_checks_total{outcome="completed"} 1.0
 ```
 
-`completed=1`을 SCM 전달 성공이나 상시 Queue 건강 상태로 사용하지 마세요. `/readyz`도 Schema만 검사합니다. 개별 결과는 기존 `kelpie_delivery_outcomes_total`, `delivery_jobs.state/attempts`, 작업 상태·Event와 함께 확인합니다. 수집 실패·누락, 오래 지속되는 미완료 복구와 관찰된 전달 실패는 [기본 알림](monitoring-alerts.md)으로 확인할 수 있습니다. 처리량·지연 SLO와 지속적인 Queue 감시는 후속 범위입니다.
+`completed=1`을 SCM 전달 성공이나 상시 Queue 건강 상태로 사용하지 마세요. `/readyz`도 Schema만 검사합니다. 개별 결과는 기존 `kelpie_delivery_outcomes_total`, `delivery_jobs.state/attempts`, 작업 상태·Event와 함께 확인합니다. 수집 실패·누락, 오래 지속되는 미완료 복구와 관찰된 전달 실패는 [기본 알림](monitoring-alerts.md)으로 확인할 수 있습니다. Worker·Lease·Queued 작업은 [독립적인 지속 관측](runtime-monitoring.md)으로 확인하며, 처리량·지연 SLO와 실행/DeliveryJob 전체의 정체 감시는 후속 범위입니다.
 
 지표는 [단일 API 프로세스](delivery-recovery.md)에 한정됩니다. 다중 Worker 집계·분산 복구를 지원하지 않습니다. Label은 고정된 단계·결과만 사용하며 Job·저장소·사용자·요청 ID와 원본 예외를 넣지 않습니다. 새 의존성·환경변수·Migration은 없고 기존 API 응답과 지표 계약은 유지합니다. 이전 API로 Rollback하면 새 지표만 사라지므로 이를 사용하는 수집 규칙·Dashboard를 함께 되돌립니다. 데이터 Downgrade는 필요하지 않습니다.
 
