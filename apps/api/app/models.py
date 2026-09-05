@@ -209,6 +209,8 @@ class WorkerHost(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), unique=True)
+    credential_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     state: Mapped[WorkerState] = mapped_column(Enum(WorkerState), default=WorkerState.ONLINE)
     cpu_total: Mapped[int] = mapped_column(Integer)
     cpu_available: Mapped[int] = mapped_column(Integer)
@@ -218,6 +220,36 @@ class WorkerHost(Base):
     active_runs: Mapped[int] = mapped_column(Integer, default=0)
     labels: Mapped[dict] = mapped_column(JSON, default=dict)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkerCredential(Base):
+    __tablename__ = "worker_credentials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    worker_id: Mapped[str] = mapped_column(ForeignKey("worker_hosts.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkerCredentialEvent(Base):
+    __tablename__ = "worker_credential_events"
+    __table_args__ = (CheckConstraint(
+        "action IN ('issued', 'rotated', 'revoked', 'quarantined')",
+        name="worker_credential_action",
+    ),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    worker_id: Mapped[str] = mapped_column(ForeignKey("worker_hosts.id"), index=True)
+    credential_id: Mapped[str | None] = mapped_column(
+        ForeignKey("worker_credentials.id"), nullable=True,
+    )
+    action: Mapped[str] = mapped_column(String(32))
+    actor: Mapped[str] = mapped_column(String(255))
+    reason: Mapped[str] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
