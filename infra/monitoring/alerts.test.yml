@@ -210,3 +210,422 @@ tests:
         exp_samples:
           - labels: 'ALERTS{alertname="KelpieRecoveryMetricsMissing",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}'
             value: 1
+
+  - name: fresh complete empty runtime is observed rather than missing
+    input_series:
+      - &runtime_up
+        series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '1x20'
+      - &runtime_available
+        series: 'kelpie_runtime_snapshot_available{job="kelpie-api",instance="api:8000"}'
+        values: '1x20'
+      - &runtime_age
+        series: 'kelpie_runtime_snapshot_age_seconds{job="kelpie-api",instance="api:8000"}'
+        values: '0x20'
+      - &runtime_online
+        series: 'kelpie_runtime_workers{job="kelpie-api",instance="api:8000",state="online"}'
+        values: '1x20'
+      - &runtime_draining
+        series: 'kelpie_runtime_workers{job="kelpie-api",instance="api:8000",state="draining"}'
+        values: '0x20'
+      - &runtime_offline
+        series: 'kelpie_runtime_workers{job="kelpie-api",instance="api:8000",state="offline"}'
+        values: '0x20'
+      - &runtime_quarantined
+        series: 'kelpie_runtime_workers{job="kelpie-api",instance="api:8000",state="quarantined"}'
+        values: '0x20'
+      - &runtime_active
+        series: 'kelpie_runtime_leases{job="kelpie-api",instance="api:8000",state="active"}'
+        values: '1x20'
+      - &runtime_expired
+        series: 'kelpie_runtime_leases{job="kelpie-api",instance="api:8000",state="expired"}'
+        values: '0x20'
+      - &runtime_queued
+        series: 'kelpie_runtime_queued_work{job="kelpie-api",instance="api:8000"}'
+        values: '0x20'
+      - &runtime_oldest
+        series: 'kelpie_runtime_queue_oldest_age_seconds{job="kelpie-api",instance="api:8000"}'
+        values: '0x20'
+    alert_rule_test:
+      - {eval_time: 5m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: []}
+      - {eval_time: 5m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 5m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 5m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+    promql_expr_test:
+      - expr: 'kelpie:runtime_snapshot_usable'
+        eval_time: 5m
+        exp_samples:
+          - labels: 'kelpie:runtime_snapshot_usable{job="kelpie-api",instance="api:8000"}'
+            value: 1
+
+  - name: heartbeat warning waits two minutes and clears on recovery
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - <<: *runtime_offline
+        values: '1x5 0x14'
+      - *runtime_quarantined
+      - *runtime_active
+      - *runtime_expired
+      - *runtime_queued
+      - *runtime_oldest
+    alert_rule_test:
+      - {eval_time: 1m30s, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - eval_time: 2m
+        alertname: KelpieWorkerHeartbeatLost
+        exp_alerts:
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: worker}
+            exp_annotations:
+              summary: Kelpie has offline workers or lost heartbeats
+              summary_ko: Kelpie Worker가 오프라인이거나 Heartbeat가 끊겼습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#heartbeat
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#heartbeat
+      - {eval_time: 3m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: []}
+
+  - name: lease warning waits two minutes and clears on recovery
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - *runtime_offline
+      - *runtime_quarantined
+      - *runtime_active
+      - <<: *runtime_expired
+        values: '1x5 0x14'
+      - *runtime_queued
+      - *runtime_oldest
+    alert_rule_test:
+      - {eval_time: 1m30s, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - eval_time: 2m
+        alertname: KelpieActiveLeaseExpired
+        exp_alerts:
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: worker}
+            exp_annotations:
+              summary: Kelpie has expired lease records that are still active
+              summary_ko: Kelpie에 만료됐지만 활성 상태로 남은 Lease가 있습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#lease
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#lease
+      - {eval_time: 3m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: []}
+
+  - name: queue warning waits two minutes and clears on recovery
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - *runtime_offline
+      - *runtime_quarantined
+      - *runtime_active
+      - *runtime_expired
+      - <<: *runtime_queued
+        values: '1x5 0x14'
+      - <<: *runtime_oldest
+        values: '601x5 0x14'
+    alert_rule_test:
+      - {eval_time: 1m30s, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+      - eval_time: 2m
+        alertname: KelpieWorkQueueStalled
+        exp_alerts:
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api}
+            exp_annotations:
+              summary: Kelpie work has remained queued for more than ten minutes
+              summary_ko: Kelpie 작업이 10분 넘게 대기열에 남아 있습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#queue
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#queue
+      - {eval_time: 3m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: []}
+
+  - name: failed observation retains data but suppresses domain alerts
+    input_series:
+      - *runtime_up
+      - <<: *runtime_available
+        values: '0x20'
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - <<: *runtime_offline
+        values: '1x20'
+      - *runtime_quarantined
+      - *runtime_active
+      - <<: *runtime_expired
+        values: '1x20'
+      - <<: *runtime_queued
+        values: '1x20'
+      - <<: *runtime_oldest
+        values: '900x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieRuntimeObservationUnavailable
+        exp_alerts: &runtime_unavailable
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api}
+            exp_annotations:
+              summary: Kelpie runtime observation is failed, stale, or incomplete
+              summary_ko: Kelpie 실행 상태 관측이 실패했거나 오래됐거나 누락됐습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#observation
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#observation
+      - {eval_time: 2m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: stale monotonic age is unavailable even if success flag survives
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - <<: *runtime_age
+        values: '31x20'
+      - *runtime_online
+      - *runtime_draining
+      - <<: *runtime_offline
+        values: '1x20'
+      - *runtime_quarantined
+      - *runtime_active
+      - <<: *runtime_expired
+        values: '1x20'
+      - <<: *runtime_queued
+        values: '1x20'
+      - <<: *runtime_oldest
+        values: '900x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieRuntimeObservationUnavailable
+        exp_alerts: *runtime_unavailable
+      - {eval_time: 2m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: NaN age is not fresh
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - <<: *runtime_age
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - *runtime_online
+      - *runtime_draining
+      - <<: *runtime_offline
+        values: '1x20'
+      - *runtime_quarantined
+      - *runtime_active
+      - <<: *runtime_expired
+        values: '1x20'
+      - <<: *runtime_queued
+        values: '1x20'
+      - <<: *runtime_oldest
+        values: '900x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieRuntimeObservationUnavailable
+        exp_alerts: *runtime_unavailable
+      - {eval_time: 2m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: missing observer is not a healthy fleet
+    input_series:
+      - *runtime_up
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - <<: *runtime_offline
+        values: '1x20'
+      - *runtime_quarantined
+      - *runtime_active
+      - <<: *runtime_expired
+        values: '1x20'
+      - <<: *runtime_queued
+        values: '1x20'
+      - <<: *runtime_oldest
+        values: '900x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieRuntimeObservationUnavailable
+        exp_alerts: *runtime_unavailable
+      - {eval_time: 2m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: partially relabeled worker metrics are unavailable
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - *runtime_age
+      - *runtime_online
+      - <<: *runtime_offline
+        values: '1x20'
+      - *runtime_quarantined
+      - *runtime_active
+      - <<: *runtime_expired
+        values: '1x20'
+      - <<: *runtime_queued
+        values: '1x20'
+      - <<: *runtime_oldest
+        values: '900x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieRuntimeObservationUnavailable
+        exp_alerts: *runtime_unavailable
+      - {eval_time: 2m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: partially relabeled lease metrics are unavailable
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - <<: *runtime_offline
+        values: '1x20'
+      - *runtime_quarantined
+      - <<: *runtime_expired
+        values: '1x20'
+      - <<: *runtime_queued
+        values: '1x20'
+      - <<: *runtime_oldest
+        values: '900x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieRuntimeObservationUnavailable
+        exp_alerts: *runtime_unavailable
+      - {eval_time: 2m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: missing queue age is unavailable
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - <<: *runtime_offline
+        values: '1x20'
+      - *runtime_quarantined
+      - *runtime_active
+      - <<: *runtime_expired
+        values: '1x20'
+      - <<: *runtime_queued
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieRuntimeObservationUnavailable
+        exp_alerts: *runtime_unavailable
+      - {eval_time: 2m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: stale series marker is unavailable
+    input_series:
+      - *runtime_up
+      - <<: *runtime_available
+        values: '1x3 stale'
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - <<: *runtime_offline
+        values: '1x20'
+      - *runtime_quarantined
+      - *runtime_active
+      - <<: *runtime_expired
+        values: '1x20'
+      - <<: *runtime_queued
+        values: '1x20'
+      - <<: *runtime_oldest
+        values: '900x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: KelpieRuntimeObservationUnavailable
+        exp_alerts: *runtime_unavailable
+      - {eval_time: 4m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 4m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 4m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: unavailable scrape takes precedence over stale runtime data
+    input_series:
+      - <<: *runtime_up
+        values: '0x20'
+      - *runtime_available
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - *runtime_offline
+      - *runtime_quarantined
+      - *runtime_active
+      - *runtime_expired
+      - *runtime_queued
+      - *runtime_oldest
+    alert_rule_test:
+      - {eval_time: 3m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: []}
+      - {eval_time: 3m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 3m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 3m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: restored complete observation clears its warning
+    input_series:
+      - *runtime_up
+      - <<: *runtime_available
+        values: '0x5 1x14'
+      - *runtime_age
+      - *runtime_online
+      - *runtime_draining
+      - *runtime_offline
+      - *runtime_quarantined
+      - *runtime_active
+      - *runtime_expired
+      - *runtime_queued
+      - *runtime_oldest
+    alert_rule_test:
+      - {eval_time: 1m30s, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: []}
+      - {eval_time: 2m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: *runtime_unavailable}
+      - {eval_time: 3m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: []}
+
+  - name: exact freshness and queue boundaries and quarantined draining workers are not failures
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - <<: *runtime_age
+        values: '30x20'
+      - *runtime_online
+      - <<: *runtime_draining
+        values: '2x20'
+      - *runtime_offline
+      - <<: *runtime_quarantined
+        values: '3x20'
+      - *runtime_active
+      - *runtime_expired
+      - <<: *runtime_queued
+        values: '1x20'
+      - <<: *runtime_oldest
+        values: '600x20'
+    alert_rule_test:
+      - {eval_time: 5m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: []}
+      - {eval_time: 5m, alertname: KelpieWorkerHeartbeatLost, exp_alerts: []}
+      - {eval_time: 5m, alertname: KelpieActiveLeaseExpired, exp_alerts: []}
+      - {eval_time: 5m, alertname: KelpieWorkQueueStalled, exp_alerts: []}
+
+  - name: other target or job metrics cannot fill a missing contract
+    input_series:
+      - *runtime_up
+      - *runtime_available
+      - series: 'kelpie_runtime_snapshot_age_seconds{job="kelpie-api",instance="other:8000"}'
+        values: '0x20'
+      - series: 'kelpie_runtime_snapshot_age_seconds{job="other-api",instance="api:8000"}'
+        values: '0x20'
+      - *runtime_online
+      - *runtime_draining
+      - *runtime_offline
+      - *runtime_quarantined
+      - *runtime_active
+      - *runtime_expired
+      - *runtime_queued
+      - *runtime_oldest
+    alert_rule_test:
+      - {eval_time: 2m, alertname: KelpieRuntimeObservationUnavailable, exp_alerts: *runtime_unavailable}
