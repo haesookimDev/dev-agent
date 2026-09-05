@@ -80,6 +80,13 @@ test("live closure preserves focused input; all closed states have localized rea
         await expect(page.locator(".runStatus")).not.toContainText("%");
         await expect(page.locator(".runStatus .progress")).toHaveCount(0);
         await expect(page.locator(".stoppedProgress")).toHaveText(messages.run.stoppedProgress);
+        if (locale === "ko") {
+          await expect.poll(() => page.locator(".runStatus").evaluate((element) => {
+            const badge = element.querySelector(".status")!.getBoundingClientRect();
+            const description = element.querySelector(".stoppedProgress")!.getBoundingClientRect();
+            return badge.height > 0 && description.top >= badge.bottom;
+          })).toBe(true);
+        }
       } else if (status === "completed") {
         await expect(page.locator(".runStatus")).toContainText("100%");
         await expect.poll(() => page.locator(".runStatus .progress").evaluate((element) => {
