@@ -128,7 +128,9 @@ jobs:
       - name: Run browser acceptance
         env:
           KELPIE_E2E_PYTHON: python
-        run: npm run test:e2e --prefix apps/web
+        run: |
+          npm run test:e2e --prefix apps/web
+          npm run test:e2e:preview --prefix apps/web
       - name: Preserve browser evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
