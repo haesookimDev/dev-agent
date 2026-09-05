@@ -24,6 +24,8 @@ from .service import emit_event, transition_work_item
 settings = get_settings()
 github = GitHubAppClient(settings)
 DELIVERY_WRITE_SECONDS = 45
+DELIVERY_RECOVERY_DB_SECONDS = 2
+_active_deliveries: set[str] = set()
 
 
 class DeliveryStopped(Exception):
@@ -128,6 +130,35 @@ def prepare_delivery_workspace(
 
 
 async def deliver_work(work_item_id: str) -> None:
+    await _exclusive_delivery(work_item_id, recover_running=False)
+
+
+async def _exclusive_delivery(work_item_id: str, *, recover_running: bool) -> None:
+    # Reserve before the first await: request delivery and startup recovery share this guard.
+    # This is process-local, not a distributed lease; the MVP runs one API process.
+    if work_item_id in _active_deliveries:
+        return
+    _active_deliveries.add(work_item_id)
+    try:
+        if recover_running:
+            try:
+                async with asyncio.timeout(DELIVERY_RECOVERY_DB_SECONDS):
+                    async with SessionLocal() as session:
+                        _, job = await lock_delivery(
+                            session, work_item_id, states=("pending", "retry", "running"),
+                        )
+                        if job.state == "running":
+                            job.state = "retry"
+                            job.error = "control plane restarted during delivery"
+                        await session.commit()
+            except DeliveryStopped:
+                return
+        await _traced_delivery(work_item_id)
+    finally:
+        _active_deliveries.remove(work_item_id)
+
+
+async def _traced_delivery(work_item_id: str) -> None:
     async with SessionLocal() as session:
         work = await session.get(WorkItem, work_item_id)
     attributes = {"kelpie.work_id": work_item_id}
@@ -302,22 +333,18 @@ async def _deliver_work(work_item_id: str) -> None:
 
 
 async def resume_pending_deliveries() -> None:
-    async with SessionLocal() as session:
-        identifiers = list((await session.scalars(select(DeliveryJob.work_item_id).where(
-            DeliveryJob.state.in_({"pending", "retry", "running"}),
-        ))).all())
-    for work_item_id in identifiers:
-        try:
-            async with SessionLocal() as session:
-                _, job = await lock_delivery(session, work_item_id,
-                                             states=("pending", "retry", "running"))
-                if job.state == "running":
-                    job.state = "retry"
-                    job.error = "control plane restarted during delivery"
-                await session.commit()
-        except DeliveryStopped:
-            continue
-        asyncio.create_task(deliver_work(work_item_id))
+    async with asyncio.timeout(DELIVERY_RECOVERY_DB_SECONDS):
+        async with SessionLocal() as session:
+            identifiers = list((await session.scalars(select(DeliveryJob.work_item_id).where(
+                DeliveryJob.state.in_({"pending", "retry", "running"}),
+            ))).all())
+    # Keep ownership until all children finish; cancellation joins them before shutdown.
+    results = await asyncio.gather(*(
+        _exclusive_delivery(work_item_id, recover_running=True) for work_item_id in identifiers
+    ), return_exceptions=True)
+    if any(isinstance(result, BaseException) for result in results):
+        # The startup supervisor retries. Never log raw DB/connection exception details.
+        raise RuntimeError("delivery recovery did not finish")
 
 
 def pull_request_body(work: WorkItem) -> str:
