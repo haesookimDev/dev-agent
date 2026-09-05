@@ -250,14 +250,18 @@ async def validate_delivery_ready(session: AsyncSession, item: WorkItem) -> bool
     return True
 
 
-async def queue_delivery(session: AsyncSession, item: WorkItem) -> None:
+async def queue_delivery(
+    session: AsyncSession, item: WorkItem, *, approval_audit_id: int,
+) -> None:
     job = await session.get(DeliveryJob, item.id)
     if job is None:
-        session.add(DeliveryJob(work_item_id=item.id, state="pending"))
+        session.add(DeliveryJob(work_item_id=item.id, state="pending",
+                                approval_audit_id=approval_audit_id))
         return
     if job.state != "completed":
         job.state = "retry"
         job.error = None
+        job.approval_audit_id = approval_audit_id
 
 
 def write_delivery_bundle(root: str, work_item_id: str, content: bytes) -> Path:
@@ -781,12 +785,12 @@ async def decide_approval(
             expected_version=item.version,
             actor=actor.subject,
         )
-    if should_deliver:
-        await queue_delivery(session, item)
-    await record_approval_audit(
+    approval_audit = await record_approval_audit(
         session, request, item, actor, decision, approval, before,
         transport="web", delivery_queued=should_deliver,
     )
+    if should_deliver:
+        await queue_delivery(session, item, approval_audit_id=approval_audit.id)
     await session.commit()
     observe_approval(payload.kind, payload.decision)
     if should_deliver:
@@ -1054,12 +1058,12 @@ async def slack_command(
             actor=actor,
             message="Commit and pull request approved from Slack",
         )
-        if should_deliver:
-            await queue_delivery(session, item)
-        await record_approval_audit(
+        approval_audit = await record_approval_audit(
             session, request, item, identity, decision, approval, before,
             transport="slack", delivery_queued=should_deliver,
         )
+        if should_deliver:
+            await queue_delivery(session, item, approval_audit_id=approval_audit.id)
         await session.commit()
         observe_approval("pull_request", "approve")
         if should_deliver:

@@ -91,13 +91,13 @@ async def record_approval_audit(
     session: AsyncSession, request: Request, item: WorkItem, actor: Actor,
     decision: RoleDecision, approval: Approval, before: ApprovalState,
     *, transport: Literal["web", "slack"], delivery_queued: bool,
-) -> None:
+) -> AuditRecord:
     if approval.id is None:
         raise ValueError("approval must be flushed before recording its audit identity")
     bundle = await session.get(DeliveryBundle, item.id) if delivery_queued else None
     if delivery_queued and bundle is None:
         raise ValueError("queued delivery requires its approved bundle audit identity")
-    _record_actor_audit(
+    record = _record_actor_audit(
         session, request, item, actor, decision, action="approval.decided",
         target_id=str(approval.id), transport=transport, details={
             "kind": approval.kind, "decision": approval.decision,
@@ -109,14 +109,16 @@ async def record_approval_audit(
             "delivery_bundle_sha256": bundle.sha256 if bundle else None,
         },
     )
+    await session.flush()
+    return record
 
 
 def _record_actor_audit(
     session: AsyncSession, request: Request, item: WorkItem, actor: Actor,
     decision: RoleDecision, *, action: str, target_id: str,
     transport: Literal["web", "slack"], details: dict,
-) -> None:
-    session.add(AuditRecord(
+) -> AuditRecord:
+    record = AuditRecord(
         organization_id=item.organization_id, work_item_id=item.id, repository=item.repository,
         action=action, target_id=target_id, actor_id=actor.principal_id,
         actor_subject=actor.subject, identity_provider=actor.identity_provider,
@@ -124,4 +126,6 @@ def _record_actor_audit(
         effective_role=decision.effective_role, required_role=decision.required_role,
         request_id=current_request_id(), correlation_id=item.correlation_id,
         source_ip=request_source_ip(request), transport=transport, details=details,
-    ))
+    )
+    session.add(record)
+    return record
