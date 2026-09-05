@@ -31,6 +31,12 @@ Synthetic request: `POST /api/work-items/{id}/approvals` with `{"kind":"budget",
 }
 ```
 
+## Time-budget input contract
+
+For `kind=budget`, `decision=approve`, `payload.minutes` must be a **JSON integer** from 15 through 1440. Omitting it retains the 60-minute default. The range applies to one extension, not a new cumulative-budget cap. `null`, booleans, strings, arrays, objects, decimal notation (including `60.0`) and out-of-range integers return 422 with `{"detail":"invalid budget extension"}`. Budget, work state/version, approvals, events and audits remain unchanged, allowing retry with a valid integer.
+
+Previously `"60"` was coerced into a number and `15.9` was truncated to 15; both are now rejected. Clients sending these values must confirm user intent and send a JSON integer (for example `{"minutes":60}`), not silently truncate input. Organization/repository permission, exhausted-budget state and quarantine checks remain unchanged. Budget **rejection** applies no extension and does not require `minutes` validation. PR/console approval payloads are outside this fix. No database, environment-variable or dependency changes are required.
+
 ## Migration and recovery
 
 Back up first, then apply `20260906_0007` with `make migrate-api` and Alembic `check` before API rollout. The JSON column defaults to `{}` without rewriting existing audits. There are no new environment variables or dependencies. Online downgrade requires a locked, empty audit table. SQLite batch recreation removes existing triggers, so the migration reinstalls them. [Alembic batch behavior](https://alembic.sqlalchemy.org/en/latest/batch.html)
@@ -49,5 +55,17 @@ Foundation `740d902`, console `4210b36`, approval/E2E `77b9a31`. Subsequent docu
 
 ![Korean post-approval activity and read-only controls](../assets/control-action-audit/ko-desktop.png)
 ![English narrow post-approval view](../assets/control-action-audit/en-mobile.png)
+
+## Time-budget input regression verification · 2026-09-06
+
+Fix `b76b8f4`; subsequent documentation/images do not alter runtime code.
+
+- The new regression suite reproduced eight failures before the fix; all 23 tests passed afterward. It covers invalid types/ranges, retry, minimum/maximum extensions, omitted default, rejection and permission/state checks. Passed `make test-api` (311), 17 separate PostgreSQL tests, `make test-runner test-worker test-gateway test-web` (including Runner 6, Web 40 and TypeScript), `make lint`, Web build and the existing 12 Chromium E2E tests.
+- Fresh isolated SQLite API `:18520` and production-mode Web `:13520`: a scoped HTTP worker fixture prepared exhausted-budget state. Actual requests in Orca's browser verified 422 for `null`, `"invalid"`, `"60"`, `15.9`, `60.0`, `[]` and `{}`, preserving budget 240/state/version and zero audit rows. Retrying 45 minutes returned 200, budget 285, `implementing`, version 6 and one audit whose request ID matched the response.
+- Native Chrome inspection confirmed `Budget exhausted / 240 min` after rejection and `Implementing / 285 min` with live activity after valid approval. KO/EN × 1440/390px views passed updated-budget, input-label, skip-link focus, no-overflow and page/console/HTTP-error checks; captures were inspected. Expected HTTP 422 negative cases are separate from the error-free page checks.
+- The worker fixture keeps authentication through standard lease renewal; it is not actual VM execution. This is API input validation, not a new time-budget control UI. Images are usage evidence, not UI design before/after comparisons.
+
+![Korean page after a valid budget extension](../assets/budget-validation/ko-desktop.png)
+![Updated budget on the English narrow view](../assets/budget-validation/en-mobile.png)
 
 Cancellation/delivery audits, OIDC preview grants, audit retention/recovery, real KVM/WireGuard/noVNC input-ownership enforcement and concurrent-VM isolation remain MVP work. This change audits console leases; it does not implement a new console UI or VM input boundary.

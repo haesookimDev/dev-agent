@@ -31,6 +31,12 @@ IAM-001의 두 번째 감사 Batch입니다. [피드백 감사](feedback-audit.m
 }
 ```
 
+## 시간 예산 입력 계약
+
+`kind=budget`, `decision=approve`의 `payload.minutes`는 15~1440 범위의 **JSON 정수**여야 합니다. 생략하면 기존처럼 60분을 연장합니다. 범위는 한 번의 연장량이며 누적 예산의 상한을 새로 설정하지 않습니다. `null`, Boolean, 문자열, 배열, 객체, 소수 표기(`60.0` 포함), 범위 밖의 정수는 422와 `{"detail":"invalid budget extension"}`으로 거부됩니다. 예산·작업 상태·버전·승인·이벤트·감사는 변경하지 않으므로 올바른 정수로 재시도할 수 있습니다.
+
+이전에는 `"60"`을 숫자로 변환하고 `15.9`를 15로 잘랐지만 이제 둘 다 거부합니다. 이런 입력을 보내던 Client는 사용자 의도를 확인한 뒤 JSON 정수(예: `{"minutes":60}`)를 전송해야 하며 임의로 버림 처리하지 않아야 합니다. 조직·저장소 권한, 예산 소진 상태, 격리 검사는 그대로 유지됩니다. 예산 **거절**은 연장량을 적용하지 않아 `minutes` 검사를 요구하지 않습니다. PR·Console 승인 Payload는 이번 수정의 대상이 아닙니다. DB·환경변수·의존성 변경은 없습니다.
+
 ## Migration과 복구
 
 백업 후 API Rollout 전에 `make migrate-api`와 Alembic `check`로 `20260906_0007`을 적용합니다. 기존 감사 행을 수정하지 않고 JSON 컬럼을 기본값 `{}`로 추가합니다. 새 환경변수·의존성은 없습니다. 빈 감사 테이블만 잠금 아래 Online Downgrade할 수 있습니다. SQLite Batch 재생성이 제거하는 기존 Trigger도 다시 설치합니다. [Alembic Batch 동작](https://alembic.sqlalchemy.org/en/latest/batch.html)
@@ -49,5 +55,17 @@ IAM-001의 두 번째 감사 Batch입니다. [피드백 감사](feedback-audit.m
 
 ![한국어 승인 후 활동과 읽기 전용 제어](../assets/control-action-audit/ko-desktop.png)
 ![영어 좁은 화면의 승인 후 상태](../assets/control-action-audit/en-mobile.png)
+
+## 시간 예산 입력 회귀 검증 · 2026-09-06
+
+수정 `b76b8f4` 기준입니다. 이후 문서·이미지는 실행 코드에 영향을 주지 않습니다.
+
+- 새 회귀 테스트는 수정 전 8개 실패를 재현했고 수정 후 23개 모두 통과했습니다. 잘못된 타입·범위, 재시도, 최소/최대 연장, 생략 기본값, 거절, 권한·상태 검사를 포함합니다. `make test-api` 311개, 별도 PostgreSQL 테스트 17개, `make test-runner test-worker test-gateway test-web`(Runner 6개, Web 40개·TypeScript 포함), `make lint`, Web Build, 기존 Chromium E2E 12개를 통과했습니다.
+- 새 격리 SQLite API `:18520`와 운영 모드 Web `:13520`에서 scoped HTTP Worker Fixture로 예산 소진 상태를 준비했습니다. Orca 브라우저의 실제 요청으로 `null`, `"invalid"`, `"60"`, `15.9`, `60.0`, `[]`, `{}`가 모두 422이고 예산 240분·상태·버전 불변, 감사 0행임을 확인했습니다. 45분 재시도는 200, 예산 285분·`implementing`·버전 6·감사 1행으로 이어졌으며 응답과 감사 Request ID가 일치했습니다.
+- Native Chrome에서 거부 후 `Budget exhausted / 240 min`, 정상 승인 후 `Implementing / 285 min`과 실시간 활동을 직접 확인했습니다. KO/EN × 1440/390px에서 285분, 입력 레이블, Skip Link 포커스, 가로 넘침 없음, Page/Console/HTTP 오류 없음을 확인하고 캡처를 검토했습니다. 잘못된 값 테스트의 예상 HTTP 422는 오류 없음 검사와 구분합니다.
+- Worker Fixture는 표준 Lease 갱신으로 인증을 유지하며 실제 VM 실행을 대신하지 않습니다. 이번 수정은 API 입력 검증이며 새로운 시간 예산 조작 UI를 추가하지 않습니다. 아래는 사용 증거이며 UI 디자인 변경 전후가 아닙니다.
+
+![한국어 화면의 정상 예산 연장 후 상태](../assets/budget-validation/ko-desktop.png)
+![영어 좁은 화면의 갱신된 시간 예산](../assets/budget-validation/en-mobile.png)
 
 취소·전달 감사, OIDC Preview Grant, 감사 보존/복구, 실제 KVM·WireGuard·noVNC 입력 소유권 강제·동시 VM 격리는 남은 MVP 항목입니다. 이번 변경은 Console Lease 감사이며 새로운 Console UI나 VM 입력 경계를 구현하지 않습니다.
