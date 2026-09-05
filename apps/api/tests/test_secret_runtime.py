@@ -86,6 +86,10 @@ def test_running_api_observes_secret_rotation_and_recovery(tmp_path):
                 assert response.status_code == 503
                 assert response.json() == {"detail": "configured secret is unavailable"}
                 assert response.headers["cache-control"] == "no-store"
+                source.mkdir()
+                for _ in range(3):
+                    assert register(rotated).status_code == 503
+                source.rmdir()
                 source.write_text(rotated)
                 source.chmod(0o600)
                 assert register(rotated).status_code == 200

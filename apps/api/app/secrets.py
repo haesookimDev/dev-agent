@@ -34,10 +34,13 @@ class FileSecretProvider:
         # must take effect without retaining a descriptor or the previous value.
         try:
             descriptor = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK)
-            with os.fdopen(descriptor, "rb") as source:
-                if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
                     raise SecretUnavailableError()
-                contents = source.read(MAX_SECRET_BYTES + 1)
+                with os.fdopen(descriptor, "rb", closefd=False) as source:
+                    contents = source.read(MAX_SECRET_BYTES + 1)
+            finally:
+                os.close(descriptor)
             if len(contents) > MAX_SECRET_BYTES:
                 raise SecretUnavailableError()
             value = contents.decode("utf-8").rstrip("\r\n")

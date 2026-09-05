@@ -1,3 +1,4 @@
+import errno
 import os
 import traceback
 
@@ -99,3 +100,40 @@ def test_pem_format_is_preserved(tmp_path) -> None:
     source = tmp_path / "key.pem"
     source.write_text(contents + "\n")
     assert FileSecretProvider(str(source)).read() == contents
+
+
+@pytest.mark.parametrize("kind", ["directory", "fifo", "invalid", "valid"])
+def test_secret_descriptors_are_closed_on_success_and_failure(tmp_path, monkeypatch, kind):
+    source = tmp_path / "secret"
+    if kind == "directory":
+        source.mkdir()
+    elif kind == "fifo":
+        os.mkfifo(source)
+    else:
+        source.write_bytes(b"\xff" if kind == "invalid" else b"synthetic-value")
+    original_open = os.open
+    descriptors = []
+
+    def tracked_open(*args, **kwargs):
+        descriptor = original_open(*args, **kwargs)
+        descriptors.append(descriptor)
+        return descriptor
+
+    monkeypatch.setattr("app.secrets.os.open", tracked_open)
+    try:
+        if kind == "valid":
+            assert FileSecretProvider(str(source)).read() == "synthetic-value"
+        else:
+            with pytest.raises(SecretUnavailableError):
+                FileSecretProvider(str(source)).read()
+        assert len(descriptors) == 1
+        with pytest.raises(OSError) as closed:
+            os.fstat(descriptors[0])
+        assert closed.value.errno == errno.EBADF
+    finally:
+        # Keep even the pre-fix regression run from leaking its test descriptor.
+        for descriptor in descriptors:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
