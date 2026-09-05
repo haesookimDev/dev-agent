@@ -98,6 +98,7 @@
 - Worker: `make test-worker`
 - Gateway: `make test-gateway`
 - Web: `make test-web`
+- Monitoring 설정·알림 규칙: `make test-monitoring` (`promtool` 설치 또는 `PROMTOOL` 경로 지정)
 - 정적 검사: `make lint`
 - 여러 컴포넌트에 걸친 변경: `make test`
 

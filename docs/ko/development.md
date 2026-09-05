@@ -12,6 +12,7 @@ MVP 지속 개발에서는 [로드맵의 바로 다음 Release](roadmap-summary.
 
 - `make test`: API, Runner, Worker, Gateway, Web 테스트와 Web 타입 검사
 - `make lint`: Python Ruff, Go vet, Web ESLint
+- `make test-monitoring PROMTOOL=/path/to/promtool`: Monitoring 설정과 PromQL 알림 규칙 검증. [설치·운영 안내](monitoring-alerts.md)
 - `cd apps/web && npm run build`: 운영 Web 빌드
 - DB 변경: 실제 PostgreSQL의 Upgrade, 스키마 일치, 안전한 범위의 Rollback
 - 사용자 기능: 실제 서비스를 구동한 뒤 브라우저에서 관련 여정 수행, 한국어·영어 및 데스크톱·모바일 너비 확인
@@ -45,5 +46,7 @@ Playwright는 단위 테스트가 다루지 못하는 실제 브라우저와 서
 현재 `CI` Workflow의 필수 검사는 `Python`, `Go`, `Web`입니다. Python은 API·Runner 테스트, Ruff, PostgreSQL 17 Upgrade/Check/Downgrade/Re-upgrade, Worker 잠금·격리와 [감사 기록 변경 방지](feedback-audit.md) 테스트를 실행합니다. Go는 Worker·Gateway 테스트와 vet를 실행합니다. Web은 테스트·타입 검사·ESLint·운영 빌드·Chromium E2E를 실행합니다. 브라우저 바이너리를 캐시하고 보고서와 실패 증거를 `browser-evidence` Artifact로 7일간 보존합니다. 각 Job의 제한은 8분이며, PR에서는 이전 실행을 취소합니다. 짧은 전체 검사를 유지하므로 현재는 경로 기반 생략이나 다중 Version Matrix를 사용하지 않습니다.
 
 GitHub Actions 구성은 [Workflow 문법](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)과 [의존성 캐시 문서](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)를 기준으로 합니다. Token은 읽기 전용으로 제한하고 외부 Action은 검증한 SHA에 고정합니다.
+
+필수 `Go` 검사에는 `make test-monitoring`도 포함됩니다. 공식 Prometheus 3.14.0 Archive를 캐시하고 매번 SHA-256을 검증한 뒤 설정·알림 테스트를 실행합니다. 가상 시계열을 사용하므로 실제 알림의 대기 시간을 CI에서 기다리지 않습니다. 기존 필수 검사 이름·8분 Timeout·애플리케이션 검증은 유지합니다.
 
 작업 보고에는 커밋별 목적, 테스트와 실제 사용 결과, PR·CI·머지 상태, 미커밋 변경, 남은 MVP 항목과 필요한 외부 환경을 기록합니다. 상세 저장소 규칙은 [AGENTS.md](../../AGENTS.md)를 따릅니다.

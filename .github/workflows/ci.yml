@@ -85,6 +85,24 @@ jobs:
           make test-worker test-gateway
           (cd apps/worker && go vet ./...)
           (cd apps/gateway && go vet ./...)
+      - name: Cache pinned promtool archive
+        id: promtool-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.temp }}/kelpie-prometheus-3.14.0.tar.gz
+          key: promtool-linux-amd64-3.14.0-f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d
+      - name: Download promtool on cache miss
+        if: steps.promtool-cache.outputs.cache-hit != 'true'
+        run: >-
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2
+          --retry 2 --connect-timeout 10 --max-time 90
+          --output "$RUNNER_TEMP/kelpie-prometheus-3.14.0.tar.gz"
+          https://github.com/prometheus/prometheus/releases/download/v3.14.0/prometheus-3.14.0.linux-amd64.tar.gz
+      - name: Verify and test alert rules
+        run: |
+          printf '%s  %s\n' 'f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d' "$RUNNER_TEMP/kelpie-prometheus-3.14.0.tar.gz" | sha256sum --check --status
+          tar -xzf "$RUNNER_TEMP/kelpie-prometheus-3.14.0.tar.gz" -C "$RUNNER_TEMP" --strip-components=1 prometheus-3.14.0.linux-amd64/promtool
+          make test-monitoring PROMTOOL="$RUNNER_TEMP/promtool"
 
   web:
     name: Web
