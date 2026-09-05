@@ -10,15 +10,16 @@ Added input-preserving retries, safe permission errors, actual SSE connection st
 
 ## Evidence
 
-- `make test`: API 89, Runner 6, Web 11 plus type checking, Worker/Gateway Go tests passed
+- `make test`: API 89, Runner 6, Web 12 plus type checking, Worker/Gateway Go tests passed
 - `make lint`, `npm run build --prefix apps/web`: passed
-- `npm run test:e2e --prefix apps/web`: seven Chromium tests passed in 27.9 seconds locally
+- `npm run test:e2e --prefix apps/web`: eight Chromium tests passed in 29.4 seconds locally
 - Reproduced before fixing: offline work creation, falsely live disconnected SSE and server errors for missing work
 - Real PostgreSQL 17 + API + production Web build + Mock Worker: creation → feedback → re-verification → approval → completion → resource release
 - Orca browser: performed that journey and verified no console errors during the normal flow
 - Chrome desktop Computer-use: directly entered search text, checked no results and reset filters
 - Visually inspected actual Chromium rendering at 390px and in English; E2E horizontal-overflow check passed
 - Stopped the dedicated test API to confirm the error UI, restarted it and recovered the list using the retry button
+- Display UTC storage timestamps in browser-local time while correcting missing SQLite offsets and the initial SSR timezone. The Honolulu browser regression reproduced a ten-hour error before the fix and passed afterward.
 
 The executor is Mock. This does not prove actual GitHub delivery, external IdP login, VM/WireGuard/noVNC operation or concurrent KVM isolation. Consult this UI PR's GitHub record for its own CI and merge results.
 
@@ -44,5 +45,7 @@ The before/after screenshots use different test data. Both show test environment
 | `8dab2e5` | Exclude generated browser reports from linting |
 | `c1996fd` | Missing/loading/error page recovery |
 | `f21250f` | CI browser checks and evidence retention |
+| `cfb7e23` | Hands-on evidence and reproduction documentation |
+| `9d8d7cb` | Browser timezone and UTC timestamp normalization |
 
 The subsequent documentation commit provides this verification record and reproducible instructions.
