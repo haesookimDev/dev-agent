@@ -35,7 +35,7 @@ Before rolling back RBAC, stop API ingress, webhooks, and workers and back up th
 
 ## OIDC authentication
 
-Follow the [secret management guide](secret-management.md) for file injection, rotation, and recovery.
+Follow the [secret management guide](secret-management.md) for file injection, rotation, and recovery. First complete [per-worker credential issuance and migration](worker-credentials.md) for Workers.
 
 Serve the dashboard and the API `/auth` and `/api` paths from the same public HTTPS origin in production. Dashboard Server Components forward the browser session cookie to the internal API, and browser requests and event streams include credentials. Do not expose the API on a separate public hostname or inject OIDC identity headers.
 
@@ -138,7 +138,7 @@ Build the Go binary on the target architecture and copy it to `/usr/local/bin/ke
 
 ```dotenv
 KELPIE_CONTROL_URL=https://control.example.com
-KELPIE_WORKER_TOKEN=<random 32+ character value>
+KELPIE_WORKER_TOKEN_FILE=/run/secrets/kelpie/worker-1.token
 KELPIE_WORKER_NAME=worker-1
 KELPIE_EXECUTOR=libvirt
 KELPIE_CPU_TOTAL=16

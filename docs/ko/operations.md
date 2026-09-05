@@ -35,7 +35,7 @@ RBAC Rollback 시에는 먼저 API 유입·Webhook과 Worker를 중지하고 DB 
 
 ## OIDC 인증
 
-Secret 파일 주입·교체와 실패 복구는 [Secret 관리 가이드](secret-management.md)를 따릅니다.
+Secret 파일 주입·교체와 실패 복구는 [Secret 관리 가이드](secret-management.md)를 따릅니다. Worker는 [개별 자격증명 발급·전환 절차](worker-credentials.md)를 먼저 수행합니다.
 
 운영 환경에서는 대시보드와 API의 `/auth`, `/api` 경로를 같은 HTTPS 공개 Origin으로 제공합니다. 대시보드 Server Component가 Browser의 Session Cookie를 내부 API 요청에 전달하며, Browser 요청과 Event Stream도 자격증명을 포함합니다. API를 별도 공개 Hostname으로 노출하거나 OIDC 신원 Header를 주입하지 않습니다.
 
@@ -138,7 +138,7 @@ PEM 파일은 API 사용자만 읽을 수 있도록 설정한 경로에 Mount합
 
 ```dotenv
 KELPIE_CONTROL_URL=https://control.example.com
-KELPIE_WORKER_TOKEN=<32자 이상 무작위 값>
+KELPIE_WORKER_TOKEN_FILE=/run/secrets/kelpie/worker-1.token
 KELPIE_WORKER_NAME=worker-1
 KELPIE_EXECUTOR=libvirt
 KELPIE_CPU_TOTAL=16
