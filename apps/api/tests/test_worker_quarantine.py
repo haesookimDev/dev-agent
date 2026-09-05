@@ -1,14 +1,20 @@
 import pytest
 from sqlalchemy import func, select
 from test_api import create_work, register_worker
+from test_authorization import authorized as authorized
+from test_authorization import create_item
+from test_authorization import database as api_database
+from test_integration_authorization import slack_request
 from test_worker_credentials import database as database
 
 from app.db import get_session
 from app.main import app
 from app.models import (
     AgentEvent,
+    Approval,
     ConsoleLease,
     DeliveryJob,
+    Feedback,
     PreviewEndpoint,
     ResourceLease,
     WorkerCredentialEvent,
@@ -125,3 +131,79 @@ async def test_quarantine_invalid_target_or_reason_does_not_write(database):
     assert await database.scalar(select(func.count()).select_from(WorkerCredentialEvent).where(
         WorkerCredentialEvent.action == "quarantined",
     )) == 0
+
+
+@pytest.mark.parametrize("path,body", [
+    ("feedback", {"message": "must not resume"}),
+    ("approvals", {"kind": "pull_request", "decision": "approve"}),
+    ("approvals", {"kind": "console", "decision": "approve"}),
+    ("console-lease", {"action": "acquire"}),
+    ("console-lease", {"action": "release"}),
+])
+async def test_quarantine_blocks_user_mutations(client, worker_headers, path, body):
+    worker, work, lease = await assigned_work(client, worker_headers)
+    preview = await client.post(f"/api/runs/{work['id']}/preview", headers=lease,
+        json={"target_url": "http://10.0.0.2:3000", "ttl_seconds": 3600})
+    assert preview.status_code == 200
+    acquired = await client.post(f"/api/work-items/{work['id']}/console-lease",
+                                  json={"action": "acquire"})
+    assert acquired.status_code == 200
+    async with api_database() as session:
+        host = await session.get(WorkerHost, worker["id"])
+        host.quarantined_at = utcnow()
+        item = await session.get(WorkItem, work["id"])
+        item.status = WorkStatus.AWAITING_APPROVAL
+        await session.commit()
+    response = await client.post(f"/api/work-items/{work['id']}/{path}", json=body)
+    assert response.status_code == 409
+    assert response.json() == {"detail": "work's worker is quarantined"}
+    async with api_database() as session:
+        assert (await session.get(WorkItem, work["id"])).status == WorkStatus.AWAITING_APPROVAL
+        assert (await session.get(ConsoleLease, work["id"])).version == 2
+        for model in (Feedback, Approval, DeliveryJob):
+            assert await session.scalar(select(func.count()).select_from(model)) == 0
+
+
+@pytest.mark.parametrize("console", [False, True])
+async def test_quarantine_blocks_gateway_resolution_even_with_unexpired_preview(
+    client, worker_headers, gateway_headers, console,
+):
+    worker, work, lease = await assigned_work(client, worker_headers)
+    preview = await client.post(f"/api/runs/{work['id']}/preview", headers=lease, json={
+        "target_url": "http://10.0.0.2:3000", "console_target_url": "http://10.0.0.2:6080",
+        "ttl_seconds": 3600,
+    })
+    assert preview.status_code == 200
+    params = {"host": preview.json()["hostname"], "console": str(console).lower()}
+    assert (await client.get("/internal/previews/resolve", headers=gateway_headers,
+                              params=params)).status_code == 200
+    async with api_database() as session:
+        host = await session.get(WorkerHost, worker["id"])
+        host.quarantined_at = utcnow()
+        await session.commit()
+    response = await client.get(
+        "/internal/previews/resolve", headers=gateway_headers, params=params,
+    )
+    assert response.status_code == 410
+    assert "target_url" not in response.text
+
+
+@pytest.mark.parametrize("action", ["feedback", "approve"])
+async def test_quarantine_blocks_authorized_slack_actions(authorized, action):
+    work = await create_item(authorized)
+    async with api_database() as session:
+        credential = await issue_credential(session, "slack-worker", actor="test", reason="test")
+        host = await session.get(WorkerHost, credential.worker_id)
+        host.quarantined_at = utcnow()
+        host.labels = {"virtualization": "mock"}
+        item = await session.get(WorkItem, work["id"])
+        item.assigned_worker_id = host.id
+        item.status = WorkStatus.AWAITING_APPROVAL
+        await session.commit()
+    suffix = " must not resume" if action == "feedback" else ""
+    response = await slack_request(authorized, f"{action} {work['id']}{suffix}")
+    assert response.status_code == 409
+    assert response.json() == {"detail": "work's worker is quarantined"}
+    async with api_database() as session:
+        for model in (Feedback, Approval, DeliveryJob):
+            assert await session.scalar(select(func.count()).select_from(model)) == 0
