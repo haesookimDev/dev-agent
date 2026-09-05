@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("create, stream, feedback, re-verify and approve work using real services", async ({ page }) => {
   const errors: string[] = [];

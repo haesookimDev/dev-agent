@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("an unavailable event stream is not presented as live", async ({ page, request }) => {
   const response = await request.post("http://127.0.0.1:18100/api/work-items", { data: {

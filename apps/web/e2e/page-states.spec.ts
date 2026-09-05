@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("a missing work item provides a localized route back to the dashboard", async ({ page }) => {
   await page.goto("/ko/work-items/00000000-0000-0000-0000-000000000000");

@@ -73,6 +73,12 @@ try {
     KELPIE_WORKER_TOKEN: token,
     KELPIE_WORKER_NAME: "browser-test-worker",
     KELPIE_EXECUTOR: "mock",
+    KELPIE_CPU_TOTAL: "2",
+    KELPIE_MEMORY_MB_TOTAL: "4096",
+    KELPIE_DISK_GB_TOTAL: "30",
+    KELPIE_RUN_CPU: "2",
+    KELPIE_RUN_MEMORY_MB: "4096",
+    KELPIE_RUN_DISK_GB: "30",
     KELPIE_POLL_SECONDS: "1",
     KELPIE_WORK_ROOT: join(temporary, "workspaces"),
   });

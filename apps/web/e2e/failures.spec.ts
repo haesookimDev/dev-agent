@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("a failed create request preserves the form and permits retry", async ({ page }) => {
   await page.goto("/en");
