@@ -91,18 +91,18 @@ python -m app.iam /run/config/organization.json
 
 The command replaces the organization's memberships, repository grants, Slack bindings, and registered repositories in one transaction. Omitted entries are revoked, so always submit the complete policy. At least one administrator is required. Reassigning the organization identity, claiming another organization's registered repository or Slack binding, and granting access to nonmembers are rejected. Failed applications roll back completely. Policy administration requires control-host operational access; there is no public bootstrap or permission-management API.
 
-| Effective role | Read, events, artifacts | Create, feedback, console takeover | PR, budget, console approval |
-| --- | --- | --- | --- |
-| Viewer | Allowed | Denied | Denied |
-| Operator | Allowed | Allowed | Denied |
-| Approver | Allowed | Allowed | Allowed |
-| Administrator | Allowed | Allowed | Allowed |
+| Effective role | Read, events, artifacts | Create, feedback, console takeover | PR, budget, console approval | Cancel unassigned queued work |
+| --- | --- | --- | --- | --- |
+| Viewer | Allowed | Denied | Denied | Denied |
+| Operator | Allowed | Allowed | Denied | Denied |
+| Approver | Allowed | Allowed | Allowed | Denied |
+| Administrator | Allowed | Allowed | Allowed | Allowed |
 
 Organization membership sets the baseline role across all registered repositories in that organization. Repository grants can elevate that role only for the named repository and cannot lower the baseline. No role applies across organizations. `/auth/session` returns the internal organization ID in `organization` and the organization baseline in `role`, excluding repository-specific elevation. Unknown repositories and other organizations' work return 404; insufficient roles within the same organization and unregistered memberships return 403. Work-item response shapes and worker lease contracts remain unchanged, while new repository names are normalized to lowercase.
 
 GitHub webhooks require a valid signature and matching registered repository and installation ID before creating work. Web submissions in OIDC mode also use the policy's installation ID. Slack commands resolve the signed `(team_id, user_id)` binding to a principal and use the same authorization checks; `SLACK_APPROVER_USER_IDS` no longer grants approval rights. Slack work records use the linked principal ID as actor. The global Slack notification channel remains deployment-wide, so enable notifications only where every channel participant may view the transmitted work information.
 
-Isolated development mode auto-registers its dedicated organization and repository on direct work submission. The development organization cannot overlap an OIDC organization or `legacy`. Organization/repository authorization is implemented; immutable detailed audit records and user cancellation remain IAM/OPS follow-up scope.
+Isolated development mode auto-registers its dedicated organization and repository on direct work submission. The development organization cannot overlap an OIDC organization or `legacy`. Organization/repository authorization and append-only feedback, console, approval, and [unassigned queued cancellation](work-cancellation.md) audits are implemented. Active-run administrator cancellation and delivery auditing remain IAM/OPS follow-up scope.
 
 ## Observability and correlation
 

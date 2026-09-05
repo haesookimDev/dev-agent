@@ -91,18 +91,18 @@ python -m app.iam /run/config/organization.json
 
 명령은 한 Transaction으로 조직의 Membership, Repository Grant, Slack 연결과 등록 저장소를 교체합니다. 생략한 항목은 회수되므로 항상 전체 정책을 제출합니다. 최소 한 명의 Administrator가 필요하며 조직 신원 재할당, 다른 조직에 등록된 저장소·Slack 연결, 구성원이 아닌 사용자에 대한 Grant는 거부합니다. 실패한 적용은 전체 Rollback됩니다. 정책 관리는 제어 서버 운영 권한으로만 가능하며 공개 Bootstrap·권한 관리 API는 제공하지 않습니다.
 
-| 유효 역할 | 조회·Event·산출물 | 작업 생성·피드백·Console 인수 | PR·예산·Console 승인 |
-| --- | --- | --- | --- |
-| Viewer | 허용 | 거부 | 거부 |
-| Operator | 허용 | 허용 | 거부 |
-| Approver | 허용 | 허용 | 허용 |
-| Administrator | 허용 | 허용 | 허용 |
+| 유효 역할 | 조회·Event·산출물 | 작업 생성·피드백·Console 인수 | PR·예산·Console 승인 | 미배정 대기 작업 취소 |
+| --- | --- | --- | --- | --- |
+| Viewer | 허용 | 거부 | 거부 | 거부 |
+| Operator | 허용 | 허용 | 거부 | 거부 |
+| Approver | 허용 | 허용 | 허용 | 거부 |
+| Administrator | 허용 | 허용 | 허용 | 허용 |
 
 조직 Membership의 역할이 소속 저장소 전체의 기본 권한입니다. 저장소 Grant는 해당 저장소에서만 역할을 승격하며 기본 역할을 낮추지 않습니다. 다른 조직에는 어떤 역할도 적용되지 않습니다. `/auth/session`의 `organization`은 내부 조직 ID, `role`은 조직 기본 역할을 반환하며 저장소별 승격은 포함하지 않습니다. 등록되지 않은 저장소·다른 조직의 작업은 404, 같은 조직에서 역할 부족은 403, 미등록 구성원은 403을 반환합니다. Work Item 응답 구조와 Worker 임대 계약은 유지되고 신규 저장소 이름은 소문자로 정규화됩니다.
 
 GitHub Webhook은 서명 검증에 더해 등록 저장소와 설치 ID가 모두 일치해야 작업을 생성합니다. OIDC Mode의 Web 작업도 정책에 지정된 설치 ID를 사용합니다. Slack 명령은 서명된 `(team_id, user_id)` 연결의 Principal을 찾아 같은 권한 검사를 수행하며, `SLACK_APPROVER_USER_IDS`는 더 이상 승인 권한을 부여하지 않습니다. Slack 작업 기록의 Actor는 연결된 Principal ID입니다. Global Slack 알림 Channel은 여전히 배포 단위 설정이므로 그 Channel의 모든 사용자가 전송되는 작업 정보를 볼 수 있는 배포에서만 알림을 활성화합니다.
 
-격리된 `development` Mode에서는 직접 작업 등록 시 전용 개발 조직과 저장소를 자동 등록합니다. 개발 조직은 OIDC 조직 및 `legacy`와 겹칠 수 없습니다. 조직·저장소 권한은 구현됐지만, 변경 불가능한 상세 감사 기록과 사용자 취소 기능은 IAM/OPS 후속 범위입니다.
+격리된 `development` Mode에서는 직접 작업 등록 시 전용 개발 조직과 저장소를 자동 등록합니다. 개발 조직은 OIDC 조직 및 `legacy`와 겹칠 수 없습니다. 조직·저장소 권한과 피드백·Console·승인·[미배정 대기 작업 취소](work-cancellation.md)의 추가 전용 감사를 구현했습니다. 실행 중 관리자 취소와 전달 감사는 IAM/OPS 후속 범위입니다.
 
 ## 관측성 및 Correlation
 

@@ -29,7 +29,7 @@ Done when a production-like deployment upgrades without data loss and a schema m
 
 ### IAM-001 · OIDC identity and repository authorization — L
 
-Status: authentication batch (2026-09-04) and organization/repository RBAC batch (2026-09-05) implemented. This includes registered memberships, repository-specific role elevation, cross-organization denial, registered GitHub installations, linked Slack principals, and permission revocation. The [append-only feedback audit batch](feedback-audit.md) (2026-09-06) is implemented. Console/approval/cancellation/delivery audits and scoped OIDC preview grants remain.
+Status: authentication batch (2026-09-04) and organization/repository RBAC batch (2026-09-05) implemented. This includes registered memberships, repository-specific role elevation, cross-organization denial, registered GitHub installations, linked Slack principals, and permission revocation. Append-only [feedback](feedback-audit.md), [console/approval](control-action-audit.md), and [unassigned queued cancellation](work-cancellation.md) audits are implemented (2026-09-06). Active-run administrator cancellation, delivery auditing, and scoped OIDC preview grants remain.
 
 Scope:
 
@@ -65,6 +65,8 @@ Scope:
 Done when one run can be traced end to end and an intentionally stuck run produces an actionable alert.
 
 ### OPS-001 · Retention and recovery workers — M
+
+Status: [administrator cancellation of unassigned queued work with auditing](work-cancellation.md) is implemented. Active-run cancellation with verified VM termination/cleanup, retry, forced lease release, and the retention/recovery scope below remain.
 
 Scope:
 
