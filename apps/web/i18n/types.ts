@@ -6,23 +6,42 @@ export interface MessageCatalog {
     description: string;
   };
   navigation: {
-    environment: string;
+    workspace: string;
+    overview: string;
+    skipContent: string;
+    controlled: string;
+    controlledHint: string;
+    footer: string;
     switchLanguage: string;
     switchLanguageAria: string;
   };
   dashboard: {
     eyebrow: string;
-    heroLine: string;
-    heroEmphasis: string;
+    title: string;
+    overview: string;
     introduction: string;
     activeRuns: string;
     needAttention: string;
     totalWork: string;
-    queue: string;
+    completed: string;
+    attentionHint: string;
+    viewWork: string;
+    recentHint: string;
+    refresh: string;
+    refreshing: string;
+    search: string;
+    filter: string;
+    results: string;
+    workColumn: string;
+    statusColumn: string;
+    updatedColumn: string;
+    noResults: string;
+    noResultsHint: string;
+    clearFilters: string;
+    emptyHint: string;
+    approvalHint: string;
     developmentWork: string;
     noWorkTitle: string;
-    noWorkBeforeLabel: string;
-    noWorkAfterLabel: string;
   };
   create: {
     eyebrow: string;

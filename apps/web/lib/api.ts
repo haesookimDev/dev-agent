@@ -19,7 +19,7 @@ async function get<T>(path: string, returnTo: string): Promise<T> {
 }
 
 export function listWorkItems(returnTo: string): Promise<WorkItem[]> {
-  return get("/api/work-items", returnTo);
+  return get("/api/work-items?limit=200", returnTo);
 }
 
 export function getWorkItem(id: string, returnTo: string): Promise<WorkItem> {

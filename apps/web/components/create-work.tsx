@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Locale } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
 import { authenticatedFetch, browserApi } from "../lib/browser-api";
+import { Icon } from "./icon";
 
 export function CreateWork({
   locale,
@@ -42,9 +43,9 @@ export function CreateWork({
   }
 
   return (
-    <aside className="createPanel">
+    <aside className="createPanel" id="create-work" aria-labelledby="create-title">
       <p className="eyebrow">{messages.eyebrow}</p>
-      <h2>{messages.title}</h2>
+      <h2 id="create-title">{messages.title}</h2>
       <p className="muted">{messages.description}</p>
       <form onSubmit={submit}>
         <label>
@@ -53,12 +54,15 @@ export function CreateWork({
             name="repository"
             placeholder={messages.repositoryPlaceholder}
             required
-            pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"
+            pattern="[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+"
+            maxLength={300}
+            autoCapitalize="none"
+            spellCheck={false}
           />
         </label>
         <label>
           {messages.workTitle}
-          <input name="title" placeholder={messages.titlePlaceholder} required minLength={3} />
+          <input name="title" placeholder={messages.titlePlaceholder} required minLength={3} maxLength={300} />
         </label>
         <label>
           {messages.requirement}
@@ -67,12 +71,13 @@ export function CreateWork({
             placeholder={messages.requirementPlaceholder}
             required
             minLength={3}
-            rows={7}
+            maxLength={100000}
+            rows={5}
           />
         </label>
-        {error && <p className="formError">{error}</p>}
+        {error && <p className="formError" role="alert">{error}</p>}
         <button disabled={submitting}>
-          {submitting ? messages.queuing : messages.submit}<span>↗</span>
+          {submitting ? messages.queuing : messages.submit}<Icon name="arrow" />
         </button>
       </form>
     </aside>

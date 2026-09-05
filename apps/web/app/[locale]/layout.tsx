@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { LocaleSwitcher } from "../../components/locale-switcher";
+import { Icon } from "../../components/icon";
 import { getMessages, isLocale, locales } from "../../i18n";
 import "../globals.css";
 
@@ -33,13 +34,23 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
   return (
     <html lang={locale}>
       <body>
-        <header className="topbar">
+        <a className="skipLink" href="#main-content">{messages.navigation.skipContent}</a>
+        <aside className="sidebar">
           <Link className="brand" href={`/${locale}`}>
             <span className="brandMark">K</span>
             <span>Kelpie</span>
           </Link>
+          <p className="navLabel">{messages.navigation.workspace}</p>
+          <nav aria-label={messages.navigation.workspace}>
+            <Link className="navLink" href={`/${locale}`}><Icon name="grid" />{messages.navigation.overview}</Link>
+            <Link className="navLink" href={`/${locale}#create-work`}><Icon name="plus" />{messages.create.eyebrow}</Link>
+          </nav>
+          <div className="sidebarNote"><Icon name="shield" /><strong>{messages.navigation.controlled}</strong><p>{messages.navigation.controlledHint}</p></div>
+        </aside>
+        <div className="workspaceShell">
+        <header className="topbar">
+          <span className="workspaceTitle">{messages.navigation.workspace}<span>/</span>{messages.navigation.overview}</span>
           <div className="topbarActions">
-            <div className="environment"><span /> {messages.navigation.environment}</div>
             <LocaleSwitcher
               locale={locale}
               label={messages.navigation.switchLanguage}
@@ -48,6 +59,8 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
           </div>
         </header>
         {children}
+        <footer className="workspaceFooter">Kelpie<span>{messages.navigation.footer}</span></footer>
+        </div>
       </body>
     </html>
   );
