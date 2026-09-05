@@ -3,7 +3,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
-import { apiJSON, browserApi, requestErrorMessage } from "../lib/browser-api";
+import { apiJSON, browserApi, BrowserAPIError, requestErrorMessage } from "../lib/browser-api";
+import { canSendFeedback } from "../lib/feedback";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
 import { LocalTime } from "./local-time";
@@ -29,6 +30,8 @@ export function LiveRun({
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
+  const [feedbackDraft, setFeedbackDraft] = useState("");
+  const feedbackAllowed = canSendFeedback(work.status);
   const lastEvent = useRef(initialEvents.at(-1)?.id ?? 0);
   const [connection, setConnection] = useState<"connecting" | "live" | "reconnecting">("connecting");
   const [streamError, setStreamError] = useState(false);
@@ -87,22 +90,30 @@ export function LiveRun({
 
   async function feedback(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (sending) return;
+    if (sending || !feedbackAllowed) return;
     setSending(true);
     setActionError("");
     setActionNotice("");
-    const form = event.currentTarget;
-    const data = new FormData(form);
     try {
       const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}/feedback`, {
         method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
-        body: JSON.stringify({ message: data.get("message"), channel: "web" }),
+        body: JSON.stringify({ message: feedbackDraft, channel: "web" }),
       });
       setWork((current) => updated.version >= current.version ? updated : current);
-      form.reset();
+      setFeedbackDraft("");
       setActionNotice(messages.run.feedbackSent);
     } catch (error) {
-      setActionError(requestErrorMessage(error, messages.run.feedbackError, messages.run.networkError, messages.run.permissionError));
+      if (error instanceof BrowserAPIError && error.status === 409) {
+        setActionError(messages.run.feedbackConflict);
+        try {
+          const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}`, { headers: correlationHeaders });
+          setWork((current) => updated.version >= current.version ? updated : current);
+        } catch {
+          // Keep the draft and conflict notice if the status refresh also fails.
+        }
+      } else {
+        setActionError(requestErrorMessage(error, messages.run.feedbackError, messages.run.networkError, messages.run.permissionError));
+      }
     } finally {
       setSending(false);
     }
@@ -190,13 +201,25 @@ export function LiveRun({
               ))}
             </div>
           )}
-          <form onSubmit={feedback}>
-            <label>
-              {messages.run.feedback}
-              <textarea name="message" rows={6} required placeholder={messages.run.feedbackPlaceholder} />
-            </label>
-            <button disabled={sending}>{messages.run.feedbackSubmit} <span>→</span></button>
-          </form>
+          {!feedbackAllowed && (
+            <div className="feedbackClosed" role="status">
+              <h3>{messages.run.feedbackClosedTitle}</h3>
+              <p>{messages.run.feedbackClosed}</p>
+            </div>
+          )}
+          {(feedbackAllowed || feedbackDraft) && (
+            <form onSubmit={feedback}>
+              <label>
+                {feedbackAllowed ? messages.run.feedback : messages.run.unsentFeedback}
+                <textarea
+                  name="message" rows={6} required={feedbackAllowed} readOnly={!feedbackAllowed || sending}
+                  value={feedbackDraft} onChange={(event) => { setFeedbackDraft(event.target.value); setActionNotice(""); }}
+                  placeholder={messages.run.feedbackPlaceholder}
+                />
+              </label>
+              {feedbackAllowed && <button disabled={sending}>{messages.run.feedbackSubmit} <span>→</span></button>}
+            </form>
+          )}
           <dl>
             <div><dt>{messages.run.worker}</dt><dd>{work.assigned_worker_id?.slice(0, 8) ?? messages.run.unassigned}</dd></div>
             <div><dt>{messages.run.budget}</dt><dd>{work.budget_minutes} {messages.run.minuteUnit}</dd></div>

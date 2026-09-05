@@ -24,6 +24,21 @@ from .state_machine import InvalidTransition, ensure_transition
 from .worker_credentials import lock_worker
 
 
+def ensure_feedback_allowed(item: WorkItem) -> None:
+    if item.status not in {
+        WorkStatus.QUEUED,
+        WorkStatus.PROVISIONING,
+        WorkStatus.ANALYZING,
+        WorkStatus.IMPLEMENTING,
+        WorkStatus.VERIFYING,
+        WorkStatus.AWAITING_FEEDBACK,
+        WorkStatus.AWAITING_APPROVAL,
+        WorkStatus.AWAITING_INPUT,
+        WorkStatus.BUDGET_EXHAUSTED,
+    }:
+        raise HTTPException(status.HTTP_409_CONFLICT, "work no longer accepts feedback")
+
+
 async def emit_event(
     session: AsyncSession,
     work_item_id: str,

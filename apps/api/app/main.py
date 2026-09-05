@@ -114,6 +114,7 @@ from .service import (
     claim_next_work,
     create_work_item,
     emit_event,
+    ensure_feedback_allowed,
     transition_work_item,
     validate_lease,
 )
@@ -604,6 +605,7 @@ async def add_feedback(
 ) -> WorkItem:
     item = await authorized_work(session, actor, work_item_id, Role.OPERATOR, lock=True)
     await ensure_worker_not_quarantined(session, item)
+    ensure_feedback_allowed(item)
     session.add(
         Feedback(
             work_item_id=work_item_id,
@@ -909,6 +911,7 @@ async def slack_command(
     await ensure_worker_not_quarantined(session, item)
     actor = identity.principal_id
     if action == "feedback" and len(parts) == 3:
+        ensure_feedback_allowed(item)
         message = parts[2]
         session.add(
             Feedback(
