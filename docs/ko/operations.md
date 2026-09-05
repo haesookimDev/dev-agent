@@ -31,6 +31,8 @@ make migrate-api
 
 Migration은 PostgreSQL Transaction Advisory Lock을 획득하므로 여러 배포가 동시에 실행돼도 한 번에 하나만 Schema를 변경합니다. 실패한 Migration은 API Rollout을 중단하며 원인을 해결한 뒤 같은 명령을 다시 실행할 수 있습니다. `/healthz`는 Process 생존 여부를, `/readyz`는 Database 연결과 Alembic Head 일치 여부를 확인합니다.
 
+준비 상태 검사는 Pool 대기·연결 확인·스키마 조회에 합산 2초 제한을 적용합니다. 시간 초과는 기존 `503 {"status":"not_ready","database_schema":"unreachable"}`로 반환하며 DB 주소·자격증명·예외 원문을 포함하지 않습니다. 기동 시 DB가 응답하지 않아도 이 검사가 끝난 뒤 `/healthz`로 프로세스를 확인할 수 있습니다. 일반 업무 쿼리나 Migration 전체의 제한 시간을 바꾸는 설정은 아닙니다. [장애·복구 검증과 운영상 제한](readiness-verification.md)을 참고하세요.
+
 Migration 도입 전에 `create_all`로 만든 Database는 현재 Table과 Column이 Baseline과 모두 일치할 때 첫 Upgrade에서 데이터를 유지한 채 자동으로 채택됩니다. 일부 Table만 있거나 Column이 다르면 Migration이 실패하므로 Schema를 먼저 복구해야 합니다. `DATABASE_SCHEMA_MODE=bootstrap`은 비어 있는 일회성 개발 Database에서만 사용하고 운영 환경은 기본값인 `validate`를 유지합니다.
 
 현재 Baseline 아래로의 Downgrade는 모든 데이터를 삭제하므로 명시적으로 차단됩니다. 향후 Revision을 Rollback할 때는 먼저 PostgreSQL과 Object Store Backup을 만들고 해당 Revision이 문서화한 안전 범위 안에서만 `alembic downgrade <revision>`을 실행합니다. Baseline으로 되돌려야 하는 장애는 새 Database에 검증된 Backup을 복원해 복구합니다.
