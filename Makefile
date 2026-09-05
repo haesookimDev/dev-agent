@@ -1,6 +1,7 @@
-.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web lint
+.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web test-monitoring lint
 
 PYTHON ?= .venv/bin/python
+PROMTOOL ?= promtool
 
 dev:
 	docker compose --profile demo up --build
@@ -24,6 +25,10 @@ test-gateway:
 
 test-web:
 	cd apps/web && npm test
+
+test-monitoring:
+	$(PROMTOOL) check config --lint-fatal infra/monitoring/prometheus.example.yml
+	$(PROMTOOL) test rules infra/monitoring/alerts.test.yml
 
 lint:
 	$(PYTHON) -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests
