@@ -114,6 +114,7 @@ Prometheus는 `GET /metrics`에서 다음과 같은 저카디널리티 Metric을
 - Worker Claim 결과와 Queue 대기 시간
 - 작업 상태 전이 횟수와 각 상태 체류 시간
 - 승인 결정, Delivery 최초 시도·재시도, 성공·실패
+- [시작 시 전달 복구](delivery-recovery-metrics.md)의 단계, 대기를 포함한 경과 시간, 준비 검사·복구 시도 결과
 
 작업 ID, 저장소 이름, 사용자, Correlation ID는 Metric Label에 포함하지 않습니다. `/metrics`는 외부에 공개하지 말고 내부 Prometheus Network에서만 접근할 수 있게 Reverse Proxy 또는 Network Policy로 제한합니다.
 

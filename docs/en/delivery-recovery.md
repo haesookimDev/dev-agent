@@ -13,13 +13,13 @@ When the API starts with an unavailable database or an unready schema, delivery 
 
 Duplicate-execution protection is **local to one API process**. It does not establish ownership across multiple Uvicorn workers, API replicas, or overlapping old/new APIs using the same database. Retain the single-process Compose/Dockerfile configuration. During replacement, settle and stop the old API and its deliveries before starting the new one. Distributed leases/fencing are a prerequisite for multi-process operation.
 
-This is startup recovery, not a continuous queue worker. Periodic discovery of newly orphaned jobs after the first successful recovery, automatic SCM-failure retries, throughput/latency SLOs, and recovery-completion metrics/alerts are separate work. A 200 from `/readyz` verifies only the schema, not a completed delivery queue or healthy external SCM. Inspect `delivery_jobs.state/attempts`, work status/events, and existing delivery metrics together.
+This is startup recovery, not a continuous queue worker. Periodic discovery of newly orphaned jobs after the first successful recovery, automatic SCM-failure retries, throughput/latency SLOs, and alerts are separate work. [Recovery-state metrics](delivery-recovery-metrics.md) observe the startup procedure, not individual delivery success. A 200 from `/readyz` verifies only the schema, not a completed delivery queue or healthy external SCM. Inspect `delivery_jobs.state/attempts`, work status/events, and existing delivery metrics together.
 
 API responses, schema, environment variables, and dependencies are unchanged. `DELIVERY_RECOVERY_RETRY_SECONDS=5` and `DELIVERY_RECOVERY_DB_SECONDS=2` are internal code constants. Rollback can restore the previous API, but reintroduces missed delivery resumption after unready startup and untracked recovery tasks. No migration or downgrade is required.
 
 ## Verification
 
-Verified implementation `1e3db7a` and real-process test `c166d09`; subsequent changes only record the documentation.
+The record below covers implementation `1e3db7a` and real-process test `c166d09`. See the [separate record](delivery-recovery-metrics.md) for subsequent metric verification.
 
 - Eight regression tests failed before the fix. They cover delayed recovery, process-local duplicate prevention, successful delivery, retry/safe warnings, and cancellation of children during shutdown.
 - `KELPIE_TEST_POSTGRES_URL=<isolated PostgreSQL> make test-api`: 357 passed in approximately 37 seconds. `make lint` passed. The 35 related delivery tests also passed separately.
