@@ -39,6 +39,20 @@ for (const locale of ["en", "ko"] as const) {
     await expect(trigger).toBeFocused();
     expect((await (await request.get(url)).json()).status).toBe("queued");
     expect(await (await request.get(`${url}/audit-log`)).json()).toEqual([]);
+    await page.evaluate(() => {
+      const dialog = document.querySelector("dialog")!;
+      const close = dialog.close.bind(dialog);
+      dialog.close = () => {
+        close();
+        // Observe focus before the deferred native close event. React may still
+        // hold queued state there, then remove the trigger and lose keyboard focus.
+        queueMicrotask(() => {
+          document.documentElement.dataset.cancellationFocusRestored = String(
+            document.activeElement === document.querySelector(".runStatus"),
+          );
+        });
+      };
+    });
     await trigger.click();
     await expect(back).toBeFocused();
     await page.keyboard.press("Tab");
@@ -50,6 +64,7 @@ for (const locale of ["en", "ko"] as const) {
     await expect(dialog).not.toBeVisible();
     await expect(page.locator(".runStatus")).toContainText(messages.status.cancelled);
     await expect(page.locator(".runStatus")).toBeFocused();
+    await expect(page.locator("html")).toHaveAttribute("data-cancellation-focus-restored", "true");
     await expect(page.locator(".actionNotice")).toHaveText(messages.run.cancelledNotice);
     await expect(trigger).toHaveCount(0);
     await expect(page.locator(".controlPanel textarea")).toHaveValue("Keep this unsent review copyable.");

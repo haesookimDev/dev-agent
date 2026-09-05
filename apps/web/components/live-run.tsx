@@ -166,6 +166,9 @@ export function LiveRun({
       setWork((current) => updated.version >= current.version ? updated : current);
       setActionNotice(messages.run.cancelledNotice);
       cancelDialog.current?.close();
+      // Do not depend on the deferred close event observing the React state update.
+      // The queued-work trigger is about to disappear, but this panel stays mounted.
+      statusPanel.current?.focus();
     } catch (error) {
       setCancelError(error instanceof BrowserAPIError && error.status === 409
         ? messages.run.cancelConflict
