@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,28 +18,58 @@ from .models import (
 ROLE_ORDER = {role: rank for rank, role in enumerate(Role)}
 
 
+@dataclass(frozen=True)
+class RoleDecision:
+    organization_role: Role
+    repository_role: Role | None
+    effective_role: Role
+    required_role: Role
+
+
 async def authorize_repository(
     session: AsyncSession, actor: Actor, name: str, required: Role = Role.VIEWER,
 ) -> Repository:
+    repository, _ = await authorize_repository_with_decision(session, actor, name, required)
+    return repository
+
+
+async def authorize_repository_with_decision(
+    session: AsyncSession, actor: Actor, name: str, required: Role = Role.VIEWER,
+) -> tuple[Repository, RoleDecision]:
     repository = await session.get(Repository, name.lower())
     if repository is None or repository.organization_id != actor.organization:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "repository not found")
     effective = ROLE_ORDER.get(actor.role, -1)
     if effective < 0:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid organization role")
+    repository_role = None
     if actor.principal_id:
         grant = await session.get(RepositoryGrant, (repository.name, actor.principal_id))
         if grant is not None:
+            repository_role = grant.role
             effective = max(effective, ROLE_ORDER[grant.role])
     if effective < ROLE_ORDER[required]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"{required.value} role required")
-    return repository
+    return repository, RoleDecision(
+        organization_role=Role(actor.role), repository_role=repository_role,
+        effective_role=list(Role)[effective], required_role=required,
+    )
 
 
 async def authorized_work(
     session: AsyncSession, actor: Actor, work_item_id: str,
     required: Role = Role.VIEWER, *, lock: bool = False,
 ) -> WorkItem:
+    item, _ = await authorized_work_with_decision(
+        session, actor, work_item_id, required, lock=lock,
+    )
+    return item
+
+
+async def authorized_work_with_decision(
+    session: AsyncSession, actor: Actor, work_item_id: str,
+    required: Role = Role.VIEWER, *, lock: bool = False,
+) -> tuple[WorkItem, RoleDecision]:
     statement = select(WorkItem).where(WorkItem.id == work_item_id,
                                        WorkItem.organization_id == actor.organization)
     if lock:
@@ -45,8 +77,10 @@ async def authorized_work(
     item = await session.scalar(statement)
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "work item not found")
-    await authorize_repository(session, actor, item.repository, required)
-    return item
+    _, decision = await authorize_repository_with_decision(
+        session, actor, item.repository, required,
+    )
+    return item, decision
 
 
 async def development_repository(session: AsyncSession, organization_id: str, name: str) -> None:
