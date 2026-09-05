@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
 from .db import get_session
-from .models import AuthSession, Membership, Organization, Principal
+from .models import AuthSession, Membership, Organization, Principal, WorkerHost
+from .secrets import SecretUnavailableError
+from .worker_credentials import authenticate_worker, lock_worker
 
 
 @dataclass(frozen=True)
@@ -81,11 +83,48 @@ async def current_actor(
 
 async def require_worker(
     settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> WorkerHost | None:
+    token = authorization.removeprefix("Bearer ") if authorization else ""
+    if authorization and authorization.startswith("Bearer kwc_"):
+        worker = await authenticate_worker(session, token)
+        if worker is not None:
+            return worker
+    elif settings.worker_auth_mode == "development":
+        expected = f"Bearer {settings.read_secret('worker_shared_secret', required=True)}"
+        if authorization and hmac.compare_digest(authorization.encode(), expected.encode()):
+            return None
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid worker credential")
+
+
+async def bound_worker(
+    session: AsyncSession, worker_id: str, identity: WorkerHost | None,
+) -> WorkerHost:
+    if identity is not None:
+        if identity.id != worker_id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "worker credential scope mismatch")
+        return identity
+    try:
+        worker = await lock_worker(session, worker_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "worker not found") from None
+    if worker.credential_required or worker.quarantined_at is not None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "individual worker credential required")
+    return worker
+
+
+async def require_gateway(
+    settings: Annotated[Settings, Depends(get_settings)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> None:
-    expected = f"Bearer {settings.read_secret('worker_shared_secret', required=True)}"
+    secret = settings.read_secret("gateway_secret", required=True)
+    if (not 32 <= len(secret) <= 65536 or secret.startswith("kwc_")
+            or any(not 33 <= ord(character) <= 126 for character in secret)):
+        raise SecretUnavailableError()
+    expected = f"Bearer {secret}"
     if authorization is None or not hmac.compare_digest(authorization.encode(), expected.encode()):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid worker credential")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid gateway credential")
 
 
 def hash_token(token: str) -> str:

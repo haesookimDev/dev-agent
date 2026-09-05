@@ -39,7 +39,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://kelpie:kelpie@postgres:5432/kelpie
       DATABASE_SCHEMA_MODE: validate
       AUTH_MODE: development
+      WORKER_AUTH_MODE: development
       WORKER_SHARED_SECRET: development-worker-secret-change-me
+      GATEWAY_SECRET: development-gateway-secret-change-me
       GITHUB_WEBHOOK_SECRET: development-webhook-secret
       CORS_ORIGINS: http://localhost:3000
       ARTIFACT_ROOT: /var/lib/kelpie/artifacts
@@ -91,7 +93,7 @@ services:
     build: ./apps/gateway
     environment:
       KELPIE_CONTROL_URL: http://api:8000
-      KELPIE_WORKER_TOKEN: development-worker-secret-change-me
+      KELPIE_GATEWAY_TOKEN: development-gateway-secret-change-me
       KELPIE_GATEWAY_AUTH_MODE: development
     ports:
       - "8080:8080"

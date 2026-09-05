@@ -8,7 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .auth import hash_token
 from .correlation import current_correlation_id
-from .models import AgentEvent, ResourceLease, WorkerHost, WorkItem, WorkSource, WorkStatus, utcnow
+from .models import (
+    AgentEvent,
+    ResourceLease,
+    WorkerHost,
+    WorkerState,
+    WorkItem,
+    WorkSource,
+    WorkStatus,
+    utcnow,
+)
 from .observability import observe_claim, observe_transition
 from .schemas import ClaimRequest, EventCreate, WorkItemCreate
 from .state_machine import InvalidTransition, ensure_transition
@@ -120,6 +129,9 @@ async def claim_next_work(
     request: ClaimRequest,
     lease_seconds: int,
 ) -> tuple[WorkItem, str, ResourceLease] | None:
+    if worker.state != WorkerState.ONLINE or worker.quarantined_at is not None:
+        observe_claim("unavailable_worker")
+        return None
     if (
         worker.cpu_available < request.cpu
         or worker.memory_mb_available < request.memory_mb

@@ -23,7 +23,7 @@ def test_environment_compatibility_and_no_secret_in_settings_serialization() -> 
 
 
 @pytest.mark.parametrize("name", [
-    "oidc_client_secret", "worker_shared_secret", "github_webhook_secret",
+    "oidc_client_secret", "worker_shared_secret", "github_webhook_secret", "gateway_secret",
     "slack_signing_secret", "slack_bot_token", "github_private_key",
 ])
 def test_file_precedence_and_live_atomic_rotation(tmp_path, name) -> None:

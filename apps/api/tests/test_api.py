@@ -349,7 +349,7 @@ async def test_invalid_github_signature_is_rejected(client: AsyncClient) -> None
 
 @pytest.mark.asyncio
 async def test_preview_registration_and_exclusive_console_lease(
-    client: AsyncClient, worker_headers: dict[str, str]
+    client: AsyncClient, worker_headers: dict[str, str], gateway_headers: dict[str, str]
 ) -> None:
     work = await create_work(client)
     worker = await register_worker(client, worker_headers)
@@ -407,7 +407,7 @@ async def test_preview_registration_and_exclusive_console_lease(
 
     resolved = await client.get(
         "/internal/previews/resolve",
-        headers=worker_headers,
+        headers=gateway_headers,
         params={"host": f"{work['id']}.preview.localhost", "console": "true"},
     )
     assert resolved.status_code == 200

@@ -1,5 +1,4 @@
 import { spawn, spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -8,16 +7,18 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const temporary = mkdtempSync(join(tmpdir(), "kelpie-browser-test-"));
 const python = process.env.KELPIE_E2E_PYTHON || join(root, ".venv/bin/python");
-const token = randomBytes(32).toString("hex");
+const tokenFile = join(temporary, "worker-token");
 const environment = {
   ...process.env,
   DATABASE_URL: `sqlite+aiosqlite:///${join(temporary, "test.db")}`,
   DATABASE_SCHEMA_MODE: "validate",
   AUTH_MODE: "development",
+  WORKER_AUTH_MODE: "scoped",
   DEVELOPMENT_ORGANIZATION: "browser-test",
   ARTIFACT_ROOT: join(temporary, "artifacts"),
   CORS_ORIGINS: "http://127.0.0.1:13100",
-  WORKER_SHARED_SECRET: token,
+  WORKER_SHARED_SECRET: "",
+  WORKER_SHARED_SECRET_FILE: "",
   GITHUB_APP_ID: "",
   GITHUB_PRIVATE_KEY_PATH: "",
   SLACK_BOT_TOKEN: "",
@@ -59,6 +60,8 @@ process.on("SIGINT", () => void stop());
 
 try {
   run(python, ["-m", "alembic", "-c", "apps/api/alembic.ini", "upgrade", "head"]);
+  run(python, ["-m", "app.worker_admin", "issue", "--worker-name", "browser-test-worker",
+    "--reason", "isolated browser acceptance test", "--output", tokenFile]);
   const worker = join(temporary, "mock-worker");
   run("go", ["-C", "apps/worker", "build", "-o", worker, "./cmd/kelpie-worker"]);
   start(python, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "18100", "--no-access-log"], environment);
@@ -70,7 +73,8 @@ try {
   start(worker, [], {
     ...environment,
     KELPIE_CONTROL_URL: "http://127.0.0.1:18100",
-    KELPIE_WORKER_TOKEN: token,
+    KELPIE_WORKER_TOKEN: "",
+    KELPIE_WORKER_TOKEN_FILE: tokenFile,
     KELPIE_WORKER_NAME: "browser-test-worker",
     KELPIE_EXECUTOR: "mock",
     KELPIE_CPU_TOTAL: "2",

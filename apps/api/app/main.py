@@ -29,7 +29,14 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .auth import Actor, actor_from_identity, current_actor, require_worker
+from .auth import (
+    Actor,
+    actor_from_identity,
+    bound_worker,
+    current_actor,
+    require_gateway,
+    require_worker,
+)
 from .authorization import (
     authorize_repository,
     authorized_work,
@@ -63,6 +70,7 @@ from .models import (
     Role,
     WebhookDelivery,
     WorkerHost,
+    WorkerState,
     WorkItem,
     WorkSource,
     WorkStatus,
@@ -764,10 +772,13 @@ async def github_webhook(
 async def register_worker(
     payload: WorkerRegistration,
     session: SessionDep,
-    _: Annotated[None, Depends(require_worker)],
+    identity: Annotated[WorkerHost | None, Depends(require_worker)],
 ) -> WorkerHost:
+    if identity is not None and identity.name != payload.name:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "worker credential scope mismatch")
     worker = (
-        await session.execute(select(WorkerHost).where(WorkerHost.name == payload.name))
+        await session.execute(select(WorkerHost).where(WorkerHost.name == payload.name)
+                              .with_for_update().execution_options(populate_existing=True))
     ).scalar_one_or_none()
     if worker is None:
         worker = WorkerHost(
@@ -777,11 +788,18 @@ async def register_worker(
         )
         session.add(worker)
     else:
+        worker = await bound_worker(session, worker.id, identity)
+        if worker.cpu_total == 0 and worker.memory_mb_total == 0 and worker.active_runs == 0:
+            worker.cpu_available = payload.cpu_total
+            worker.memory_mb_available = payload.memory_mb_total
         worker.cpu_total = payload.cpu_total
         worker.memory_mb_total = payload.memory_mb_total
-        worker.disk_gb_available = payload.disk_gb_available
+        if worker.active_runs == 0:
+            worker.disk_gb_available = payload.disk_gb_available
         worker.labels = payload.labels
         worker.last_seen_at = utcnow()
+        if worker.state == WorkerState.OFFLINE:
+            worker.state = WorkerState.ONLINE
     await session.commit()
     return worker
 
@@ -791,11 +809,9 @@ async def worker_heartbeat(
     worker_id: str,
     payload: WorkerHeartbeat,
     session: SessionDep,
-    _: Annotated[None, Depends(require_worker)],
+    identity: Annotated[WorkerHost | None, Depends(require_worker)],
 ) -> WorkerHost:
-    worker = await session.get(WorkerHost, worker_id)
-    if worker is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "worker not found")
+    worker = await bound_worker(session, worker_id, identity)
     for name, value in payload.model_dump().items():
         setattr(worker, name, value)
     worker.last_seen_at = utcnow()
@@ -809,11 +825,9 @@ async def claim_work(
     payload: ClaimRequest,
     session: SessionDep,
     config: Annotated[Settings, Depends(get_settings)],
-    _: Annotated[None, Depends(require_worker)],
+    identity: Annotated[WorkerHost | None, Depends(require_worker)],
 ) -> ClaimResponse | None:
-    worker = await session.get(WorkerHost, worker_id)
-    if worker is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "worker not found")
+    worker = await bound_worker(session, worker_id, identity)
     result = await claim_next_work(session, worker, payload, config.lease_seconds)
     await session.commit()
     if result is None:
@@ -1360,7 +1374,7 @@ async def console_lease(
 @app.get("/internal/previews/resolve")
 async def resolve_preview(
     session: SessionDep,
-    _: Annotated[None, Depends(require_worker)],
+    _: Annotated[None, Depends(require_gateway)],
     host: str,
     console: bool = False,
 ) -> dict[str, str | bool]:

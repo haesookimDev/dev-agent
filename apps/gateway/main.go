@@ -18,10 +18,10 @@ import (
 )
 
 type config struct {
-	listen      string
-	controlURL  string
-	workerToken string
-	authMode    string
+	listen       string
+	controlURL   string
+	gatewayToken string
+	authMode     string
 }
 
 type resolution struct {
@@ -39,13 +39,13 @@ type gateway struct {
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	configuration := config{
-		listen:      env("KELPIE_GATEWAY_LISTEN", ":8080"),
-		controlURL:  strings.TrimRight(env("KELPIE_CONTROL_URL", "http://api:8000"), "/"),
-		workerToken: os.Getenv("KELPIE_WORKER_TOKEN"),
-		authMode:    env("KELPIE_GATEWAY_AUTH_MODE", "disabled"),
+		listen:       env("KELPIE_GATEWAY_LISTEN", ":8080"),
+		controlURL:   strings.TrimRight(env("KELPIE_CONTROL_URL", "http://api:8000"), "/"),
+		gatewayToken: os.Getenv("KELPIE_GATEWAY_TOKEN"),
+		authMode:     env("KELPIE_GATEWAY_AUTH_MODE", "disabled"),
 	}
-	if len(configuration.workerToken) < 32 {
-		logger.Error("KELPIE_WORKER_TOKEN must contain at least 32 characters")
+	if len(configuration.gatewayToken) < 32 {
+		logger.Error("KELPIE_GATEWAY_TOKEN must contain at least 32 characters")
 		os.Exit(2)
 	}
 	handler := &gateway{config: configuration, client: &http.Client{Timeout: 10 * time.Second}, logger: logger}
@@ -123,7 +123,7 @@ func (g *gateway) resolve(ctx context.Context, host string, console bool) (resol
 	if err != nil {
 		return resolution{}, err
 	}
-	request.Header.Set("Authorization", "Bearer "+g.config.workerToken)
+	request.Header.Set("Authorization", "Bearer "+g.config.gatewayToken)
 	response, err := g.client.Do(request)
 	if err != nil {
 		return resolution{}, err
