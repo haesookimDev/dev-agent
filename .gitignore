@@ -15,3 +15,5 @@ coverage/
 bin/
 artifacts/
 workspaces/
+apps/web/test-results/
+apps/web/playwright-report/

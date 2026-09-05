@@ -1,12 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "../i18n";
-import { localeTag } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
-import { authenticatedFetch, browserApi } from "../lib/browser-api";
+import { apiJSON, browserApi, requestErrorMessage } from "../lib/browser-api";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
+import { LocalTime } from "./local-time";
 
 interface LiveRunProps {
   initialWork: WorkItem;
@@ -28,61 +28,103 @@ export function LiveRun({
   const [artifacts, setArtifacts] = useState(initialArtifacts);
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState("");
-  const lastEvent = events.at(-1)?.id ?? 0;
+  const [actionNotice, setActionNotice] = useState("");
+  const lastEvent = useRef(initialEvents.at(-1)?.id ?? 0);
+  const [connection, setConnection] = useState<"connecting" | "live" | "reconnecting">("connecting");
+  const [streamError, setStreamError] = useState(false);
   const correlationHeaders = useMemo(
     () => ({ "X-Kelpie-Correlation-ID": work.correlation_id }),
     [work.correlation_id],
   );
 
   useEffect(() => {
-    const stream = new EventSource(
-      `${browserApi}/api/work-items/${work.id}/events?after=${lastEvent}`,
-      { withCredentials: true },
-    );
-    stream.onmessage = (message) => {
-      const event = JSON.parse(message.data) as AgentEvent;
-      setEvents((current) => current.some((item) => item.id === event.id) ? current : [...current, event]);
-      if (event.event_type === "work.transitioned") {
-        authenticatedFetch(`${browserApi}/api/work-items/${work.id}`, { headers: correlationHeaders }).then((response) => response.json()).then(setWork);
+    let active = true;
+    let stream: EventSource;
+    let reconnect: ReturnType<typeof setTimeout> | undefined;
+
+    async function refresh() {
+      try {
+        const [updated, evidence] = await Promise.all([
+          apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}`, { headers: correlationHeaders }),
+          apiJSON<Artifact[]>(`${browserApi}/api/work-items/${work.id}/artifacts`, { headers: correlationHeaders }),
+        ]);
+        if (!active) return;
+        setWork((current) => updated.version >= current.version ? updated : current);
+        setArtifacts(evidence);
+        setStreamError(false);
+      } catch {
+        if (active) setStreamError(true);
       }
-      if (event.event_type === "artifact.uploaded") {
-        authenticatedFetch(`${browserApi}/api/work-items/${work.id}/artifacts`, { headers: correlationHeaders }).then((response) => response.json()).then(setArtifacts);
-      }
-    };
-    return () => stream.close();
-  }, [work.id, lastEvent, correlationHeaders]);
+    }
+
+    function connect() {
+      stream = new EventSource(`${browserApi}/api/work-items/${work.id}/events?after=${lastEvent.current}`, { withCredentials: true });
+      stream.onopen = () => { setConnection("live"); void refresh(); };
+      stream.onerror = () => {
+        stream.close();
+        if (!active) return;
+        setConnection("reconnecting");
+        reconnect = setTimeout(connect, 2000);
+      };
+      stream.onmessage = (message) => {
+        if (!active) return;
+        try {
+          const event = JSON.parse(message.data) as AgentEvent;
+          if (event.work_item_id !== work.id || !Number.isInteger(event.id)) return;
+          lastEvent.current = Math.max(lastEvent.current, event.id);
+          setEvents((current) => current.some((item) => item.id === event.id) ? current : [...current, event]);
+          if (["work.transitioned", "artifact.uploaded"].includes(event.event_type)) void refresh();
+        } catch {
+          setStreamError(true);
+        }
+      };
+    }
+    connect();
+    return () => { active = false; clearTimeout(reconnect); stream.close(); };
+  }, [work.id, correlationHeaders]);
 
   const grouped = useMemo(() => [...events].reverse(), [events]);
 
   async function feedback(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (sending) return;
     setSending(true);
     setActionError("");
+    setActionNotice("");
     const form = event.currentTarget;
     const data = new FormData(form);
-    const response = await authenticatedFetch(`${browserApi}/api/work-items/${work.id}/feedback`, {
-      method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
-      body: JSON.stringify({ message: data.get("message"), channel: "web" }),
-    });
-    if (response.ok) {
-      setWork(await response.json());
+    try {
+      const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}/feedback`, {
+        method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
+        body: JSON.stringify({ message: data.get("message"), channel: "web" }),
+      });
+      setWork((current) => updated.version >= current.version ? updated : current);
       form.reset();
-    } else {
-      setActionError(`${messages.run.feedbackError} (${response.status})`);
+      setActionNotice(messages.run.feedbackSent);
+    } catch (error) {
+      setActionError(requestErrorMessage(error, messages.run.feedbackError, messages.run.networkError, messages.run.permissionError));
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   }
 
   async function approve() {
+    if (sending) return;
     setSending(true);
     setActionError("");
-    const response = await authenticatedFetch(`${browserApi}/api/work-items/${work.id}/approvals`, {
-      method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
-      body: JSON.stringify({ kind: "pull_request", decision: "approve", payload: {} }),
-    });
-    if (response.ok) setWork(await response.json());
-    else setActionError(`${messages.run.approvalError} (${response.status})`);
-    setSending(false);
+    setActionNotice("");
+    try {
+      const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}/approvals`, {
+        method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
+        body: JSON.stringify({ kind: "pull_request", decision: "approve", payload: {} }),
+      });
+      setWork((current) => updated.version >= current.version ? updated : current);
+      setActionNotice(messages.run.approvalRecorded);
+    } catch (error) {
+      setActionError(requestErrorMessage(error, messages.run.approvalError, messages.run.networkError, messages.run.permissionError));
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -103,14 +145,15 @@ export function LiveRun({
         <div className="timeline">
           <div className="sectionHeading">
             <div><p className="eyebrow">{messages.run.liveStream}</p><h2>{messages.run.agentActivity}</h2></div>
-            <span className="liveDot">{messages.run.live}</span>
+            <span className={`liveDot connection-${connection}`} role="status">{messages.run[connection]}</span>
           </div>
+          {streamError && <p className="streamError" role="alert">{messages.run.refreshError}</p>}
           <div className="events">
             {grouped.map((event) => (
               <article className={`event event-${event.level}`} key={event.id}>
                 <div>
                   <span>{event.source}</span>
-                  <time>{new Date(event.created_at).toLocaleTimeString(localeTag(locale))}</time>
+                  <LocalTime value={event.created_at} locale={locale} timeOnly />
                 </div>
                 <h3>{event.message || event.event_type}</h3>
                 <p>{event.event_type}</p>
@@ -130,7 +173,8 @@ export function LiveRun({
               {messages.run.approve} <span>✓</span>
             </button>
           )}
-          {actionError && <p className="formError">{actionError}</p>}
+          {actionError && <p className="formError" role="alert">{actionError}</p>}
+          {actionNotice && <p className="actionNotice" role="status">{actionNotice}</p>}
           {artifacts.length > 0 && (
             <div className="artifactList">
               <p className="eyebrow">{messages.run.evidence}</p>

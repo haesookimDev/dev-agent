@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authenticatedFetch } from "./browser-api";
+import { apiJSON, authenticatedFetch, BrowserAPIError, requestErrorMessage } from "./browser-api";
 
 describe("authenticatedFetch", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -14,5 +14,19 @@ describe("authenticatedFetch", () => {
       "https://control.example/api/work-items",
       { method: "POST", credentials: "include" },
     );
+  });
+
+  it("parses successful JSON and rejects HTTP errors before using their payload", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(Response.json({ id: "work" }));
+    await expect(apiJSON("/api/work-items")).resolves.toEqual({ id: "work" });
+    fetchMock.mockResolvedValueOnce(Response.json({ detail: "private internal detail" }, { status: 403 }));
+    await expect(apiJSON("/api/work-items")).rejects.toEqual(new BrowserAPIError(403));
+  });
+
+  it("provides safe localized permission and network errors", () => {
+    expect(requestErrorMessage(new BrowserAPIError(403), "failed", "offline", "denied")).toBe("denied");
+    expect(requestErrorMessage(new BrowserAPIError(500), "failed", "offline", "denied")).toBe("failed (500)");
+    expect(requestErrorMessage(new TypeError("private details"), "failed", "offline", "denied")).toBe("offline");
   });
 });

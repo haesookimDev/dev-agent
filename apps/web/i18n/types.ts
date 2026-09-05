@@ -6,23 +6,52 @@ export interface MessageCatalog {
     description: string;
   };
   navigation: {
-    environment: string;
+    workspace: string;
+    overview: string;
+    skipContent: string;
+    controlled: string;
+    controlledHint: string;
+    footer: string;
     switchLanguage: string;
     switchLanguageAria: string;
   };
+  pageState: {
+    missing: string;
+    missingHint: string;
+    error: string;
+    errorHint: string;
+    loading: string;
+    loadingHint: string;
+    retry: string;
+    back: string;
+  };
   dashboard: {
     eyebrow: string;
-    heroLine: string;
-    heroEmphasis: string;
+    title: string;
+    overview: string;
     introduction: string;
     activeRuns: string;
     needAttention: string;
     totalWork: string;
-    queue: string;
+    completed: string;
+    attentionHint: string;
+    viewWork: string;
+    recentHint: string;
+    refresh: string;
+    refreshing: string;
+    search: string;
+    filter: string;
+    results: string;
+    workColumn: string;
+    statusColumn: string;
+    updatedColumn: string;
+    noResults: string;
+    noResultsHint: string;
+    clearFilters: string;
+    emptyHint: string;
+    approvalHint: string;
     developmentWork: string;
     noWorkTitle: string;
-    noWorkBeforeLabel: string;
-    noWorkAfterLabel: string;
   };
   create: {
     eyebrow: string;
@@ -37,12 +66,17 @@ export interface MessageCatalog {
     queuing: string;
     submit: string;
     error: string;
+    networkError: string;
+    permissionError: string;
   };
   run: {
     back: string;
     liveStream: string;
     agentActivity: string;
     live: string;
+    connecting: string;
+    reconnecting: string;
+    refreshError: string;
     humanControl: string;
     title: string;
     openPullRequest: string;
@@ -53,6 +87,10 @@ export interface MessageCatalog {
     feedbackPlaceholder: string;
     feedbackSubmit: string;
     feedbackError: string;
+    networkError: string;
+    permissionError: string;
+    feedbackSent: string;
+    approvalRecorded: string;
     worker: string;
     unassigned: string;
     budget: string;

@@ -1,0 +1,28 @@
+import { expect, test as base } from "@playwright/test";
+
+export { expect };
+export const test = base.extend<{ releaseWork: void }>({
+  releaseWork: [async ({ request }, use) => {
+    await use();
+    // This API is freshly provisioned for this serial suite, never a reused service.
+    // Finish pending Mock work so the next test can use the single execution slot.
+    const response = await request.get("http://127.0.0.1:18100/api/work-items");
+    expect(response.ok()).toBe(true);
+    const items: { id: string; status: string }[] = await response.json();
+    for (const work of items.reverse()) {
+      const url = `http://127.0.0.1:18100/api/work-items/${work.id}`;
+      if (!["completed", "failed", "cancelled"].includes(work.status)) {
+        await expect.poll(async () => (await (await request.get(url)).json()).status).toBe("awaiting_approval");
+        const approval = await request.post(`${url}/approvals`, { data: {
+          kind: "pull_request", decision: "approve", payload: {},
+        } });
+        expect(approval.ok()).toBe(true);
+        await expect.poll(async () => (await (await request.get(url)).json()).status).toBe("completed");
+      }
+      await expect.poll(async () => {
+        const events: { event_type: string }[] = await (await request.get(`${url}/event-log`)).json();
+        return events.some((event) => event.event_type === "lease.released");
+      }).toBe(true);
+    }
+  }, { auto: true }],
+});

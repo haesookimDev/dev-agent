@@ -20,7 +20,7 @@ export default async function WorkDetail({
   ]);
 
   return (
-    <main className="detailPage">
+    <main className="detailPage" id="main-content" tabIndex={-1}>
       <Link className="back" href={`/${locale}`}>← {messages.run.back}</Link>
       <LiveRun
         initialWork={work}
