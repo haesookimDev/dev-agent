@@ -100,6 +100,7 @@ def test_audit_snapshots_do_not_depend_on_live_resources():
 
 @pytest.mark.parametrize("revisions", [
     "20260906_0006:20260905_0005", "20260906_0007:20260906_0006",
+    "20260906_0009:20260906_0007",
 ])
 def test_offline_downgrade_cannot_skip_the_retention_check(tmp_path, revisions):
     with pytest.raises(RuntimeError, match="online emptiness check"):

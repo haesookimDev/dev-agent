@@ -25,6 +25,15 @@ AUDIT_GUARDS_V1 = {
     ),
 }
 
+# V2 distinguishes background execution from authenticated human role snapshots.
+AUDIT_ACTOR_ROLES_V2 = (
+    "(transport IN ('web', 'slack') AND organization_role IS NOT NULL "
+    "AND effective_role IS NOT NULL AND required_role IS NOT NULL) OR "
+    "(transport = 'background' AND actor_id IS NULL AND source_ip IS NULL "
+    "AND organization_role IS NULL AND repository_role IS NULL "
+    "AND effective_role IS NULL AND required_role IS NULL)"
+)
+
 
 def register_audit_guards(table: Table) -> None:
     for dialect, statements in AUDIT_GUARDS_V1.items():

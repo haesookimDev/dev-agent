@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from .audit_schema import register_audit_guards
+from .audit_schema import AUDIT_ACTOR_ROLES_V2, register_audit_guards
 
 
 def utcnow() -> datetime:
@@ -73,7 +73,8 @@ class AuditRecord(Base):
     __tablename__ = "audit_records"
     __table_args__ = (
         Index("ix_audit_records_work_cursor", "organization_id", "work_item_id", "id"),
-        CheckConstraint("transport IN ('web', 'slack')", name="audit_transport"),
+        CheckConstraint("transport IN ('web', 'slack', 'background')", name="audit_transport"),
+        CheckConstraint(AUDIT_ACTOR_ROLES_V2, name="audit_actor_roles"),
     )
 
     # Identity and resource snapshots intentionally have no cascading foreign keys.
@@ -86,10 +87,10 @@ class AuditRecord(Base):
     actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     actor_subject: Mapped[str] = mapped_column(String(255))
     identity_provider: Mapped[str] = mapped_column(String(1024))
-    organization_role: Mapped[Role] = mapped_column(role_type())
+    organization_role: Mapped[Role | None] = mapped_column(role_type(), nullable=True)
     repository_role: Mapped[Role | None] = mapped_column(role_type(), nullable=True)
-    effective_role: Mapped[Role] = mapped_column(role_type())
-    required_role: Mapped[Role] = mapped_column(role_type())
+    effective_role: Mapped[Role | None] = mapped_column(role_type(), nullable=True)
+    required_role: Mapped[Role | None] = mapped_column(role_type(), nullable=True)
     request_id: Mapped[str] = mapped_column(String(36))
     correlation_id: Mapped[str] = mapped_column(String(36))
     source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
@@ -382,6 +383,8 @@ class DeliveryJob(Base):
         ForeignKey("work_items.id"), primary_key=True
     )
     state: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    # Retained append-only audit identity; validated before execution, never backfilled by guess.
+    approval_audit_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
