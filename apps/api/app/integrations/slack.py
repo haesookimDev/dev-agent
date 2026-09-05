@@ -40,17 +40,23 @@ class SlackNotifier:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.settings.slack_bot_token and self.settings.slack_channel_id)
+        return bool(self._token())
+
+    def _token(self) -> str:
+        if not self.settings.slack_channel_id:
+            return ""
+        return self.settings.read_secret("slack_bot_token")
 
     async def post_status(self, work: WorkItem) -> None:
-        if not self.enabled:
+        token = self._token()
+        if not token:
             return
         url = f"{self.settings.dashboard_url.rstrip('/')}/work-items/{work.id}"
         text = f"Kelpie · {work.title}\nStatus: {work.status.value}\n{url}"
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(
                 "https://slack.com/api/chat.postMessage",
-                headers={"Authorization": f"Bearer {self.settings.slack_bot_token}"},
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "channel": self.settings.slack_channel_id,
                     "text": text,
@@ -70,9 +76,10 @@ class SlackNotifier:
                 raise RuntimeError(f"Slack rejected message: {result.get('error', 'unknown')}")
 
     async def upload_image(self, image: Path, title: str, thread_ts: str | None = None) -> None:
-        if not self.enabled:
+        token = self._token()
+        if not token:
             return
-        headers = {"Authorization": f"Bearer {self.settings.slack_bot_token}"}
+        headers = {"Authorization": f"Bearer {token}"}
         size = await asyncio.to_thread(lambda: image.stat().st_size)
         contents = await asyncio.to_thread(image.read_bytes)
         async with httpx.AsyncClient(timeout=60) as client:

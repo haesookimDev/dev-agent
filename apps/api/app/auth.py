@@ -83,8 +83,8 @@ async def require_worker(
     settings: Annotated[Settings, Depends(get_settings)],
     authorization: Annotated[str | None, Header()] = None,
 ) -> None:
-    expected = f"Bearer {settings.worker_shared_secret}"
-    if authorization is None or not hmac.compare_digest(authorization, expected):
+    expected = f"Bearer {settings.read_secret('worker_shared_secret', required=True)}"
+    if authorization is None or not hmac.compare_digest(authorization.encode(), expected.encode()):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid worker credential")
 
 

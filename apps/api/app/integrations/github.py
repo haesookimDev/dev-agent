@@ -1,6 +1,5 @@
 import asyncio
 import time
-from pathlib import Path
 from urllib.parse import quote
 
 import httpx
@@ -21,7 +20,7 @@ class GitHubAppClient:
         if not self.configured:
             raise RuntimeError("GitHub App is not configured")
         private_key = await asyncio.to_thread(
-            Path(self.settings.github_private_key_path).read_text
+            self.settings.read_secret, "github_private_key", required=True,
         )
         now = int(time.time())
         return jwt.encode(
