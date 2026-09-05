@@ -28,7 +28,7 @@ kelpie_delivery_startup_recovery_state{kelpie_delivery_startup_recovery_state="c
 kelpie_delivery_startup_recovery_checks_total{outcome="completed"} 1.0
 ```
 
-Do not interpret `completed=1` as successful SCM delivery or continuous queue health. `/readyz` also checks only the schema. Inspect individual outcomes through existing `kelpie_delivery_outcomes_total`, `delivery_jobs.state/attempts`, and work status/events. Alerts for missing scrapes or prolonged recovery waits/errors, throughput/latency SLOs, and continuous queue monitoring remain follow-up scope.
+Do not interpret `completed=1` as successful SCM delivery or continuous queue health. `/readyz` also checks only the schema. Inspect individual outcomes through existing `kelpie_delivery_outcomes_total`, `delivery_jobs.state/attempts`, and work status/events. [Baseline alerts](monitoring-alerts.md) cover failed/missing scrapes, prolonged unfinished recovery, and observed delivery failures. Throughput/latency SLOs and continuous queue monitoring remain follow-up scope.
 
 These metrics cover [one API process](delivery-recovery.md), not multi-worker aggregation or distributed recovery. Labels contain fixed phases/outcomes only, never job, repository, user, request IDs, or raw exceptions. There are no new dependencies, environment variables, or migrations; existing API responses and metric contracts remain intact. Rolling back the API removes the new metrics, so revert dependent collection rules/dashboards as well. No data downgrade is required.
 

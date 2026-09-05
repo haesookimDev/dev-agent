@@ -53,7 +53,7 @@ Done when a single Worker can be revoked without rotating every Worker and no se
 
 ### OBS-001 · Observability and correlation — M
 
-Status: first batch implemented (2026-09-04), including end-to-end correlation IDs, baseline OpenTelemetry traces, Prometheus metrics, and structured logs. External dependency readiness, alerts, and dashboards remain.
+Status: baseline correlation IDs/traces/metrics/structured logs, bounded DB readiness, startup recovery metrics, and [baseline alerts](monitoring-alerts.md) are implemented. External dependency readiness, worker heartbeat/lease/live queue alerts, and an integrated operations dashboard remain.
 
 Scope:
 

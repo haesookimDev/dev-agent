@@ -126,7 +126,7 @@ OTEL_SERVICE_NAME=kelpie-api
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
 ```
 
-OTLP Endpoint를 비워 두면 Application Span은 외부로 전송하지 않지만 Prometheus Metric과 구조화 Log는 계속 제공됩니다. 외부 Object Store·SCM·Delivery Worker Readiness, Alert 기준, Dashboard는 OBS-001의 후속 범위입니다.
+OTLP Endpoint를 비워 두면 Application Span은 외부로 전송하지 않지만 Prometheus Metric과 구조화 Log는 계속 제공됩니다. [기본 장애 알림과 대응 안내](monitoring-alerts.md)는 수집 실패·누락, 시작 시 복구 지연과 관찰된 전달 실패를 다룹니다. 외부 Object Store·SCM·Delivery Worker Readiness, Worker/Lease 알림과 통합 운영 Dashboard는 OBS-001의 후속 범위입니다.
 
 ## GitHub App 전달
 
