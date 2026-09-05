@@ -1,0 +1,17 @@
+# Isolated local example; production must restrict both API and Prometheus access.
+global:
+  scrape_interval: 15s
+  scrape_timeout: 3s
+  evaluation_interval: 30s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: kelpie-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["127.0.0.1:8000"]
+
+# No notification receiver is enabled by default. Configure an authorized
+# Alertmanager before relying on notifications; see the bilingual runbooks.

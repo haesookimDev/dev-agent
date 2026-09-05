@@ -1,0 +1,78 @@
+groups:
+  - name: kelpie-control-plane
+    interval: 30s
+    rules:
+      - alert: KelpieApiScrapeUnavailable
+        expr: up{job="kelpie-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: Kelpie API metrics cannot be scraped
+          summary_ko: Kelpie API 지표를 수집할 수 없습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#api-scrape
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#api-scrape
+
+      - alert: KelpieApiTargetMissing
+        expr: absent(up{job="kelpie-api"})
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: No Kelpie API scrape target is present
+          summary_ko: Kelpie API 수집 대상이 없습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#missing-target
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#missing-target
+
+      - alert: KelpieRecoveryMetricsMissing
+        expr: |
+          (up{job="kelpie-api"} == 1)
+          unless on (job, instance)
+          kelpie_delivery_startup_recovery_state{
+            job="kelpie-api", kelpie_delivery_startup_recovery_state="completed"
+          }
+        for: 2m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: Kelpie startup recovery metrics are missing
+          summary_ko: Kelpie 시작 시 전달 복구 지표가 누락됐습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#missing-metrics
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#missing-metrics
+
+      - alert: KelpieStartupRecoveryStalled
+        # Remove the phase label so phase changes do not restart the pending timer.
+        expr: |
+          (sum without (kelpie_delivery_startup_recovery_state) (
+            kelpie_delivery_startup_recovery_state{
+              job="kelpie-api", kelpie_delivery_startup_recovery_state!="completed"
+            }
+          ) == 1)
+          and on (job, instance) (up{job="kelpie-api"} == 1)
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: Kelpie startup delivery recovery has not completed for five minutes
+          summary_ko: Kelpie 시작 시 전달 복구가 5분 동안 완료되지 않았습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#startup-recovery
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#startup-recovery
+
+      - alert: KelpieDeliveryFailures
+        expr: |
+          (sum without (outcome) (
+            increase(kelpie_delivery_outcomes_total{job="kelpie-api", outcome="failed"}[10m])
+          ) > 0)
+          and on (job, instance) (up{job="kelpie-api"} == 1)
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: Kelpie delivery failures were observed in the last ten minutes
+          summary_ko: 최근 10분 동안 Kelpie 전달 실패가 관찰됐습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#delivery-failures
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#delivery-failures

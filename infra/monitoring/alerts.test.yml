@@ -1,0 +1,212 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 30s
+
+tests:
+  - name: scrape outage waits two minutes and clears on recovery
+    interval: 30s
+    input_series:
+      - series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '0x5 1x4'
+    alert_rule_test:
+      - eval_time: 1m30s
+        alertname: KelpieApiScrapeUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: KelpieApiScrapeUnavailable
+        exp_alerts:
+          - exp_labels:
+              job: kelpie-api
+              instance: api:8000
+              severity: critical
+              component: api
+            exp_annotations:
+              summary: Kelpie API metrics cannot be scraped
+              summary_ko: Kelpie API 지표를 수집할 수 없습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#api-scrape
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#api-scrape
+      - eval_time: 2m
+        alertname: KelpieApiTargetMissing
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: KelpieRecoveryMetricsMissing
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: KelpieApiScrapeUnavailable
+        exp_alerts: []
+
+  - name: missing target is not a healthy empty result or another job
+    input_series:
+      - series: 'up{job="other-api",instance="api:8000"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 1m30s
+        alertname: KelpieApiTargetMissing
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: KelpieApiTargetMissing
+        exp_alerts:
+          - exp_labels: {job: kelpie-api, severity: critical, component: api}
+            exp_annotations:
+              summary: No Kelpie API scrape target is present
+              summary_ko: Kelpie API 수집 대상이 없습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#missing-target
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#missing-target
+      - eval_time: 2m
+        alertname: KelpieApiScrapeUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: KelpieRecoveryMetricsMissing
+        exp_alerts: []
+
+  - name: successful scrape must contain recovery contract
+    input_series:
+      - series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '1x10'
+      - series: 'kelpie_delivery_startup_recovery_state{job="other-api",instance="api:8000",kelpie_delivery_startup_recovery_state="completed"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 1m30s
+        alertname: KelpieRecoveryMetricsMissing
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: KelpieRecoveryMetricsMissing
+        exp_alerts:
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api}
+            exp_annotations:
+              summary: Kelpie startup recovery metrics are missing
+              summary_ko: Kelpie 시작 시 전달 복구 지표가 누락됐습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#missing-metrics
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#missing-metrics
+
+  - name: phase transitions retain the five minute pending timer and completion clears it
+    input_series:
+      - series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '1x16'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="waiting_for_database"}'
+        values: '1x3 0x12'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="running"}'
+        values: '0x3 1x3 0x8'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="retrying"}'
+        values: '0x7 1x3 0x4'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="completed"}'
+        values: '0x11 1x4'
+    alert_rule_test:
+      - eval_time: 4m30s
+        alertname: KelpieStartupRecoveryStalled
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KelpieStartupRecoveryStalled
+        exp_alerts: &stalled
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api}
+            exp_annotations:
+              summary: Kelpie startup delivery recovery has not completed for five minutes
+              summary_ko: Kelpie 시작 시 전달 복구가 5분 동안 완료되지 않았습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#startup-recovery
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#startup-recovery
+      - eval_time: 6m
+        alertname: KelpieStartupRecoveryStalled
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KelpieRecoveryMetricsMissing
+        exp_alerts: []
+
+  - name: not started then cancelled while still scrapeable remains unfinished
+    input_series:
+      - series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '1x12'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="cancelled"}'
+        values: '0x5 1x6'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="not_started"}'
+        values: '1x5 0x6'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="completed"}'
+        values: '0x12'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KelpieStartupRecoveryStalled
+        exp_alerts: *stalled
+
+  - name: completed startup is healthy and an unavailable scrape suppresses stale recovery
+    input_series:
+      - series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '1x12'
+      - series: 'up{job="kelpie-api",instance="offline:8000"}'
+        values: '0x12'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="completed"}'
+        values: '1x12'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="waiting_for_database"}'
+        values: '0x12'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="offline:8000",kelpie_delivery_startup_recovery_state="waiting_for_database"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KelpieStartupRecoveryStalled
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KelpieRecoveryMetricsMissing
+        exp_alerts: []
+
+  - name: observed delivery failures alert independently of completed recovery and expire
+    input_series:
+      - series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '1x30'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="completed"}'
+        values: '1x30'
+      - series: 'kelpie_delivery_outcomes_total{job="kelpie-api",instance="api:8000",outcome="failed"}'
+        values: '0x3 1x26'
+    alert_rule_test:
+      - eval_time: 1m30s
+        alertname: KelpieDeliveryFailures
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: KelpieDeliveryFailures
+        exp_alerts: &failed
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api}
+            exp_annotations:
+              summary: Kelpie delivery failures were observed in the last ten minutes
+              summary_ko: 최근 10분 동안 Kelpie 전달 실패가 관찰됐습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#delivery-failures
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#delivery-failures
+      - eval_time: 10m
+        alertname: KelpieDeliveryFailures
+        exp_alerts: *failed
+      - eval_time: 12m
+        alertname: KelpieDeliveryFailures
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KelpieStartupRecoveryStalled
+        exp_alerts: []
+
+  - name: counter reset alone is not a new failure and other outcomes and jobs are excluded
+    input_series:
+      - series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '1x12'
+      - series: 'kelpie_delivery_outcomes_total{job="kelpie-api",instance="api:8000",outcome="failed"}'
+        values: '5x3 0x3 1x4'
+      - series: 'kelpie_delivery_outcomes_total{job="kelpie-api",instance="api:8000",outcome="completed"}'
+        values: '0+1x12'
+      - series: 'kelpie_delivery_outcomes_total{job="other-api",instance="api:8000",outcome="failed"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: KelpieDeliveryFailures
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: KelpieDeliveryFailures
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: KelpieDeliveryFailures
+        exp_alerts: *failed
+
+  - name: stale recovery metrics on a live target are missing rather than completed
+    input_series:
+      - series: 'up{job="kelpie-api",instance="api:8000"}'
+        values: '1x12'
+      - series: 'kelpie_delivery_startup_recovery_state{job="kelpie-api",instance="api:8000",kelpie_delivery_startup_recovery_state="completed"}'
+        values: '1x3 stale'
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieRecoveryMetricsMissing",alertstate="firing"}'
+        eval_time: 4m
+        exp_samples:
+          - labels: 'ALERTS{alertname="KelpieRecoveryMetricsMissing",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}'
+            value: 1
