@@ -21,6 +21,7 @@ from .models import (
 from .observability import observe_claim, observe_transition
 from .schemas import ClaimRequest, EventCreate, WorkItemCreate
 from .state_machine import InvalidTransition, ensure_transition
+from .worker_credentials import lock_worker
 
 
 async def emit_event(
@@ -195,8 +196,18 @@ async def validate_lease(
         ResourceLease.token_hash == hash_token(token),
         ResourceLease.state == "active",
     )
-    lease = (await session.execute(statement)).scalar_one_or_none()
-    if lease is None:
+    owner = await session.scalar(statement.with_only_columns(ResourceLease.worker_id))
+    if owner is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid lease token")
+    # Match credential management/claim lock order. A request waiting behind
+    # quarantine must re-read the lease after acquiring the Worker lock.
+    try:
+        worker = await lock_worker(session, owner)
+    except ValueError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid lease token") from None
+    lease = await session.scalar(statement.with_for_update()
+                                 .execution_options(populate_existing=True))
+    if lease is None or worker.quarantined_at is not None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid lease token")
     now = datetime.now(UTC)
     expires_at = lease.expires_at
