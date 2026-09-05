@@ -72,6 +72,7 @@ function proxy(port, target) {
     const upstream = request({ hostname: "127.0.0.1", port: target, path: incoming.url,
       method: incoming.method, headers: incoming.headers }, (response) => {
       outgoing.writeHead(response.statusCode, response.headers);
+      outgoing.flushHeaders();
       response.pipe(outgoing);
     });
     upstream.on("error", () => { if (!outgoing.headersSent) outgoing.writeHead(502); outgoing.end(); });
@@ -117,7 +118,9 @@ try {
     KELPIE_GATEWAY_TOKEN: environment.GATEWAY_SECRET,
     KELPIE_GATEWAY_TLS_CERT_FILE: join(temporary, "tls.crt"),
     KELPIE_GATEWAY_TLS_KEY_FILE: join(temporary, "tls.key") });
-  start(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "13530"], join(root, "apps/web"));
+  start(process.execPath, ["node_modules/next/dist/bin/next",
+    process.env.KELPIE_PREVIEW_PRODUCTION === "1" ? "start" : "dev",
+    "--hostname", "127.0.0.1", "--port", "13530"], join(root, "apps/web"));
   proxy(18443, 18530); proxy(19443, 19330); proxy(13443, 13530);
   await ready("http://127.0.0.1:13530/en");
   console.log("Isolated OIDC Preview services ready at https://localhost:13443/en");
