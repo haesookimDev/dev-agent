@@ -30,4 +30,6 @@
 6. WireGuard Preview Routing을 구축하고 Gateway 경계에서 noVNC 읽기 전용·입력 소유권을 강제합니다.
 7. 브라우저를 사용하는 작업 2개를 동시에 실행해 Display, 입력, Network, Disk, 자격증명이 서로 격리됨을 증명합니다.
 
+P0 OPS-001에는 [PostgreSQL 백업·새 DB 복원의 데이터·권한·감사 검증](postgres-restore.md)도 추가했습니다. Object Store 복구, 보존 기간 정리와 실제 운영 복구 검증은 남아 있습니다.
+
 GitLab, 고급 Routing, 자율 이슈 탐색은 이 보안·실행 기준이 검증된 이후에 진행해야 합니다.

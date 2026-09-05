@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## PostgreSQL restore regression
+
+[Backup/restore verification](postgres-restore.md) runs `test_postgres_restore.py` and `test_postgres_restore_runtime.py` with dedicated `KELPIE_TEST_POSTGRES_URL` and `KELPIE_TEST_POSTGRES_CONTAINER` settings pointing to the same server. Existing `Python` CI reuses its PostgreSQL 17 container's tools. Locally, missing variables skip six tests; passing default tests alone does not complete restore verification. Cleanup removes only test-created UUID databases/roles, never existing databases or audits.
+
 ## Definition of done
 
 Develop on a task branch and commit each logical unit with a Korean message after its relevant tests pass. Once automated tests and hands-on verification pass, create a PR with evidence and inspect CI and reviews for the latest commit. When the user delegates merging, the agent merges with a merge commit and fast-forwards local `main`. Keep a PR in Draft when required verification cannot run.
