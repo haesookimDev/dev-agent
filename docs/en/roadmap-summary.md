@@ -30,4 +30,6 @@ The next release should contain only P0 and the smallest P1 end-to-end path:
 6. Establish WireGuard preview routing and enforce noVNC read-only/input ownership at the gateway boundary.
 7. Run two browser-using jobs concurrently and prove that display, input, network, disk, and credentials remain isolated.
 
+P0 OPS-001 also includes [PostgreSQL backup/new-database restore verification for data, permissions, and audits](postgres-restore.md). Object-store recovery, retention jobs, and actual operational recovery verification remain.
+
 GitLab, advanced routing, and autonomous issue discovery should follow only after this security and execution baseline is proven.
