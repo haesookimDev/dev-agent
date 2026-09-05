@@ -8,6 +8,7 @@ import { canSendFeedback } from "../lib/feedback";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
 import { LocalTime } from "./local-time";
+import { PreviewAccess } from "./preview-access";
 
 interface LiveRunProps {
   initialWork: WorkItem;
@@ -193,6 +194,7 @@ export function LiveRun({
           )}
           {actionError && <p className="formError" role="alert">{actionError}</p>}
           {actionNotice && <p className="actionNotice" role="status">{actionNotice}</p>}
+          <PreviewAccess workId={work.id} revision={`${work.version}:${events.filter((event) => event.event_type === "preview.registered").at(-1)?.id ?? 0}`} messages={messages.preview} />
           {artifacts.length > 0 && (
             <div className="artifactList">
               <p className="eyebrow">{messages.run.evidence}</p>
