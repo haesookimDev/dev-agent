@@ -45,6 +45,10 @@ Migration 도입 전에 `create_all`로 만든 Database는 현재 Table과 Colum
 
 RBAC Rollback 시에는 먼저 API 유입·Webhook과 Worker를 중지하고 DB 및 권한 정책을 Backup합니다. `alembic downgrade 20260904_0003`은 작업 데이터는 보존하지만 조직 구분과 권한 Table을 제거하므로, 이전 API를 여러 조직에 다시 공개하면 안 됩니다. 격리된 유지보수 환경에서만 이전 Version을 시작하고 RBAC Version 복구 후 검증된 Backup·정책으로 권한을 복구합니다.
 
+## 시작 시 전달 복구
+
+DB가 준비되지 않은 상태로 시작한 API도 연결·Schema 복구 후 [대기 중인 전달을 재개](delivery-recovery.md)합니다. 이 복구는 단일 API 프로세스 전용이며, 교체 시 이전 API를 완전히 종료한 뒤 새 API를 시작해야 합니다. `/readyz` 200을 전달 완료 신호로 사용하지 마세요.
+
 ## OIDC 인증
 
 Secret 파일 주입·교체와 실패 복구는 [Secret 관리 가이드](secret-management.md)를 따릅니다. Worker는 [개별 자격증명 발급·전환 절차](worker-credentials.md)를 먼저 수행합니다.

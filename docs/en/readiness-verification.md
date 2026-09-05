@@ -17,7 +17,7 @@ API fields, states, authorization, and approval policy are unchanged. `SCHEMA_RE
 
 An inspection taking longer than two seconds is not ready even if the revision is correct. Investigate pool exhaustion, networking, database load, and schema locks. `unreachable` includes other connection failures and is not a timeout-specific code. Responses omit database addresses, passwords, and original errors.
 
-After connection recovery, the next `/readyz` request inspects again. However, an unready schema at startup skips the existing startup resumption of delivery jobs: a later 200 from `/readyz` alone is not evidence that the delivery queue recovered. Delivery-worker state/recovery remains separate OBS-001/OPS-001 work. Database readiness also does not establish object-store, SCM, or actual VM health.
+After connection recovery, the next `/readyz` request inspects again. If the schema was unready at startup, [startup delivery recovery](delivery-recovery.md) retries in the background. A later 200 from `/readyz` alone is not evidence that the delivery queue completed. Continuous delivery-worker health remains separate OBS-001/OPS-001 work. Database readiness also does not establish object-store, SCM, or actual VM health.
 
 ## Verification results
 
