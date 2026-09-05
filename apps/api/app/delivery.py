@@ -3,23 +3,58 @@ import os
 import re
 import signal
 import tempfile
-from contextlib import suppress
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import get_settings
 from .db import SessionLocal
 from .integrations.github import GitHubAppClient
-from .models import DeliveryBundle, DeliveryJob, WorkItem, WorkStatus, utcnow
+from .models import DeliveryBundle, DeliveryJob, WorkerHost, WorkItem, WorkStatus, utcnow
 from .observability import observe_delivery_attempt, observe_delivery_outcome, tracer
 from .schemas import EventCreate
 from .service import emit_event, transition_work_item
 
 settings = get_settings()
 github = GitHubAppClient(settings)
+DELIVERY_WRITE_SECONDS = 45
+
+
+class DeliveryStopped(Exception):
+    """The work no longer permits publication; do not overwrite its current outcome."""
+
+
+async def lock_delivery(
+    session: AsyncSession, work_item_id: str, *, states: tuple[str, ...] = ("running",),
+) -> tuple[WorkItem, DeliveryJob]:
+    worker_id = await session.scalar(select(WorkItem.assigned_worker_id)
+                                    .where(WorkItem.id == work_item_id))
+    if worker_id is None:
+        raise DeliveryStopped
+    # All publication and quarantine paths use Worker -> Work -> DeliveryJob ordering.
+    worker = await session.get(WorkerHost, worker_id, with_for_update=True, populate_existing=True)
+    if worker is None or worker.quarantined_at is not None:
+        raise DeliveryStopped
+    work = await session.get(WorkItem, work_item_id, with_for_update=True, populate_existing=True)
+    job = await session.get(DeliveryJob, work_item_id, with_for_update=True, populate_existing=True)
+    if (work is None or job is None or work.assigned_worker_id != worker_id
+            or work.status != WorkStatus.COMMITTING or job.state not in states):
+        raise DeliveryStopped
+    return work, job
+
+
+@asynccontextmanager
+async def guard_delivery_write(work_item_id: str) -> AsyncIterator[None]:
+    # Quarantine waits for an already-started write. After it commits, no new write starts.
+    async with asyncio.timeout(DELIVERY_WRITE_SECONDS):
+        async with SessionLocal() as session:
+            await lock_delivery(session, work_item_id)
+            yield
 
 
 async def run_command(
@@ -83,25 +118,26 @@ async def deliver_work(work_item_id: str) -> None:
 
 
 async def _deliver_work(work_item_id: str) -> None:
-    async with SessionLocal() as session:
-        job = await session.get(DeliveryJob, work_item_id, with_for_update=True)
-        work = await session.get(WorkItem, work_item_id)
-        bundle = await session.get(DeliveryBundle, work_item_id)
-        if not job or not work or not bundle or job.state not in {"pending", "retry"}:
-            return
-        if work.status != WorkStatus.COMMITTING:
-            return
-        attempt_type = "retry" if job.attempts > 0 or job.state == "retry" else "initial"
-        job.state = "running"
-        job.attempts += 1
-        job.updated_at = utcnow()
-        await session.commit()
-        observe_delivery_attempt(attempt_type)
+    try:
+        async with SessionLocal() as session:
+            work, job = await lock_delivery(session, work_item_id, states=("pending", "retry"))
+            bundle = await session.get(DeliveryBundle, work_item_id)
+            if bundle is None:
+                return
+            attempt_type = "retry" if job.attempts > 0 or job.state == "retry" else "initial"
+            job.state = "running"
+            job.attempts += 1
+            job.updated_at = utcnow()
+            await session.commit()
+            observe_delivery_attempt(attempt_type)
+    except DeliveryStopped:
+        return
 
     try:
         if not work.github_installation_id:
             raise RuntimeError("repository has no GitHub App installation")
-        token = await github.installation_token(work.github_installation_id)
+        async with guard_delivery_write(work_item_id):
+            token = await github.installation_token(work.github_installation_id)
         metadata = await github.repository(work.repository, token)
         base_branch = metadata["default_branch"]
         target_branch = branch_name(work)
@@ -145,31 +181,30 @@ async def _deliver_work(work_item_id: str) -> None:
                     "git", "config", "user.email", settings.git_bot_email, cwd=repository
                 )
                 await run_command("git", "commit", "-m", work.title, cwd=repository)
-                await run_command(
-                    "git",
-                    "push",
-                    "--set-upstream",
-                    "origin",
-                    target_branch,
-                    cwd=repository,
-                    environment=environment,
-                )
+                async with guard_delivery_write(work_item_id):
+                    await run_command(
+                        "git",
+                        "push",
+                        "--set-upstream",
+                        "origin",
+                        target_branch,
+                        cwd=repository,
+                        environment=environment,
+                    )
             finally:
                 await asyncio.to_thread(temporary.cleanup)
         if pull_request_url is None:
-            pull_request_url = await github.create_pull_request(
-                work.repository,
-                token,
-                title=work.title,
-                head=target_branch,
-                base=base_branch,
-                body=pull_request_body(work),
-            )
+            async with guard_delivery_write(work_item_id):
+                pull_request_url = await github.create_pull_request(
+                    work.repository,
+                    token,
+                    title=work.title,
+                    head=target_branch,
+                    base=base_branch,
+                    body=pull_request_body(work),
+                )
         async with SessionLocal() as session:
-            current = await session.get(WorkItem, work_item_id, with_for_update=True)
-            job = await session.get(DeliveryJob, work_item_id, with_for_update=True)
-            if not current or not job:
-                return
+            current, job = await lock_delivery(session, work_item_id)
             current.pull_request_url = pull_request_url
             await transition_work_item(
                 session,
@@ -191,18 +226,18 @@ async def _deliver_work(work_item_id: str) -> None:
             job.error = None
             await session.commit()
             observe_delivery_outcome("completed")
+    except DeliveryStopped:
+        return
     except Exception as error:
         span = trace.get_current_span()
         span.record_exception(error)
         span.set_status(Status(StatusCode.ERROR, str(error)))
-        async with SessionLocal() as session:
-            current = await session.get(WorkItem, work_item_id, with_for_update=True)
-            job = await session.get(DeliveryJob, work_item_id, with_for_update=True)
-            if job:
+        try:
+            async with SessionLocal() as session:
+                current, job = await lock_delivery(session, work_item_id)
                 job.state = "failed"
                 job.error = str(error)[:4000]
                 job.updated_at = utcnow()
-            if current:
                 await emit_event(
                     session,
                     work_item_id,
@@ -213,37 +248,37 @@ async def _deliver_work(work_item_id: str) -> None:
                         message=str(error)[:4000],
                     ),
                 )
-                if current.status == WorkStatus.COMMITTING:
-                    await transition_work_item(
-                        session,
-                        current,
-                        WorkStatus.FAILED,
-                        expected_version=current.version,
-                        actor="delivery:github",
-                        message="GitHub delivery failed",
-                    )
-            await session.commit()
+                await transition_work_item(
+                    session,
+                    current,
+                    WorkStatus.FAILED,
+                    expected_version=current.version,
+                    actor="delivery:github",
+                    message="GitHub delivery failed",
+                )
+                await session.commit()
+        except DeliveryStopped:
+            return
         observe_delivery_outcome("failed")
 
 
 async def resume_pending_deliveries() -> None:
     async with SessionLocal() as session:
-        jobs = list(
-            (
-                await session.scalars(
-                    select(DeliveryJob).where(
-                        DeliveryJob.state.in_({"pending", "retry", "running"})
-                    )
-                )
-            ).all()
-        )
-        for job in jobs:
-            if job.state == "running":
-                job.state = "retry"
-                job.error = "control plane restarted during delivery"
-        await session.commit()
-    for job in jobs:
-        asyncio.create_task(deliver_work(job.work_item_id))
+        identifiers = list((await session.scalars(select(DeliveryJob.work_item_id).where(
+            DeliveryJob.state.in_({"pending", "retry", "running"}),
+        ))).all())
+    for work_item_id in identifiers:
+        try:
+            async with SessionLocal() as session:
+                _, job = await lock_delivery(session, work_item_id,
+                                             states=("pending", "retry", "running"))
+                if job.state == "running":
+                    job.state = "retry"
+                    job.error = "control plane restarted during delivery"
+                await session.commit()
+        except DeliveryStopped:
+            continue
+        asyncio.create_task(deliver_work(work_item_id))
 
 
 def pull_request_body(work: WorkItem) -> str:
