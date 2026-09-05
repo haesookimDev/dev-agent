@@ -63,6 +63,55 @@ def test_admin_cli_issue_rotate_revoke_and_file_failure_are_atomic(tmp_path):
     assert second.read_text().strip().encode() not in retained
 
 
+def test_admin_cli_quarantine_is_idempotent_and_cannot_reissue_credentials(tmp_path):
+    root = Path(__file__).resolve().parents[3]
+    environment = {
+        "PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(root / "apps/api"),
+        "DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'quarantine.db'}",
+    }
+    subprocess.run([sys.executable, "-m", "alembic", "-c", str(root / "apps/api/alembic.ini"),
+                    "upgrade", "head"], cwd=tmp_path, env=environment, check=True,
+                   capture_output=True, timeout=30)
+
+    def command(*args, expected=0):
+        completed = subprocess.run([sys.executable, "-m", "app.worker_admin", *args],
+            cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=15)
+        assert completed.returncode == expected, completed.stderr
+        return completed
+
+    token_file = tmp_path / "token"
+    issued = command("issue", "--worker-name", "quarantine-worker", "--reason", "test setup",
+                     "--output", str(token_file))
+    identity = json.loads(issued.stdout)
+    token = token_file.read_text().strip()
+    arguments = ("quarantine", "--worker-id", identity["worker_id"], "--reason", "test incident")
+    isolated = command(*arguments)
+    result = json.loads(isolated.stdout)
+    assert result == {
+        "worker_id": identity["worker_id"], "already_quarantined": False,
+        "revoked_credentials": 1, "invalidated_leases": 0, "affected_work_ids": [],
+        "physical_cleanup_required": True,
+    }
+    repeated = command(*arguments)
+    assert json.loads(repeated.stdout)["already_quarantined"] is True
+    listed = command("list")
+    assert json.loads(listed.stdout)[0]["revoked_at"] is not None
+    blocked = command("issue", "--worker-name", "quarantine-worker", "--reason", "test reissue",
+                      "--output", str(tmp_path / "must-not-exist"), expected=2)
+    assert "quarantined workers" in blocked.stderr
+    assert not (tmp_path / "must-not-exist").exists()
+    assert token not in isolated.stdout + isolated.stderr + repeated.stdout + listed.stdout
+    assert token_file.read_text().strip() == token  # Operator owns physical token-file cleanup.
+    unknown = command("quarantine", "--worker-id", "unknown", "--reason", "test", expected=2)
+    assert "worker not found" in unknown.stderr
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'quarantine.db'}")
+    with engine.connect() as connection:
+        assert connection.execute(sa.text(
+            "SELECT count(*) FROM worker_credential_events WHERE action = 'quarantined'"
+        )).scalar_one() == 1
+    engine.dispose()
+
+
 def test_token_file_never_overwrites_or_follows_existing_symlink(tmp_path):
     existing = tmp_path / "existing"
     existing.write_text("keep-existing-content")
