@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import StrEnum
@@ -18,6 +19,7 @@ settings = get_settings()
 engine = create_async_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 API_ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_READINESS_SECONDS = 2
 
 
 class SchemaState(StrEnum):
@@ -51,7 +53,8 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 async def inspect_schema(target_engine: AsyncEngine) -> SchemaReadiness:
     expected_heads = tuple(sorted(migration_scripts().get_heads()))
     try:
-        async with target_engine.connect() as connection:
+        # Bound pool checkout/pre-ping, connection establishment, and schema lookup together.
+        async with asyncio.timeout(SCHEMA_READINESS_SECONDS), target_engine.connect() as connection:
             current_heads = await connection.run_sync(
                 lambda sync_connection: tuple(
                     sorted(MigrationContext.configure(sync_connection).get_current_heads())
