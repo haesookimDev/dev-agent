@@ -29,6 +29,10 @@ Migration 도입 전에 `create_all`로 만든 Database는 현재 Table과 Colum
 
 `20260904_0003`은 일회성 OIDC 로그인 시도와 불투명 인증 Session Table을 추가합니다. `20260904_0002`로 Downgrade하면 두 Table과 활성 로그인 Session이 제거되지만 Work Item 데이터는 유지됩니다. 이전 API Version으로 먼저 전환한 뒤 Downgrade하고, 사용자가 다시 로그인해야 함을 안내합니다.
 
+`20260905_0004`는 조직·Principal·Membership·Repository·Grant·Slack 연결 Table과 Work Item의 `organization_id`를 추가합니다. 기존 작업은 모두 신원 연결과 구성원이 없는 `legacy` 조직으로 배정되며 일반 사용자의 목록·상세에서 숨겨집니다. 같은 이름의 저장소를 등록해도 과거 작업의 소유권은 이전되지 않습니다. 기존 작업과 Event·Artifact 데이터는 보존하며, 역사적 데이터의 조직 재배정은 별도 검토가 필요한 후속 작업입니다. 진행 중인 Worker 임대는 기존 계약을 유지합니다.
+
+RBAC Rollback 시에는 먼저 API 유입·Webhook과 Worker를 중지하고 DB 및 권한 정책을 Backup합니다. `alembic downgrade 20260904_0003`은 작업 데이터는 보존하지만 조직 구분과 권한 Table을 제거하므로, 이전 API를 여러 조직에 다시 공개하면 안 됩니다. 격리된 유지보수 환경에서만 이전 Version을 시작하고 RBAC Version 복구 후 검증된 Backup·정책으로 권한을 복구합니다.
+
 ## OIDC 인증
 
 운영 환경에서는 대시보드와 API의 `/auth`, `/api` 경로를 같은 HTTPS 공개 Origin으로 제공합니다. 대시보드 Server Component가 Browser의 Session Cookie를 내부 API 요청에 전달하며, Browser 요청과 Event Stream도 자격증명을 포함합니다. API를 별도 공개 Hostname으로 노출하거나 OIDC 신원 Header를 주입하지 않습니다.
@@ -53,7 +57,34 @@ Issuer, Redirect URI, 발견된 Authorization·Token·JWKS Endpoint는 HTTPS여�
 
 `trusted_headers` 인증 Mode는 제거되었습니다. `X-Kelpie-User`와 `X-Kelpie-Role`은 인증에 사용되지 않습니다. `development` Mode도 요청 Header를 무시하고 `DEVELOPMENT_SUBJECT`와 `DEVELOPMENT_ORGANIZATION`의 고정된 관리자 신원만 사용하므로 외부에 공개하지 않습니다.
 
-현재 OIDC 신원은 후속 저장소 권한 Batch가 적용되기 전까지 Viewer로 처리되며 승인을 수행할 수 없습니다. Preview Gateway 역시 OIDC 범위 Preview Grant가 구현되기 전까지 기본 `disabled` 상태로 503을 반환합니다. `KELPIE_GATEWAY_AUTH_MODE=development`는 격리된 로컬 Demo에서만 사용합니다.
+OIDC 로그인에는 등록된 조직과 구성원이 필요합니다. `(Issuer, Organization Claim)`으로 조직을 찾고 `(Issuer, Subject)`로 Principal을 식별하며, ID Token의 임의 Role Claim은 사용하지 않습니다. 세션과 이벤트 스트림은 구성원·권한을 다시 확인하므로 회수된 권한은 다음 요청 또는 다음 이벤트 조회부터 적용됩니다. 작업을 변경하는 Cookie 인증 요청은 `DASHBOARD_URL`의 Origin과 일치하는 `Origin` Header가 필요합니다.
+
+Preview Gateway는 OIDC 범위 Preview Grant가 구현되기 전까지 기본 `disabled` 상태로 503을 반환합니다. `KELPIE_GATEWAY_AUTH_MODE=development`는 격리된 로컬 Demo에서만 사용합니다.
+
+## 조직·저장소 권한 설정
+
+Migration 후 로그인 트래픽을 열기 전에 제어 서버 관리자가 [정책 예제](../../config/iam.example.json)를 복사해 실제 Issuer, Organization Claim, Subject, 저장소와 GitHub App 설치 ID, Slack Team/User ID를 작성합니다. 정책 파일은 조직 하나의 **전체 원하는 상태**입니다. 토큰·Client Secret을 넣지 않고 접근을 제한한 제어 서버에 보관합니다.
+
+API Image 안에서 같은 `DATABASE_URL`을 사용하는 관리 Process로 실행합니다. 로컬 가상환경에서는 저장소 Root에서 `.venv/bin/python -m app.iam /path/to/organization.json`으로 실행할 수 있습니다.
+
+```bash
+python -m app.iam /run/config/organization.json
+```
+
+명령은 한 Transaction으로 조직의 Membership, Repository Grant, Slack 연결과 등록 저장소를 교체합니다. 생략한 항목은 회수되므로 항상 전체 정책을 제출합니다. 최소 한 명의 Administrator가 필요하며 조직 신원 재할당, 다른 조직에 등록된 저장소·Slack 연결, 구성원이 아닌 사용자에 대한 Grant는 거부합니다. 실패한 적용은 전체 Rollback됩니다. 정책 관리는 제어 서버 운영 권한으로만 가능하며 공개 Bootstrap·권한 관리 API는 제공하지 않습니다.
+
+| 유효 역할 | 조회·Event·산출물 | 작업 생성·피드백·Console 인수 | PR·예산·Console 승인 |
+| --- | --- | --- | --- |
+| Viewer | 허용 | 거부 | 거부 |
+| Operator | 허용 | 허용 | 거부 |
+| Approver | 허용 | 허용 | 허용 |
+| Administrator | 허용 | 허용 | 허용 |
+
+조직 Membership의 역할이 소속 저장소 전체의 기본 권한입니다. 저장소 Grant는 해당 저장소에서만 역할을 승격하며 기본 역할을 낮추지 않습니다. 다른 조직에는 어떤 역할도 적용되지 않습니다. `/auth/session`의 `organization`은 내부 조직 ID, `role`은 조직 기본 역할을 반환하며 저장소별 승격은 포함하지 않습니다. 등록되지 않은 저장소·다른 조직의 작업은 404, 같은 조직에서 역할 부족은 403, 미등록 구성원은 403을 반환합니다. Work Item 응답 구조와 Worker 임대 계약은 유지되고 신규 저장소 이름은 소문자로 정규화됩니다.
+
+GitHub Webhook은 서명 검증에 더해 등록 저장소와 설치 ID가 모두 일치해야 작업을 생성합니다. OIDC Mode의 Web 작업도 정책에 지정된 설치 ID를 사용합니다. Slack 명령은 서명된 `(team_id, user_id)` 연결의 Principal을 찾아 같은 권한 검사를 수행하며, `SLACK_APPROVER_USER_IDS`는 더 이상 승인 권한을 부여하지 않습니다. Slack 작업 기록의 Actor는 연결된 Principal ID입니다. Global Slack 알림 Channel은 여전히 배포 단위 설정이므로 그 Channel의 모든 사용자가 전송되는 작업 정보를 볼 수 있는 배포에서만 알림을 활성화합니다.
+
+격리된 `development` Mode에서는 직접 작업 등록 시 전용 개발 조직과 저장소를 자동 등록합니다. 개발 조직은 OIDC 조직 및 `legacy`와 겹칠 수 없습니다. 조직·저장소 권한은 구현됐지만, 변경 불가능한 상세 감사 기록과 사용자 취소 기능은 IAM/OPS 후속 범위입니다.
 
 ## 관측성 및 Correlation
 
@@ -88,7 +119,7 @@ GITHUB_PRIVATE_KEY_PATH=/run/secrets/github-app-private-key.pem
 AGENT_TRIGGER_LABEL=agent-ready
 ```
 
-PEM 파일은 API 사용자만 읽을 수 있도록 설정한 경로에 Mount합니다. 저장소에 App을 설치하면 Web에서 직접 만든 요청도 설치 정보를 자동으로 찾을 수 있습니다. GitHub 이슈 이벤트는 서명된 Webhook에 설치 ID를 포함합니다. `agent-ready` 라벨을 적용하면 이슈가 대기열에 들어가며, 사용자가 검증된 Patch를 승인하기 전에는 전달 토큰을 발급하지 않습니다.
+PEM 파일은 API 사용자만 읽을 수 있도록 설정한 경로에 Mount합니다. OIDC Mode에서는 조직 정책에 저장소의 App 설치 ID를 등록해야 하며 개발 Mode의 직접 요청만 설치 정보를 자동 조회합니다. GitHub 이슈 이벤트의 서명과 등록된 설치 ID가 일치할 때 `agent-ready` 라벨이 붙은 이슈를 대기열에 넣습니다. 권한 있는 사용자가 검증된 Patch를 승인하기 전에는 전달 토큰을 발급하지 않습니다.
 
 ## 운영 제어 플랫폼
 

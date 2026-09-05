@@ -23,7 +23,7 @@
 다음 Release는 P0와 P1의 최소 End-to-End 경로만 포함하는 것을 권장합니다.
 
 1. **완료:** `create_all`을 Alembic으로 교체하고 Upgrade/Downgrade를 테스트합니다.
-2. OIDC 인증, 조직·저장소 권한, 변경 불가능한 승인 감사 기록을 추가합니다.
+2. **부분 완료:** OIDC 인증과 조직·저장소 권한을 추가했습니다. 변경 불가능한 상세 승인 감사 기록은 남아 있습니다.
 3. Secret을 운영 Secret Provider로 옮기고 Worker 자격증명을 독립적으로 교체할 수 있게 합니다.
 4. **부분 완료:** OpenTelemetry Trace, Prometheus Metric, 구조화된 Correlation ID를 추가했습니다. 외부 의존성 Readiness·Alert와 보존 기간 정리 작업은 남아 있습니다.
 5. Version이 고정된 Ubuntu Desktop Golden Image 하나를 만들고 실제 libvirt 실행을 완료합니다.
