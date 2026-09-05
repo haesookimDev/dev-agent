@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { Locale } from "../i18n";
 import { localeTag } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
-import { authenticatedFetch, browserApi } from "../lib/browser-api";
+import { apiJSON, authenticatedFetch, browserApi, requestErrorMessage } from "../lib/browser-api";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
 
@@ -28,6 +28,7 @@ export function LiveRun({
   const [artifacts, setArtifacts] = useState(initialArtifacts);
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
   const lastEvent = events.at(-1)?.id ?? 0;
   const correlationHeaders = useMemo(
     () => ({ "X-Kelpie-Correlation-ID": work.correlation_id }),
@@ -56,33 +57,44 @@ export function LiveRun({
 
   async function feedback(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (sending) return;
     setSending(true);
     setActionError("");
+    setActionNotice("");
     const form = event.currentTarget;
     const data = new FormData(form);
-    const response = await authenticatedFetch(`${browserApi}/api/work-items/${work.id}/feedback`, {
-      method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
-      body: JSON.stringify({ message: data.get("message"), channel: "web" }),
-    });
-    if (response.ok) {
-      setWork(await response.json());
+    try {
+      const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}/feedback`, {
+        method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
+        body: JSON.stringify({ message: data.get("message"), channel: "web" }),
+      });
+      setWork((current) => updated.version >= current.version ? updated : current);
       form.reset();
-    } else {
-      setActionError(`${messages.run.feedbackError} (${response.status})`);
+      setActionNotice(messages.run.feedbackSent);
+    } catch (error) {
+      setActionError(requestErrorMessage(error, messages.run.feedbackError, messages.run.networkError, messages.run.permissionError));
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   }
 
   async function approve() {
+    if (sending) return;
     setSending(true);
     setActionError("");
-    const response = await authenticatedFetch(`${browserApi}/api/work-items/${work.id}/approvals`, {
-      method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
-      body: JSON.stringify({ kind: "pull_request", decision: "approve", payload: {} }),
-    });
-    if (response.ok) setWork(await response.json());
-    else setActionError(`${messages.run.approvalError} (${response.status})`);
-    setSending(false);
+    setActionNotice("");
+    try {
+      const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}/approvals`, {
+        method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
+        body: JSON.stringify({ kind: "pull_request", decision: "approve", payload: {} }),
+      });
+      setWork((current) => updated.version >= current.version ? updated : current);
+      setActionNotice(messages.run.approvalRecorded);
+    } catch (error) {
+      setActionError(requestErrorMessage(error, messages.run.approvalError, messages.run.networkError, messages.run.permissionError));
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -130,7 +142,8 @@ export function LiveRun({
               {messages.run.approve} <span>✓</span>
             </button>
           )}
-          {actionError && <p className="formError">{actionError}</p>}
+          {actionError && <p className="formError" role="alert">{actionError}</p>}
+          {actionNotice && <p className="actionNotice" role="status">{actionNotice}</p>}
           {artifacts.length > 0 && (
             <div className="artifactList">
               <p className="eyebrow">{messages.run.evidence}</p>

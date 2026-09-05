@@ -56,6 +56,8 @@ export interface MessageCatalog {
     queuing: string;
     submit: string;
     error: string;
+    networkError: string;
+    permissionError: string;
   };
   run: {
     back: string;
@@ -72,6 +74,10 @@ export interface MessageCatalog {
     feedbackPlaceholder: string;
     feedbackSubmit: string;
     feedbackError: string;
+    networkError: string;
+    permissionError: string;
+    feedbackSent: string;
+    approvalRecorded: string;
     worker: string;
     unassigned: string;
     budget: string;

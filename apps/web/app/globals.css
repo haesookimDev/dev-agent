@@ -107,6 +107,7 @@ input::placeholder, textarea::placeholder { color: #8391a6; font-weight: 400; }
 textarea { resize: vertical; min-height: 96px; }
 form button { width: 100%; justify-content: space-between; margin-top: 1px; }
 .formError { color: #b33045; background: #fff1f3; border: 1px solid #f5c9d0; padding: 10px 12px; border-radius: 6px; font-size: 12px; overflow-wrap: anywhere; }
+.actionNotice { margin-top: 14px; padding: 10px 12px; border-radius: 6px; font-size: 12px; background: #e8f6ef; color: #176344; }
 .workspaceFooter { display: flex; gap: 12px; margin-top: auto; padding: 18px 36px; color: #77869b; font-size: 10px; border-top: 1px solid var(--line); }
 .workspaceFooter span { color: #8794a7; }
 .detailPage { padding-top: 25px; }

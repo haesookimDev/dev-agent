@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Locale } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
-import { authenticatedFetch, browserApi } from "../lib/browser-api";
+import { apiJSON, browserApi, requestErrorMessage } from "../lib/browser-api";
 import { Icon } from "./icon";
 
 export function CreateWork({
@@ -20,26 +20,26 @@ export function CreateWork({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError("");
     const data = new FormData(event.currentTarget);
-    const response = await authenticatedFetch(`${browserApi}/api/work-items`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        title: data.get("title"),
-        repository: data.get("repository"),
-        requirement: data.get("requirement"),
-      }),
-    });
-    if (!response.ok) {
-      setError(`${messages.error} (${response.status})`);
+    try {
+      const work = await apiJSON<{ id: string }>(`${browserApi}/api/work-items`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: data.get("title"),
+          repository: data.get("repository"),
+          requirement: data.get("requirement"),
+        }),
+      });
+      router.push(`/${locale}/work-items/${work.id}`);
+      router.refresh();
+    } catch (error) {
+      setError(requestErrorMessage(error, messages.error, messages.networkError, messages.permissionError));
       setSubmitting(false);
-      return;
     }
-    const work = await response.json();
-    router.push(`/${locale}/work-items/${work.id}`);
-    router.refresh();
   }
 
   return (
