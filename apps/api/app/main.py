@@ -29,7 +29,13 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .auth import Actor, actor_from_identity, current_actor, require_approver, require_worker
+from .auth import Actor, actor_from_identity, current_actor, require_worker
+from .authorization import (
+    authorize_repository,
+    authorized_work,
+    development_repository,
+    slack_actor,
+)
 from .config import Settings, get_settings
 from .correlation import CorrelationMiddleware
 from .db import (
@@ -53,6 +59,8 @@ from .models import (
     Feedback,
     OIDCLoginAttempt,
     PreviewEndpoint,
+    Repository,
+    Role,
     WebhookDelivery,
     WorkerHost,
     WorkItem,
@@ -462,13 +470,21 @@ async def logout(request: Request, session: SessionDep, config: SettingsDep) -> 
 
 
 @app.post("/api/work-items", response_model=WorkItemView, status_code=status.HTTP_201_CREATED)
-async def submit_work(payload: WorkItemCreate, session: SessionDep, actor: ActorDep) -> WorkItem:
-    installation_id = await github.installation_for_repository(payload.repository)
+async def submit_work(
+    payload: WorkItemCreate, session: SessionDep, actor: ActorDep, config: SettingsDep,
+) -> WorkItem:
+    if config.auth_mode == "development":
+        await development_repository(session, config.development_organization, payload.repository)
+    repository = await authorize_repository(session, actor, payload.repository, Role.OPERATOR)
+    installation_id = repository.github_installation_id
+    if config.auth_mode == "development":
+        installation_id = await github.installation_for_repository(payload.repository)
     item = await create_work_item(
         session,
         payload,
         source=WorkSource.WEB,
         requested_by=actor.subject,
+        organization_id=actor.organization,
         github_installation_id=installation_id,
     )
     await session.commit()
@@ -478,26 +494,31 @@ async def submit_work(payload: WorkItemCreate, session: SessionDep, actor: Actor
 @app.get("/api/work-items", response_model=list[WorkItemView])
 async def list_work_items(
     session: SessionDep,
-    _: ActorDep,
+    actor: ActorDep,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[WorkItem]:
-    statement = select(WorkItem).order_by(WorkItem.created_at.desc()).limit(limit)
+    statement = (
+        select(WorkItem).join(Repository, Repository.name == WorkItem.repository)
+        .where(WorkItem.organization_id == actor.organization,
+               Repository.organization_id == actor.organization)
+        .order_by(WorkItem.created_at.desc()).limit(limit)
+    )
     return list((await session.scalars(statement)).all())
 
 
 @app.get("/api/work-items/{work_item_id}", response_model=WorkItemView)
-async def read_work_item(work_item_id: str, session: SessionDep, _: ActorDep) -> WorkItem:
-    return await get_work_item(session, work_item_id)
+async def read_work_item(work_item_id: str, session: SessionDep, actor: ActorDep) -> WorkItem:
+    return await authorized_work(session, actor, work_item_id)
 
 
 @app.get("/api/work-items/{work_item_id}/event-log", response_model=list[EventView])
 async def event_log(
     work_item_id: str,
     session: SessionDep,
-    _: ActorDep,
+    actor: ActorDep,
     after: Annotated[int, Query(ge=0)] = 0,
 ) -> list[AgentEvent]:
-    await get_work_item(session, work_item_id)
+    await authorized_work(session, actor, work_item_id)
     statement = (
         select(AgentEvent)
         .where(AgentEvent.work_item_id == work_item_id, AgentEvent.id > after)
@@ -509,13 +530,15 @@ async def event_log(
 
 @app.get("/api/work-items/{work_item_id}/events")
 async def stream_events(
+    request: Request,
     work_item_id: str,
     session: SessionDep,
-    _: ActorDep,
+    actor: ActorDep,
+    config: SettingsDep,
     after: Annotated[int, Query(ge=0)] = 0,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
-    await get_work_item(session, work_item_id)
+    await authorized_work(session, actor, work_item_id)
     cursor = max(after, int(last_event_id or 0))
 
     async def generate():
@@ -523,6 +546,11 @@ async def stream_events(
         idle_ticks = 0
         while True:
             async with SessionLocal() as event_session:
+                try:
+                    stream_actor = await current_actor(request, config, event_session)
+                    await authorized_work(event_session, stream_actor, work_item_id)
+                except HTTPException:
+                    return
                 statement = (
                     select(AgentEvent)
                     .where(AgentEvent.work_item_id == work_item_id, AgentEvent.id > cursor)
@@ -555,7 +583,7 @@ async def add_feedback(
     session: SessionDep,
     actor: ActorDep,
 ) -> WorkItem:
-    item = await get_work_item(session, work_item_id, lock=True)
+    item = await authorized_work(session, actor, work_item_id, Role.OPERATOR, lock=True)
     session.add(
         Feedback(
             work_item_id=work_item_id,
@@ -596,10 +624,10 @@ async def decide_approval(
     work_item_id: str,
     payload: ApprovalCreate,
     session: SessionDep,
-    actor: Annotated[Actor, Depends(require_approver)],
+    actor: ActorDep,
     background_tasks: BackgroundTasks,
 ) -> WorkItem:
-    item = await get_work_item(session, work_item_id, lock=True)
+    item = await authorized_work(session, actor, work_item_id, Role.APPROVER, lock=True)
     target: WorkStatus | None = None
     should_deliver = False
     if payload.kind == "pull_request":
@@ -663,6 +691,7 @@ async def decide_approval(
 async def github_webhook(
     request: Request,
     session: SessionDep,
+    config: SettingsDep,
     github_event: Annotated[str | None, Header(alias="X-GitHub-Event")] = None,
     delivery_id: Annotated[str | None, Header(alias="X-GitHub-Delivery")] = None,
     signature: Annotated[str | None, Header(alias="X-Hub-Signature-256")] = None,
@@ -670,7 +699,7 @@ async def github_webhook(
     body = await request.body()
     expected = (
         "sha256="
-        + hmac.new(settings.github_webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+        + hmac.new(config.github_webhook_secret.encode(), body, hashlib.sha256).hexdigest()
     )
     if not signature or not hmac.compare_digest(signature, expected):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid webhook signature")
@@ -683,13 +712,19 @@ async def github_webhook(
     issue = payload.get("issue", {})
     labels = {label.get("name") for label in issue.get("labels", [])}
     eligible = github_event == "issues" and payload.get("action") in {"opened", "labeled"}
-    if not eligible or settings.agent_trigger_label not in labels:
+    if not eligible or config.agent_trigger_label not in labels:
         await session.commit()
         return Response(status_code=status.HTTP_202_ACCEPTED)
-    repository = payload.get("repository", {}).get("full_name", "")
+    repository = payload.get("repository", {}).get("full_name", "").lower()
     number = issue.get("number")
     if not repository or not number:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid issue payload")
+    registered = await session.get(Repository, repository)
+    installation_id = payload.get("installation", {}).get("id")
+    if (registered is None or registered.github_installation_id is None
+            or type(installation_id) is not int
+            or installation_id != registered.github_installation_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "repository installation is not registered")
     source_id = f"github:{repository}:{number}"
     existing = (
         await session.execute(select(WorkItem).where(WorkItem.source_external_id == source_id))
@@ -705,6 +740,7 @@ async def github_webhook(
             work_payload,
             source=WorkSource.GITHUB,
             requested_by=issue.get("user", {}).get("login", "github"),
+            organization_id=registered.organization_id,
             source_external_id=source_id,
             github_installation_id=payload.get("installation", {}).get("id"),
             github_issue_number=number,
@@ -826,11 +862,12 @@ async def slack_command(
     request: Request,
     session: SessionDep,
     background_tasks: BackgroundTasks,
+    config: SettingsDep,
     timestamp: Annotated[str | None, Header(alias="X-Slack-Request-Timestamp")] = None,
     signature: Annotated[str | None, Header(alias="X-Slack-Signature")] = None,
 ) -> dict:
     body = await request.body()
-    verify_signature(body, timestamp, signature, settings.slack_signing_secret)
+    verify_signature(body, timestamp, signature, config.slack_signing_secret)
     form = {key: values[0] for key, values in parse_qs(body.decode()).items()}
     user_id = form.get("user_id", "unknown")
     parts = form.get("text", "").strip().split(maxsplit=2)
@@ -838,8 +875,10 @@ async def slack_command(
     if len(parts) < 2:
         return {"response_type": "ephemeral", "text": usage}
     action, work_item_id = parts[:2]
-    item = await get_work_item(session, work_item_id, lock=True)
-    actor = f"slack:{user_id}"
+    identity = await slack_actor(session, form.get("team_id", ""), user_id)
+    required = Role.APPROVER if action == "approve" else Role.OPERATOR
+    item = await authorized_work(session, identity, work_item_id, required, lock=True)
+    actor = identity.principal_id
     if action == "feedback" and len(parts) == 3:
         message = parts[2]
         session.add(
@@ -876,8 +915,6 @@ async def slack_command(
         await session.commit()
         return {"response_type": "ephemeral", "text": f"Feedback sent to {item.title}."}
     if action == "approve":
-        if user_id not in settings.slack_approver_user_ids:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Slack user is not an approver")
         if item.status != WorkStatus.AWAITING_APPROVAL:
             raise HTTPException(status.HTTP_409_CONFLICT, "work is not awaiting approval")
         should_deliver = await validate_delivery_ready(session, item)
@@ -1065,10 +1102,10 @@ async def upload_delivery_bundle(
 async def download_delivery_bundle(
     work_item_id: str,
     session: SessionDep,
-    _: ActorDep,
+    actor: ActorDep,
     config: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
-    await get_work_item(session, work_item_id)
+    await authorized_work(session, actor, work_item_id)
     bundle = await session.get(DeliveryBundle, work_item_id)
     if bundle is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "delivery bundle not found")
@@ -1174,9 +1211,9 @@ async def upload_artifact(
 async def list_artifacts(
     work_item_id: str,
     session: SessionDep,
-    _: ActorDep,
+    actor: ActorDep,
 ) -> list[Artifact]:
-    await get_work_item(session, work_item_id)
+    await authorized_work(session, actor, work_item_id)
     statement = (
         select(Artifact)
         .where(Artifact.work_item_id == work_item_id)
@@ -1190,9 +1227,10 @@ async def download_artifact(
     work_item_id: str,
     artifact_id: str,
     session: SessionDep,
-    _: ActorDep,
+    actor: ActorDep,
     config: Annotated[Settings, Depends(get_settings)],
 ) -> Response:
+    await authorized_work(session, actor, work_item_id)
     artifact = await session.get(Artifact, artifact_id)
     if artifact is None or artifact.work_item_id != work_item_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
@@ -1274,7 +1312,7 @@ async def console_lease(
     session: SessionDep,
     actor: ActorDep,
 ) -> ConsoleLease:
-    await get_work_item(session, work_item_id)
+    await authorized_work(session, actor, work_item_id, Role.OPERATOR)
     lease = await session.get(ConsoleLease, work_item_id, with_for_update=True)
     if lease is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "console is not registered")

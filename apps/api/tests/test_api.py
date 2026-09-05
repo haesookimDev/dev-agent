@@ -7,8 +7,9 @@ import pytest
 from httpx import AsyncClient
 
 from app.auth import Actor, current_actor
-from app.db import SchemaReadiness, SchemaState, get_schema_readiness
+from app.db import SchemaReadiness, SchemaState, get_schema_readiness, get_session
 from app.main import app
+from app.models import Organization, Repository
 
 
 async def create_work(client: AsyncClient, title: str = "Implement health endpoint") -> dict:
@@ -283,7 +284,7 @@ async def test_viewer_cannot_approve(client: AsyncClient) -> None:
         subject="observer",
         role="viewer",
         identity_provider="test",
-        organization="acme",
+        organization="local",
     )
     response = await client.post(
         f"/api/work-items/{work['id']}/approvals",
@@ -294,7 +295,13 @@ async def test_viewer_cannot_approve(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_github_webhook_signature_label_and_deduplication(client: AsyncClient) -> None:
+    async for session in app.dependency_overrides[get_session]():
+        session.add(Organization(id="local"))
+        await session.flush()
+        session.add(Repository(name="acme/api", organization_id="local", github_installation_id=12))
+        await session.commit()
     payload = {
+        "installation": {"id": 12},
         "action": "labeled",
         "repository": {"full_name": "acme/api"},
         "issue": {
@@ -377,7 +384,7 @@ async def test_preview_registration_and_exclusive_console_lease(
         subject="alice",
         role="operator",
         identity_provider="test",
-        organization="acme",
+        organization="local",
     )
     acquired = await client.post(
         f"/api/work-items/{work['id']}/console-lease",
@@ -390,7 +397,7 @@ async def test_preview_registration_and_exclusive_console_lease(
         subject="bob",
         role="operator",
         identity_provider="test",
-        organization="acme",
+        organization="local",
     )
     conflict = await client.post(
         f"/api/work-items/{work['id']}/console-lease",

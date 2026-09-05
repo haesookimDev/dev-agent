@@ -46,6 +46,10 @@ async def current_actor(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Actor:
     if settings.auth_mode == "development":
+        organization = await session.get(Organization, settings.development_organization)
+        if (settings.development_organization == "legacy"
+                or organization is not None and organization.issuer is not None):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "development organization is reserved")
         return Actor(
             subject=settings.development_subject,
             role="administrator",
@@ -73,12 +77,6 @@ async def current_actor(
             raise HTTPException(status.HTTP_403_FORBIDDEN, "same-origin request required")
     return await actor_from_identity(session, authenticated.identity_provider,
                                      authenticated.subject, authenticated.organization)
-
-
-async def require_approver(actor: Annotated[Actor, Depends(current_actor)]) -> Actor:
-    if actor.role not in {"administrator", "approver"}:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "approver role required")
-    return actor
 
 
 async def require_worker(
