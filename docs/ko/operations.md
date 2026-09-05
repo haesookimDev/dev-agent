@@ -102,7 +102,7 @@ python -m app.iam /run/config/organization.json
 
 GitHub Webhook은 서명 검증에 더해 등록 저장소와 설치 ID가 모두 일치해야 작업을 생성합니다. OIDC Mode의 Web 작업도 정책에 지정된 설치 ID를 사용합니다. Slack 명령은 서명된 `(team_id, user_id)` 연결의 Principal을 찾아 같은 권한 검사를 수행하며, `SLACK_APPROVER_USER_IDS`는 더 이상 승인 권한을 부여하지 않습니다. Slack 작업 기록의 Actor는 연결된 Principal ID입니다. Global Slack 알림 Channel은 여전히 배포 단위 설정이므로 그 Channel의 모든 사용자가 전송되는 작업 정보를 볼 수 있는 배포에서만 알림을 활성화합니다.
 
-격리된 `development` Mode에서는 직접 작업 등록 시 전용 개발 조직과 저장소를 자동 등록합니다. 개발 조직은 OIDC 조직 및 `legacy`와 겹칠 수 없습니다. 조직·저장소 권한과 피드백·Console·승인·[미배정 대기 작업 취소](work-cancellation.md)의 추가 전용 감사를 구현했습니다. 실행 중 관리자 취소와 전달 감사는 IAM/OPS 후속 범위입니다.
+격리된 `development` Mode에서는 직접 작업 등록 시 전용 개발 조직과 저장소를 자동 등록합니다. 개발 조직은 OIDC 조직 및 `legacy`와 겹칠 수 없습니다. 조직·저장소 권한과 피드백·Console·승인·[미배정 대기 작업 취소](work-cancellation.md)·[승인에 연결된 전달](delivery-audit.md)의 추가 전용 감사를 구현했습니다. 전달 감사의 새 Background/Nullable Role 응답과 구형 Job 차단, Migration·전진 복구 절차를 배포 전에 확인하세요. 실행 중 관리자 취소는 IAM/OPS 후속 범위입니다.
 
 ## 관측성 및 Correlation
 
