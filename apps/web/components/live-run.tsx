@@ -31,6 +31,11 @@ export function LiveRun({
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [feedbackDraft, setFeedbackDraft] = useState("");
+  const cancelDialog = useRef<HTMLDialogElement>(null);
+  const statusPanel = useRef<HTMLDivElement>(null);
+  const [cancelVersion, setCancelVersion] = useState<number | null>(null);
+  const [cancelError, setCancelError] = useState("");
+  const cancellationAllowed = work.status === "queued" && work.assigned_worker_id === null;
   const feedbackAllowed = canSendFeedback(work.status);
   const progress = statusProgress(work.status);
   const lastEvent = useRef(initialEvents.at(-1)?.id ?? 0);
@@ -139,6 +144,49 @@ export function LiveRun({
     }
   }
 
+  function openCancellation() {
+    if (sending || !cancellationAllowed) return;
+    setCancelVersion(work.version);
+    setCancelError("");
+    setActionError("");
+    setActionNotice("");
+    cancelDialog.current?.showModal();
+  }
+
+  async function cancelWork() {
+    if (sending || !cancellationAllowed || cancelVersion !== work.version) return;
+    setSending(true);
+    setCancelError("");
+    try {
+      const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}/cancel`, {
+        method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
+        body: JSON.stringify({ expected_version: cancelVersion }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      setWork((current) => updated.version >= current.version ? updated : current);
+      setActionNotice(messages.run.cancelledNotice);
+      cancelDialog.current?.close();
+      // Do not depend on the deferred close event observing the React state update.
+      // The queued-work trigger is about to disappear, but this panel stays mounted.
+      statusPanel.current?.focus();
+    } catch (error) {
+      setCancelError(error instanceof BrowserAPIError && error.status === 409
+        ? messages.run.cancelConflict
+        : requestErrorMessage(error, messages.run.cancelError, messages.run.cancelNetworkError, messages.run.cancelPermissionError));
+      try {
+        // A lost response can follow a committed cancellation. Refresh before offering retry.
+        const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}`, {
+          headers: correlationHeaders, signal: AbortSignal.timeout(5_000),
+        });
+        setWork((current) => updated.version >= current.version ? updated : current);
+      } catch {
+        // Preserve the result-unknown warning if this refresh also fails.
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <>
       <section className="runHeader">
@@ -147,7 +195,7 @@ export function LiveRun({
           <h1>{work.title}</h1>
           <p className="requirement">{work.requirement}</p>
         </div>
-        <div className="runStatus">
+        <div className="runStatus" ref={statusPanel} tabIndex={-1}>
           <span className={`status status-${work.status}`}>{statusLabel(work.status, messages.status)}</span>
           {progress === null ? (
             <p className="stoppedProgress">{messages.run.stoppedProgress}</p>
@@ -227,6 +275,15 @@ export function LiveRun({
               {feedbackAllowed && <button disabled={sending}>{messages.run.feedbackSubmit} <span>→</span></button>}
             </form>
           )}
+          {cancellationAllowed && (
+            <section className="cancelWork" aria-labelledby="cancel-work-title">
+              <h3 id="cancel-work-title">{messages.run.cancelTitle}</h3>
+              <p>{messages.run.cancelHint}</p>
+              <button className="dangerButton" disabled={sending} onClick={openCancellation}>
+                {messages.run.cancelOpen}
+              </button>
+            </section>
+          )}
           <dl>
             <div><dt>{messages.run.worker}</dt><dd>{work.assigned_worker_id?.slice(0, 8) ?? messages.run.unassigned}</dd></div>
             <div><dt>{messages.run.budget}</dt><dd>{work.budget_minutes} {messages.run.minuteUnit}</dd></div>
@@ -234,6 +291,29 @@ export function LiveRun({
           </dl>
         </aside>
       </section>
+      <dialog className="cancelDialog" ref={cancelDialog} aria-labelledby="cancel-dialog-title"
+        aria-describedby="cancel-dialog-description" onCancel={(event) => { if (sending) event.preventDefault(); }}
+        onClose={() => {
+          setCancelVersion(null);
+          if (!cancellationAllowed) statusPanel.current?.focus();
+        }}>
+        <p className="eyebrow">{messages.run.cancelTitle}</p>
+        <h2 id="cancel-dialog-title">{messages.run.cancelConfirmTitle}</h2>
+        <p className="cancelTarget">{work.title}</p>
+        <p id="cancel-dialog-description">{messages.run.cancelConfirmDescription}</p>
+        {cancelVersion !== null && (cancelError || !cancellationAllowed || cancelVersion !== work.version) && (
+          <p className="formError" role="alert">{cancelError || messages.run.cancelConflict}</p>
+        )}
+        {sending && <p role="status">{messages.run.cancelling}</p>}
+        <div className="cancelActions">
+          <button className="secondaryButton" autoFocus disabled={sending} onClick={() => cancelDialog.current?.close()}>
+            {messages.run.cancelBack}
+          </button>
+          <button className="dangerButton" disabled={sending || !cancellationAllowed || cancelVersion !== work.version} onClick={cancelWork}>
+            {sending ? messages.run.cancelling : messages.run.cancelConfirm}
+          </button>
+        </div>
+      </dialog>
     </>
   );
 }

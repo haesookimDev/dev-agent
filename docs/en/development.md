@@ -35,6 +35,8 @@ Playwright runs actual Chromium, Next.js, API and Mock Worker processes. Each ru
 
 Coverage includes creation, live events, feedback, re-verification, approval and resource release; search, filters, language and narrow layouts; network/permission failure retries; stream recovery; and invalid work addresses. The test Worker has one execution slot; every test uses the automatic resource-release fixture from `e2e/fixtures`. Failures preserve screenshots and traces in `apps/web/test-results`. The HTML report in `apps/web/playwright-report` is generated and must not be committed. A production build after E2E also regenerates the development-updated `next-env.d.ts` for production.
 
+[Unassigned queued cancellation](work-cancellation.md) additionally covers confirmation, Esc/focus, duplicate submission, permission denial, version conflicts, lost success responses, and live SSE changes. Work cancelled without execution history must have no lease and emits no release event. Existing release assertions for executed work remain unchanged.
+
 Playwright is a development dependency for real browser/service contracts that unit tests cannot exercise. No runtime dependency is added. The English managed block in `apps/web/AGENTS.md` preserves the installed Next.js generator's original text and requires consulting version-matched local documentation first.
 
 ## CI and merging
@@ -48,5 +50,7 @@ The current `CI` workflow requires `Python`, `Go` and `Web`. Python runs API/Run
 GitHub Actions configuration follows the official [workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax) and [dependency caching reference](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching). Keep tokens read-only and pin external actions to verified SHAs.
 
 Required check `Go` also runs `make test-monitoring`. It caches the official Prometheus 3.14.0 archive and verifies SHA-256 every time before testing configuration/rules. Synthetic series avoid real alert delays in CI. Existing required check names, eight-minute timeouts, and application coverage remain unchanged.
+
+Required check `Python` also runs `python -m pytest -q apps/api/tests/test_cancellation_postgres.py` to verify cancellation/Claim races against actual PostgreSQL. Locally, set `KELPIE_TEST_POSTGRES_URL` to a dedicated test database URL. Each test creates a randomly named isolated schema and cleans up only that schema, without deleting existing data or audits. These four tests skip when the URL is absent; passing default SQLite tests alone does not complete concurrency verification.
 
 Report each commit's purpose, automated and hands-on results, PR/CI/merge status, uncommitted changes, remaining MVP items and required external environments. Follow [AGENTS.md](../../AGENTS.md) for detailed repository rules.

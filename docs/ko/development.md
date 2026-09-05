@@ -35,6 +35,8 @@ Playwright는 실제 Chromium·Next.js·API·Mock Worker를 실행합니다. 매
 
 작업 생성·실시간 이벤트·피드백·재검증·승인·자원 해제, 검색·필터·언어·좁은 화면, 통신·권한 오류 후 재시도, 연결 복구, 잘못된 작업 주소를 검증합니다. 테스트 Worker는 단일 실행 슬롯으로 고정하고 각 테스트는 `e2e/fixtures`의 자동 자원 해제 Fixture를 사용합니다. 실패 시 `apps/web/test-results`에 스크린샷과 Trace가 남습니다. `apps/web/playwright-report`의 HTML 보고서는 생성물이므로 커밋하지 않습니다. E2E 이후 운영 빌드를 수행하면 개발용으로 자동 갱신된 `next-env.d.ts`도 운영 기준으로 재생성됩니다.
 
+[미배정 대기 작업 취소](work-cancellation.md)는 확인·Esc·포커스, 중복 제출, 권한 거부, 버전 충돌, 성공 응답 유실과 SSE 변경을 추가로 검증합니다. 실행 이력 없이 취소된 작업은 임대가 없어야 하며 해제 이벤트를 만들지 않습니다. 실행된 작업의 기존 자원 해제 검증은 그대로 유지합니다.
+
 Playwright는 단위 테스트가 다루지 못하는 실제 브라우저와 서비스 간 계약을 검증하기 위한 개발 의존성입니다. 런타임 의존성을 추가하지 않습니다. `apps/web/AGENTS.md`의 영어 관리 블록은 설치된 Next.js가 생성한 원문을 유지하며, 해당 버전의 로컬 문서를 우선 확인하도록 합니다.
 
 ## CI와 머지
@@ -48,5 +50,7 @@ Playwright는 단위 테스트가 다루지 못하는 실제 브라우저와 서
 GitHub Actions 구성은 [Workflow 문법](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)과 [의존성 캐시 문서](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)를 기준으로 합니다. Token은 읽기 전용으로 제한하고 외부 Action은 검증한 SHA에 고정합니다.
 
 필수 `Go` 검사에는 `make test-monitoring`도 포함됩니다. 공식 Prometheus 3.14.0 Archive를 캐시하고 매번 SHA-256을 검증한 뒤 설정·알림 테스트를 실행합니다. 가상 시계열을 사용하므로 실제 알림의 대기 시간을 CI에서 기다리지 않습니다. 기존 필수 검사 이름·8분 Timeout·애플리케이션 검증은 유지합니다.
+
+필수 `Python` 검사는 `python -m pytest -q apps/api/tests/test_cancellation_postgres.py`로 취소와 Claim의 실제 PostgreSQL 경쟁도 검증합니다. 로컬에서는 `KELPIE_TEST_POSTGRES_URL`에 전용 테스트 DB URL을 지정하세요. 테스트마다 임의 이름의 전용 스키마를 만들고 그 스키마만 정리하며, 기존 데이터나 감사 기록을 삭제하지 않습니다. URL이 없으면 이 네 테스트는 Skip되므로 기본 SQLite 테스트 통과만으로 경쟁 검증을 완료 처리하지 않습니다.
 
 작업 보고에는 커밋별 목적, 테스트와 실제 사용 결과, PR·CI·머지 상태, 미커밋 변경, 남은 MVP 항목과 필요한 외부 환경을 기록합니다. 상세 저장소 규칙은 [AGENTS.md](../../AGENTS.md)를 따릅니다.

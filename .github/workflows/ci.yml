@@ -67,6 +67,11 @@ jobs:
           KELPIE_TEST_POSTGRES_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
         run: python -m pytest -q apps/api/tests/test_audit_postgres.py
 
+      - name: Verify cancellation and Claim races under PostgreSQL
+        env:
+          KELPIE_TEST_POSTGRES_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
+        run: python -m pytest -q apps/api/tests/test_cancellation_postgres.py
+
   go:
     name: Go
     runs-on: ubuntu-24.04
