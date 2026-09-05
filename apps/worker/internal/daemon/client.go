@@ -19,9 +19,10 @@ func ContextWithCorrelationID(ctx context.Context, correlationID string) context
 }
 
 type Client struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL   string
+	token     string
+	tokenFile string
+	http      *http.Client
 }
 
 func NewClient(baseURL, token string) *Client {
@@ -73,8 +74,12 @@ func (c *Client) call(ctx context.Context, method, path string, body any, header
 	return nil
 }
 
-func (c *Client) workerHeaders() map[string]string {
-	return map[string]string{"Authorization": "Bearer " + c.token}
+func (c *Client) workerCall(ctx context.Context, path string, body, result any) error {
+	token, err := readCredential(c.tokenFile, c.token)
+	if err != nil {
+		return err
+	}
+	return c.call(ctx, http.MethodPost, path, body, map[string]string{"Authorization": "Bearer " + token}, result)
 }
 
 func leaseHeaders(token string) map[string]string {
@@ -88,7 +93,7 @@ func (c *Client) Register(ctx context.Context, config Config) (Worker, error) {
 		"labels": map[string]string{"virtualization": config.Executor},
 	}
 	var worker Worker
-	err := c.call(ctx, http.MethodPost, "/api/workers/register", body, c.workerHeaders(), &worker)
+	err := c.workerCall(ctx, "/api/workers/register", body, &worker)
 	return worker, err
 }
 
@@ -98,13 +103,13 @@ func (c *Client) Heartbeat(ctx context.Context, workerID string, available Resou
 		"memory_mb_available": available.MemoryMB, "disk_gb_available": available.DiskGB,
 		"active_runs": active,
 	}
-	return c.call(ctx, http.MethodPost, "/api/workers/"+workerID+"/heartbeat", body, c.workerHeaders(), nil)
+	return c.workerCall(ctx, "/api/workers/"+workerID+"/heartbeat", body, nil)
 }
 
 func (c *Client) Claim(ctx context.Context, workerID string, resources Resources) (*Claim, error) {
 	body := map[string]int{"cpu": resources.CPU, "memory_mb": resources.MemoryMB, "disk_gb": resources.DiskGB}
 	var raw json.RawMessage
-	if err := c.call(ctx, http.MethodPost, "/api/workers/"+workerID+"/claim", body, c.workerHeaders(), &raw); err != nil {
+	if err := c.workerCall(ctx, "/api/workers/"+workerID+"/claim", body, &raw); err != nil {
 		return nil, err
 	}
 	if len(raw) == 0 || string(raw) == "null" {

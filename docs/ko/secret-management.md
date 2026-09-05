@@ -2,14 +2,15 @@
 
 한국어 | [English](../en/secret-management.md)
 
-API는 `SecretProvider` 인터페이스의 환경변수·파일 구현을 사용합니다. 파일 경로를 설정하면 해당 환경변수 값보다 우선하며 **파일 오류 시 환경변수로 돌아가지 않습니다**. 경로를 지정하지 않은 기존 배포의 동작은 유지됩니다. 개발용 기본 Secret을 운영에 사용하면 안 됩니다.
+API는 `SecretProvider` 인터페이스의 환경변수·파일 구현을 사용합니다. 파일 경로를 설정하면 해당 환경변수 값보다 우선하며 **파일 오류 시 환경변수로 돌아가지 않습니다**. Worker 인증은 별도의 [개별 자격증명 전환 절차](worker-credentials.md)가 필요합니다. 개발용 기본 Secret을 운영에 사용하면 안 됩니다.
 
 ## 설정 계약
 
 | API 환경변수 | 파일 경로 환경변수 | 읽는 시점 |
 | --- | --- | --- |
 | `OIDC_CLIENT_SECRET` | `OIDC_CLIENT_SECRET_FILE` | Authorization Code 교환마다 |
-| `WORKER_SHARED_SECRET` | `WORKER_SHARED_SECRET_FILE` | Worker/Gateway 인증 요청마다 |
+| `WORKER_SHARED_SECRET` | `WORKER_SHARED_SECRET_FILE` | 명시적 개발 Mode의 공유 Worker 인증 요청마다 |
+| `GATEWAY_SECRET` | `GATEWAY_SECRET_FILE` | Gateway 인증 요청마다 |
 | `GITHUB_WEBHOOK_SECRET` | `GITHUB_WEBHOOK_SECRET_FILE` | Webhook 서명 검증마다 |
 | `SLACK_SIGNING_SECRET` | `SLACK_SIGNING_SECRET_FILE` | Slack 명령 서명 검증마다 |
 | `SLACK_BOT_TOKEN` | `SLACK_BOT_TOKEN_FILE` | 알림·파일 업로드 작업마다 |
@@ -48,13 +49,13 @@ services:
 4. 파일을 읽을 수 없으면 관련 API 요청은 `503`, `Cache-Control: no-store`, `{"detail":"configured secret is unavailable"}`를 반환합니다. 경로와 파일 내용은 응답에 포함하지 않습니다. OIDC Secret 파일이 없어져도 공개 Client 인증으로 낮추지 않습니다.
 5. 복구는 유효한 파일을 다시 배치하고 같은 프로세스에서 요청을 재확인합니다. 설정을 지워 개발용 기본 Secret으로 돌아가는 방식은 사용하지 않습니다.
 
-Webhook은 현재 파일의 한 값만 검증합니다. 이전 Secret과 새 Secret의 동시 수용이나 무중단 분산 교체를 제공하지 않습니다. Worker/Gateway 클라이언트는 아직 시작 시 환경변수 토큰을 읽으므로 **공유 Secret의 교체에는 클라이언트와의 조율이 필요합니다**. Worker별 자격증명, 개별 폐기·격리와 클라이언트 재읽기는 후속 SEC-001 작업입니다. 이미 발급된 사용자 Session과 작업 Lease의 계약은 이 변경으로 바뀌지 않습니다.
+Webhook과 Gateway는 현재 Secret 하나만 검증하므로 교체에는 소비자와의 조율이 필요합니다. Gateway는 환경변수를 시작 시 읽고 Worker는 토큰 파일을 매 요청 다시 읽습니다. Worker별 중첩 교체·개별 폐기는 [Worker 관리 가이드](worker-credentials.md)를 따릅니다. 사용자 Session과 작업 Lease는 일반 Secret 교체로 폐기되지 않습니다.
 
-스키마 Migration은 없습니다. 이전 API로 Rollback해야 한다면 트래픽을 제한한 유지보수 환경에서 이전 버전이 지원하는 안전한 Secret 주입을 먼저 준비합니다. 파일 설정을 무시하는 이전 버전을 개발 기본값과 함께 운영에 노출하면 안 됩니다.
+파일 Provider 자체에는 Schema 변경이 없지만 Worker별 인증에는 `20260905_0005` Migration이 필요합니다. [Worker Rollback 제한](worker-credentials.md#migration과-rollback)을 따릅니다. 파일·개별 인증을 지원하지 않는 이전 버전을 개발 기본값과 함께 운영에 노출하면 안 됩니다.
 
 ## 검증과 남은 범위
 
 - `make test-api`: 파일 우선순위, 원자적·Projected Volume 방식 교체, 오류 차단, OIDC 캐시를 거친 교체, Webhook·Slack·GitHub 소비자를 검증합니다.
 - `test_secret_runtime.py`: 실제 Uvicorn/SQLite/HTTP 프로세스에서 교체 → 이전 값 401 → 새 값 성공 → 파일 누락 503 → 복구 성공을 재시작 없이 검증합니다. 생성한 테스트 토큰이 API 로그와 DB에 없는지도 검사합니다.
-- 지원하는 다섯 평문 Secret 설정은 Settings의 기본 repr/직렬화에서 제외합니다. 이것은 전체 로그·프로세스 메모리·Crash Dump의 Secret 비노출을 보장하는 기능이 아닙니다.
-- OIDC/Slack 네트워크 소비자 테스트는 모의 공급자를 사용합니다. 실제 외부 계정, 전체 Event/Artifact/Crash Dump/cloud-init 스캔, Worker별 자격증명 및 운영 Secret 정책은 아직 완료되지 않았습니다. SEC-001 전체 완료로 표시하지 않습니다.
+- 지원하는 여섯 평문 Secret 설정은 Settings의 기본 repr/직렬화에서 제외합니다. 이것은 전체 로그·프로세스 메모리·Crash Dump의 Secret 비노출을 보장하는 기능이 아닙니다.
+- OIDC/Slack 네트워크 소비자 테스트는 모의 공급자를 사용합니다. 실제 외부 계정, 전체 Event/Artifact/Crash Dump/cloud-init 스캔, 침해 Worker 일괄 격리 및 운영 Secret 정책은 아직 완료되지 않았습니다. SEC-001 전체 완료로 표시하지 않습니다.

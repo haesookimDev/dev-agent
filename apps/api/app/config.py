@@ -13,7 +13,7 @@ from .secrets import (
 
 SecretName = Literal[
     "oidc_client_secret", "worker_shared_secret", "github_webhook_secret",
-    "slack_signing_secret", "slack_bot_token", "github_private_key",
+    "slack_signing_secret", "slack_bot_token", "github_private_key", "gateway_secret",
 ]
 
 
@@ -43,6 +43,9 @@ class Settings(BaseSettings):
         default="development-worker-secret-change-me", repr=False, exclude=True,
     )
     worker_shared_secret_file: str = ""
+    worker_auth_mode: Literal["scoped", "development"] = "scoped"
+    gateway_secret: str = Field(default="", repr=False, exclude=True)
+    gateway_secret_file: str = ""
     github_webhook_secret: str = Field(
         default="development-webhook-secret", repr=False, exclude=True,
     )
@@ -76,7 +79,7 @@ class Settings(BaseSettings):
             return FileSecretProvider(path) if path else EnvironmentSecretProvider("")
         if name not in {
             "oidc_client_secret", "worker_shared_secret", "github_webhook_secret",
-            "slack_signing_secret", "slack_bot_token",
+            "slack_signing_secret", "slack_bot_token", "gateway_secret",
         }:
             raise ValueError("unknown secret name")
         path = getattr(self, f"{name}_file")
@@ -125,6 +128,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_oidc_configuration(self) -> Self:
+        if self.worker_auth_mode == "development" and self.auth_mode != "development":
+            raise ValueError("shared Worker authentication is restricted to development mode")
         if self.auth_mode != "oidc":
             return self
         required = {

@@ -9,39 +9,44 @@ import (
 )
 
 type Config struct {
-	ControlURL    string
-	WorkerToken   string
-	WorkerName    string
-	Executor      string
-	BaseImage     string
-	WorkRoot      string
-	CPUTotal      int
-	MemoryMBTotal int
-	DiskGBTotal   int
-	PollInterval  time.Duration
-	RunResources  Resources
+	ControlURL      string
+	WorkerToken     string
+	WorkerTokenFile string
+	WorkerName      string
+	Executor        string
+	BaseImage       string
+	WorkRoot        string
+	CPUTotal        int
+	MemoryMBTotal   int
+	DiskGBTotal     int
+	PollInterval    time.Duration
+	RunResources    Resources
 }
 
 func ConfigFromEnv() (Config, error) {
 	config := Config{
-		ControlURL:    env("KELPIE_CONTROL_URL", "http://localhost:8000"),
-		WorkerToken:   os.Getenv("KELPIE_WORKER_TOKEN"),
-		WorkerName:    env("KELPIE_WORKER_NAME", hostname()),
-		Executor:      env("KELPIE_EXECUTOR", "mock"),
-		BaseImage:     env("KELPIE_BASE_IMAGE", "/var/lib/kelpie/images/ubuntu-desktop.qcow2"),
-		WorkRoot:      env("KELPIE_WORK_ROOT", "/var/lib/kelpie/runs"),
-		CPUTotal:      envInt("KELPIE_CPU_TOTAL", runtime.NumCPU()),
-		MemoryMBTotal: envInt("KELPIE_MEMORY_MB_TOTAL", 16384),
-		DiskGBTotal:   envInt("KELPIE_DISK_GB_TOTAL", 100),
-		PollInterval:  time.Duration(envInt("KELPIE_POLL_SECONDS", 3)) * time.Second,
+		ControlURL:      env("KELPIE_CONTROL_URL", "http://localhost:8000"),
+		WorkerToken:     os.Getenv("KELPIE_WORKER_TOKEN"),
+		WorkerTokenFile: os.Getenv("KELPIE_WORKER_TOKEN_FILE"),
+		WorkerName:      env("KELPIE_WORKER_NAME", hostname()),
+		Executor:        env("KELPIE_EXECUTOR", "mock"),
+		BaseImage:       env("KELPIE_BASE_IMAGE", "/var/lib/kelpie/images/ubuntu-desktop.qcow2"),
+		WorkRoot:        env("KELPIE_WORK_ROOT", "/var/lib/kelpie/runs"),
+		CPUTotal:        envInt("KELPIE_CPU_TOTAL", runtime.NumCPU()),
+		MemoryMBTotal:   envInt("KELPIE_MEMORY_MB_TOTAL", 16384),
+		DiskGBTotal:     envInt("KELPIE_DISK_GB_TOTAL", 100),
+		PollInterval:    time.Duration(envInt("KELPIE_POLL_SECONDS", 3)) * time.Second,
 		RunResources: Resources{
 			CPU:      envInt("KELPIE_RUN_CPU", 2),
 			MemoryMB: envInt("KELPIE_RUN_MEMORY_MB", 4096),
 			DiskGB:   envInt("KELPIE_RUN_DISK_GB", 30),
 		},
 	}
-	if len(config.WorkerToken) < 32 {
-		return Config{}, errors.New("KELPIE_WORKER_TOKEN must contain at least 32 characters")
+	if config.WorkerTokenFile != "" {
+		config.WorkerToken = ""
+	}
+	if _, err := readCredential(config.WorkerTokenFile, config.WorkerToken); err != nil {
+		return Config{}, err
 	}
 	if config.Executor != "mock" && config.Executor != "libvirt" {
 		return Config{}, errors.New("KELPIE_EXECUTOR must be mock or libvirt")

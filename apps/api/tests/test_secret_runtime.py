@@ -28,6 +28,7 @@ def test_running_api_observes_secret_rotation_and_recovery(tmp_path):
         "DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'runtime.db'}",
         "DATABASE_SCHEMA_MODE": "validate",
         "AUTH_MODE": "development",
+        "WORKER_AUTH_MODE": "development",
         "DEVELOPMENT_ORGANIZATION": "secret-runtime-test",
         "ARTIFACT_ROOT": str(tmp_path / "artifacts"),
         "WORKER_SHARED_SECRET_FILE": str(source),

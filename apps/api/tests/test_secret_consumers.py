@@ -26,8 +26,9 @@ def configure_file(tmp_path, name, **extra):
     return source, settings
 
 
-async def test_worker_auth_reads_rotated_file_and_fails_closed(client, tmp_path, worker_headers):
-    source, settings = configure_file(tmp_path, "worker_shared_secret")
+async def test_worker_auth_reads_rotated_file_and_fails_closed(client, tmp_path):
+    source, settings = configure_file(tmp_path, "worker_shared_secret",
+                                       worker_auth_mode="development")
     app.dependency_overrides[get_settings] = lambda: settings
     payload = {"name": "file-worker", "cpu_total": 2, "memory_mb_total": 4096,
                "disk_gb_available": 30, "labels": {}}
@@ -42,7 +43,9 @@ async def test_worker_auth_reads_rotated_file_and_fails_closed(client, tmp_path,
     assert (await register(old)).status_code == 401
     assert (await register(source.read_text())).status_code == 200
     assert (await client.post("/api/workers/register", json=payload,
-                              headers=worker_headers)).status_code == 401
+                              headers={"Authorization":
+                                       "Bearer development-worker-secret-change-me"}
+                              )).status_code == 401
     source.unlink()
     response = await register(old)
     assert response.status_code == 503

@@ -9,7 +9,7 @@ from alembic.config import Config
 from app.models import Base, WebhookDelivery
 
 API_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "20260905_0004"
+HEAD_REVISION = "20260905_0005"
 
 
 def migration_config(database_url: str) -> Config:
@@ -177,4 +177,43 @@ def test_oidc_session_migration_downgrade_preserves_existing_work(tmp_path: Path
     assert "oidc_login_attempts" not in tables
     assert "work_items" in tables
     assert current_revision(engine) == "20260904_0002"
+    engine.dispose()
+
+
+def test_worker_credential_migration_preserves_registered_worker_resources(tmp_path: Path) -> None:
+    config = migration_config(sqlite_url(tmp_path))
+    command.upgrade(config, "20260905_0004")
+    engine = sa.create_engine(sync_sqlite_url(tmp_path))
+    metadata = sa.MetaData()
+    metadata.reflect(engine)
+    worker_id = "11111111-1111-4111-8111-111111111111"
+    with engine.begin() as connection:
+        connection.execute(metadata.tables["worker_hosts"].insert().values(
+            id=worker_id, name="existing-worker", state="ONLINE", cpu_total=4, cpu_available=2,
+            memory_mb_total=8192, memory_mb_available=4096, disk_gb_available=70,
+            active_runs=1, labels={"virtualization": "mock"},
+            last_seen_at=datetime.now(UTC), created_at=datetime.now(UTC),
+        ))
+    command.upgrade(config, "head")
+    command.check(config)
+    with engine.connect() as connection:
+        row = connection.execute(sa.text("SELECT * FROM worker_hosts WHERE id = :id"),
+                                 {"id": worker_id}).mappings().one()
+        assert row["credential_required"] == 0
+        assert row["quarantined_at"] is None
+        assert (row["cpu_available"], row["memory_mb_available"], row["active_runs"]) == (
+            2, 4096, 1,
+        )
+    tables = set(sa.inspect(engine).get_table_names())
+    assert {"worker_credentials", "worker_credential_events"}.issubset(tables)
+    command.downgrade(config, "20260905_0004")
+    with engine.connect() as connection:
+        row = connection.execute(sa.text("SELECT * FROM worker_hosts WHERE id = :id"),
+                                 {"id": worker_id}).mappings().one()
+        assert "credential_required" not in row
+        assert (row["cpu_available"], row["memory_mb_available"], row["active_runs"]) == (
+            2, 4096, 1,
+        )
+    command.upgrade(config, "head")
+    command.check(config)
     engine.dispose()

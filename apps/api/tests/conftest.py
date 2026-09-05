@@ -8,6 +8,7 @@ from app.config import Settings, get_settings
 from app.db import get_session
 from app.main import app
 from app.models import Base
+from app.worker_credentials import issue_credential
 
 
 @pytest.fixture
@@ -26,6 +27,7 @@ async def client(tmp_path) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_settings] = lambda: Settings(
         artifact_root=str(tmp_path / "artifacts"),
         preview_allowed_cidrs=["10.0.0.0/8", "127.0.0.0/8"],
+        gateway_secret="synthetic-gateway-secret-32-characters",
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as value:
         yield value
@@ -34,5 +36,13 @@ async def client(tmp_path) -> AsyncIterator[AsyncClient]:
 
 
 @pytest.fixture
-def worker_headers() -> dict[str, str]:
-    return {"Authorization": "Bearer development-worker-secret-change-me"}
+async def worker_headers(client) -> dict[str, str]:
+    async for session in app.dependency_overrides[get_session]():
+        issued = await issue_credential(session, "worker-one", actor="test", reason="test setup")
+        await session.commit()
+        return {"Authorization": f"Bearer {issued.token}"}
+
+
+@pytest.fixture
+def gateway_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer synthetic-gateway-secret-32-characters"}

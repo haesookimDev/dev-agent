@@ -20,9 +20,11 @@ func New(config Config, logger *slog.Logger) *Daemon {
 	if config.Executor == "libvirt" {
 		executor = LibvirtExecutor{config: config, logger: logger}
 	}
+	client := NewClient(config.ControlURL, config.WorkerToken)
+	client.tokenFile = config.WorkerTokenFile
 	return &Daemon{
 		config: config, logger: logger,
-		client:   NewClient(config.ControlURL, config.WorkerToken),
+		client:   client,
 		tracker:  NewTracker(Resources{CPU: config.CPUTotal, MemoryMB: config.MemoryMBTotal, DiskGB: config.DiskGBTotal}),
 		executor: executor,
 	}

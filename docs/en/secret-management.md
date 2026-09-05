@@ -2,14 +2,15 @@
 
 [한국어](../ko/secret-management.md) | English
 
-The API uses environment and file implementations of the `SecretProvider` interface. A configured file takes precedence over its environment value and **never falls back on a file error**. Deployments without file settings retain their existing behavior. Never use development default secrets in production.
+The API uses environment and file implementations of the `SecretProvider` interface. A configured file takes precedence over its environment value and **never falls back on a file error**. Worker authentication requires separate [per-worker credential migration](worker-credentials.md). Never use development default secrets in production.
 
 ## Configuration contract
 
 | API environment variable | File-path environment variable | Read timing |
 | --- | --- | --- |
 | `OIDC_CLIENT_SECRET` | `OIDC_CLIENT_SECRET_FILE` | Every authorization-code exchange |
-| `WORKER_SHARED_SECRET` | `WORKER_SHARED_SECRET_FILE` | Every Worker/Gateway authentication request |
+| `WORKER_SHARED_SECRET` | `WORKER_SHARED_SECRET_FILE` | Shared Worker authentication in explicit development mode |
+| `GATEWAY_SECRET` | `GATEWAY_SECRET_FILE` | Every Gateway authentication request |
 | `GITHUB_WEBHOOK_SECRET` | `GITHUB_WEBHOOK_SECRET_FILE` | Every webhook signature verification |
 | `SLACK_SIGNING_SECRET` | `SLACK_SIGNING_SECRET_FILE` | Every Slack command signature verification |
 | `SLACK_BOT_TOKEN` | `SLACK_BOT_TOKEN_FILE` | Every notification/file-upload operation |
@@ -48,13 +49,13 @@ This implementation adapts files injected by those platforms. It does not connec
 4. If a file cannot be read, affected API requests return `503`, `Cache-Control: no-store`, and `{"detail":"configured secret is unavailable"}` without paths or contents. A missing OIDC secret file does not downgrade authentication to a public client.
 5. Restore a valid file and recheck requests against the same process. Do not recover by clearing the setting and reverting to development defaults.
 
-Webhooks validate only the current file value. Dual-secret acceptance and zero-downtime distributed rotation are not implemented. Worker/Gateway clients still read environment tokens at startup, so **shared-secret rotation requires coordination with those clients**. Per-worker credentials, individual revocation/quarantine, and client reloading are follow-up SEC-001 work. Existing user-session and work-lease contracts are unchanged.
+Webhooks and Gateway validate only the current secret, so rotation requires consumer coordination. Gateway reads its environment at startup; Workers reload token files on each request. Follow the [Worker guide](worker-credentials.md) for overlapping per-worker rotation and individual revocation. Routine secret rotation does not revoke user sessions or work leases.
 
-No schema migration is needed. To roll back the API, first prepare secure secret injection supported by the old version in a maintenance environment with restricted traffic. Do not expose an older version that ignores file settings with development defaults.
+The file provider itself needs no schema change, but per-worker authentication requires migration `20260905_0005`. Follow the [Worker rollback restrictions](worker-credentials.md#migration-and-rollback). Do not expose older versions lacking file/scoped authentication with development defaults.
 
 ## Verification and remaining scope
 
 - `make test-api` covers file precedence, atomic and projected-volume rotation, fail-closed errors, rotation through the OIDC cache, and webhook/Slack/GitHub consumers.
 - `test_secret_runtime.py` runs real Uvicorn/SQLite/HTTP processes: rotate → old value 401 → new value accepted → missing file 503 → recovered without restart. It also checks that generated test tokens do not occur in API logs or the database.
-- The five supported plaintext secret settings are excluded from default Settings repr/serialization. This does not guarantee secret-free logging, process memory, or crash dumps generally.
-- OIDC/Slack network consumer tests use mock providers. Actual external accounts, complete event/artifact/crash-dump/cloud-init scanning, per-worker credentials, and production secret policy remain unfinished. SEC-001 as a whole is not complete.
+- The six supported plaintext secret settings are excluded from default Settings repr/serialization. This does not guarantee secret-free logging, process memory, or crash dumps generally.
+- OIDC/Slack network consumer tests use mock providers. Actual external accounts, complete event/artifact/crash-dump/cloud-init scanning, compromised-Worker bulk quarantine, and production secret policy remain unfinished. SEC-001 as a whole is not complete.

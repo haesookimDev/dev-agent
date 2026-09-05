@@ -37,7 +37,7 @@ func TestGatewayResolvesAndProxies(t *testing.T) {
 	defer control.Close()
 	token := strings.Repeat("x", 32)
 	handler := &gateway{
-		config: config{controlURL: control.URL, workerToken: token, authMode: "development"},
+		config: config{controlURL: control.URL, gatewayToken: token, authMode: "development"},
 		client: control.Client(), logger: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	}
 	request := httptest.NewRequest(http.MethodGet, "http://run.preview.localhost/", nil)
