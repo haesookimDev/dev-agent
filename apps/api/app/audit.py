@@ -43,6 +43,20 @@ class ConsoleOwnership:
         return cls(lease.holder_type, lease.holder, lease.version)
 
 
+def record_cancellation_audit(
+    session: AsyncSession, request: Request, item: WorkItem, actor: Actor,
+    decision: RoleDecision, *, version_before: int,
+) -> None:
+    _record_actor_audit(
+        session, request, item, actor, decision, action="work.cancelled",
+        target_id=item.id, transport="web", details={
+            "scope": "unassigned_queue", "work_status_before": "queued",
+            "work_status_after": item.status.value, "work_version_before": version_before,
+            "work_version_after": item.version,
+        },
+    )
+
+
 def record_console_audit(
     session: AsyncSession, request: Request, item: WorkItem, actor: Actor,
     decision: RoleDecision, lease: ConsoleLease, before: ConsoleOwnership,

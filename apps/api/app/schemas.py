@@ -92,6 +92,10 @@ class TransitionRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkCancellationRequest(BaseModel):
+    expected_version: int = Field(strict=True, ge=1)
+
+
 class FeedbackCreate(BaseModel):
     message: str = Field(min_length=1, max_length=100_000)
     channel: Literal["web", "slack"] = "web"

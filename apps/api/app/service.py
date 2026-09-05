@@ -139,6 +139,26 @@ async def transition_work_item(
     return item
 
 
+async def cancel_queued_work(
+    session: AsyncSession, item: WorkItem, *, expected_version: int, actor: str,
+) -> WorkItem:
+    """The caller must hold the work row lock shared with the Claim path.
+
+    This does not terminate a VM or release reservations. Even an expired/released
+    lease is execution history and requires the separate run-cleanup workflow.
+    """
+    if item.status != WorkStatus.QUEUED or item.assigned_worker_id is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "only unassigned queued work can be cancelled")
+    if await session.scalar(select(ResourceLease.id).where(ResourceLease.work_item_id == item.id)):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "work with execution history cannot be cancelled")
+    return await transition_work_item(
+        session, item, WorkStatus.CANCELLED, expected_version=expected_version,
+        actor=actor, message="Unassigned queued work cancelled by administrator",
+    )
+
+
 async def claim_next_work(
     session: AsyncSession,
     worker: WorkerHost,

@@ -33,6 +33,7 @@ from .audit import (
     ApprovalState,
     ConsoleOwnership,
     record_approval_audit,
+    record_cancellation_audit,
     record_console_audit,
     record_feedback_audit,
 )
@@ -114,6 +115,7 @@ from .schemas import (
     PreviewCreate,
     PreviewView,
     TransitionRequest,
+    WorkCancellationRequest,
     WorkerHeartbeat,
     WorkerRegistration,
     WorkerView,
@@ -122,6 +124,7 @@ from .schemas import (
 )
 from .secrets import SecretUnavailableError
 from .service import (
+    cancel_queued_work,
     claim_next_work,
     create_work_item,
     emit_event,
@@ -649,6 +652,26 @@ async def stream_events(
     return StreamingResponse(
         generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
     )
+
+
+@app.post("/api/work-items/{work_item_id}/cancel", response_model=WorkItemView)
+async def cancel_work(
+    request: Request,
+    work_item_id: str,
+    payload: WorkCancellationRequest,
+    session: SessionDep,
+    actor: ActorDep,
+) -> WorkItem:
+    item, decision = await authorized_work_with_decision(
+        session, actor, work_item_id, Role.ADMINISTRATOR, lock=True,
+    )
+    version_before = item.version
+    await cancel_queued_work(session, item, expected_version=payload.expected_version,
+                             actor=actor.subject)
+    record_cancellation_audit(session, request, item, actor, decision,
+                              version_before=version_before)
+    await session.commit()
+    return item
 
 
 @app.post("/api/work-items/{work_item_id}/feedback", response_model=WorkItemView)
