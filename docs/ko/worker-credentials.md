@@ -46,7 +46,7 @@ KELPIE_WORKER_TOKEN_FILE=/run/secrets/kelpie/worker-1.token
 
 - 수명: 기본 30일, `--lifetime-seconds`로 60초~90일. 교체 중첩: 기본 600초, 60~3600초. 이전 토큰의 원래 만료 시각은 연장하지 않습니다.
 - 새 토큰은 같은 Worker에 발급합니다. `revoke`는 지정한 자격증명 하나만 폐기하며 반복 호출은 중복 Event를 남기지 않습니다. 다른 Worker와 새 토큰은 유지됩니다.
-- 정상 교체·폐기는 활성 작업 Lease를 폐기하지 않습니다. **침해 Host 격리 명령이 아닙니다.** VM 종료, WireGuard 차단, Preview 연결 종료, 활성 Lease 일괄 폐기는 후속 사고 대응 작업입니다. 이 기능만으로 침해가 차단됐다고 판단하면 안 됩니다.
+- 정상 교체·폐기는 활성 작업 Lease를 폐기하지 않습니다. 침해 의심 Worker의 자격증명·활성 Lease·전송을 함께 차단하려면 별도 [제어 영역 격리 명령](worker-quarantine.md)을 사용합니다. VM 종료·WireGuard 차단·기존 Preview 연결 종료는 별도 물리적 대응이며 토큰 폐기만으로 완료되지 않습니다.
 - DB에는 원문의 SHA-256 해시만 저장합니다. 관리 이력은 실행 OS UID, 사유, 시각을 기록합니다. DB 관리자에게도 변경 불가능한 감사 저장소는 아니며, 공유 OS 계정에서는 개인을 식별하지 못합니다.
 
 ## Gateway와 개발 호환성
@@ -57,13 +57,13 @@ Preview 해석은 Worker 토큰을 받지 않습니다. API의 `GATEWAY_SECRET` 
 
 ## Migration과 Rollback
 
-Migration은 기존 Worker와 자원 예약을 보존하고 자격증명·이력 테이블, 개별 인증 필수 플래그, 격리 시각을 추가합니다. 격리 시각은 인증 차단 기반 Metadata이며 운영용 일괄 격리는 아직 구현되지 않았습니다. Request/Response Body는 그대로지만 인증과 Gateway 환경변수 변경은 하위 호환되지 않습니다.
+Migration은 기존 Worker와 자원 예약을 보존하고 자격증명·이력 테이블, 개별 인증 필수 플래그, 격리 시각을 추가합니다. 후속 제어 영역 격리 명령도 이 Schema를 사용합니다. Request/Response Body는 그대로지만 인증과 Gateway 환경변수 변경은 하위 호환되지 않습니다.
 
 Rollback은 모든 외부 트래픽·Worker를 차단한 유지보수 환경에서 수행합니다. DB 백업 후 `alembic downgrade 20260905_0004`를 실행하면 개별 자격증명·이력·격리 Metadata가 삭제됩니다. 다시 Upgrade해도 복구되지 않으므로 새로 발급해야 합니다. 이전 API가 개별 인증을 지원하지 않는 한 운영 트래픽을 열지 말고 수정 버전으로 Roll-forward합니다. 개발 공유 토큰으로 운영을 복구하지 않습니다.
 
 ## 검증
 
 - `make test-api`: 실제 CLI, 출력 비노출, 권한, 실패 정리, Worker 범위, 교체·폐기·만료, Gateway 분리, 공유 토큰 우회 차단.
-- `KELPIE_TEST_POSTGRES_URL`을 격리된 최신 Schema PostgreSQL DB로 지정하고 `pytest -q apps/api/tests/test_worker_postgres.py` 실행: 인증/폐기 양방향 경합과 다른 Worker의 진행. URL이 없으면 이 두 테스트만 Skip하며 CI는 별도 Step에서 반드시 실행합니다.
+- `KELPIE_TEST_POSTGRES_URL`을 격리된 최신 Schema PostgreSQL DB로 지정하고 `pytest -q apps/api/tests/test_worker_postgres.py` 실행: 인증/폐기와 임대·Preview·전송/격리 양방향 경합, 다른 Worker 진행, 전송 Deadline. URL이 없으면 해당 PostgreSQL 테스트를 Skip하며 CI는 별도 Step에서 반드시 실행합니다.
 - `make test-worker`, `go test -race ./...`(Worker 디렉터리): 원자적 파일 교체, 누락 시 차단, 활성 작업 Lease 분리.
 - `npm run test:e2e --prefix apps/web`: 실제 API·개별 인증 Mock Worker의 생성·피드백·재검증·승인. Mock 검증은 실제 KVM/브라우저 VM 2개의 격리 증거가 아닙니다.

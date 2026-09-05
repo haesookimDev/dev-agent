@@ -24,7 +24,7 @@ The next release should contain only P0 and the smallest P1 end-to-end path:
 
 1. **Completed:** Replace `create_all` with Alembic and test upgrade/downgrade paths.
 2. **Partially complete:** OIDC authentication and organization/repository authorization are implemented. Immutable detailed approval audit records remain.
-3. **Partially complete:** Environment/file secret providers and per-worker issuance, overlapping rotation, individual revocation, and client reloading are implemented. Compromised-Worker bulk quarantine and comprehensive secret-leak checks remain. [Operations](worker-credentials.md)
+3. **Partially complete:** Environment/file secret providers, per-worker issuance/overlapping rotation/revocation/reloading, and [control-plane quarantine](worker-quarantine.md) are implemented. Credentials, active leases, user mutations, new Preview resolution, and subsequent delivery are fenced together. Actual host/VM/network/existing-connection containment and comprehensive secret-leak checks remain. [Credential operations](worker-credentials.md)
 4. **Partially completed:** OpenTelemetry traces, Prometheus metrics, and structured correlation IDs are implemented. External dependency readiness, alerts, and retention jobs remain.
 5. Build one pinned Ubuntu desktop golden image and complete a real libvirt run.
 6. Establish WireGuard preview routing and enforce noVNC read-only/input ownership at the gateway boundary.
