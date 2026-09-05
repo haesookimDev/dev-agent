@@ -17,6 +17,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from .audit_schema import register_audit_guards
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -65,6 +67,37 @@ class Role(StrEnum):
 def role_type() -> Enum:
     return Enum(Role, native_enum=False, name="iam_role",
                 values_callable=lambda roles: [role.value for role in roles])
+
+
+class AuditRecord(Base):
+    __tablename__ = "audit_records"
+    __table_args__ = (
+        Index("ix_audit_records_work_cursor", "organization_id", "work_item_id", "id"),
+        CheckConstraint("transport IN ('web', 'slack')", name="audit_transport"),
+    )
+
+    # Identity and resource snapshots intentionally have no cascading foreign keys.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    organization_id: Mapped[str] = mapped_column(String(64))
+    work_item_id: Mapped[str] = mapped_column(String(36))
+    repository: Mapped[str] = mapped_column(String(300))
+    action: Mapped[str] = mapped_column(String(64))
+    target_id: Mapped[str] = mapped_column(String(64))
+    actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    actor_subject: Mapped[str] = mapped_column(String(255))
+    identity_provider: Mapped[str] = mapped_column(String(1024))
+    organization_role: Mapped[Role] = mapped_column(role_type())
+    repository_role: Mapped[Role | None] = mapped_column(role_type(), nullable=True)
+    effective_role: Mapped[Role] = mapped_column(role_type())
+    required_role: Mapped[Role] = mapped_column(role_type())
+    request_id: Mapped[str] = mapped_column(String(36))
+    correlation_id: Mapped[str] = mapped_column(String(36))
+    source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    transport: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+register_audit_guards(AuditRecord.__table__)
 
 
 class Organization(Base):
