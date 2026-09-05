@@ -12,7 +12,7 @@
 
 - `make test`: API 89개, Runner 6개, Web 12개 및 타입 검사, Worker·Gateway Go 테스트 통과
 - `make lint`, `npm run build --prefix apps/web`: 통과
-- `npm run test:e2e --prefix apps/web`: Chromium 8개 통과, 로컬 전체 29.4초
+- `npm run test:e2e --prefix apps/web`: Chromium 8개 통과, 단일 실행 슬롯에서 로컬 전체 39.7초
 - 실패 재현 후 수정: 오프라인 작업 생성, 끊어진 SSE의 잘못된 실시간 표시, 없는 작업 주소의 서버 오류
 - 실제 PostgreSQL 17 + API + 운영 Web 빌드 + Mock Worker: 작업 생성 → 피드백 → 재검증 → 승인 → 완료 → 자원 해제
 - Orca 브라우저: 위 작업 여정과 정상 흐름의 콘솔 오류 없음 확인
@@ -20,6 +20,7 @@
 - 390px 모바일 레이아웃과 영어 화면을 실제 Chromium으로 렌더링하여 육안 확인, E2E 가로 넘침 검사 통과
 - 자체 테스트 API를 중단하여 오류 안내를 확인한 뒤 재시작: 다시 시도 버튼으로 작업 목록 복구
 - UTC 저장 시각을 브라우저 현지 시각으로 표시하며, SQLite의 오프셋 누락과 SSR 초기 시간대를 보정합니다. Honolulu 브라우저 회귀 테스트에서 수정 전 10시간 오차를 재현하고 수정 후 통과했습니다.
+- 첫 CI의 제한된 CPU 환경에서 이전 테스트의 승인 대기 작업이 슬롯을 점유했습니다. 모든 테스트가 작업 승인·완료·임대 해제를 확인하는 자동 Fixture를 사용하고 테스트 Worker를 단일 슬롯으로 고정하여 해결했습니다. 검사 기준이나 Timeout은 낮추지 않았습니다.
 
 실행기는 Mock입니다. 실제 GitHub PR 생성, 외부 IdP 로그인, VM·WireGuard·noVNC 및 두 작업의 KVM 격리는 이 검증으로 증명하지 않습니다. 이 UI PR 자체의 GitHub CI와 머지는 PR 기록에서 확인합니다.
 

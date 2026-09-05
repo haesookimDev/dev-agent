@@ -12,7 +12,7 @@ Added input-preserving retries, safe permission errors, actual SSE connection st
 
 - `make test`: API 89, Runner 6, Web 12 plus type checking, Worker/Gateway Go tests passed
 - `make lint`, `npm run build --prefix apps/web`: passed
-- `npm run test:e2e --prefix apps/web`: eight Chromium tests passed in 29.4 seconds locally
+- `npm run test:e2e --prefix apps/web`: eight Chromium tests passed in 39.7 seconds locally with one execution slot
 - Reproduced before fixing: offline work creation, falsely live disconnected SSE and server errors for missing work
 - Real PostgreSQL 17 + API + production Web build + Mock Worker: creation → feedback → re-verification → approval → completion → resource release
 - Orca browser: performed that journey and verified no console errors during the normal flow
@@ -20,6 +20,7 @@ Added input-preserving retries, safe permission errors, actual SSE connection st
 - Visually inspected actual Chromium rendering at 390px and in English; E2E horizontal-overflow check passed
 - Stopped the dedicated test API to confirm the error UI, restarted it and recovered the list using the retry button
 - Display UTC storage timestamps in browser-local time while correcting missing SQLite offsets and the initial SSR timezone. The Honolulu browser regression reproduced a ten-hour error before the fix and passed afterward.
+- The first CI run exhausted its limited CPU slots because earlier tests left work awaiting approval. An automatic fixture now verifies approval, completion and lease release after each test, with the test Worker fixed to one slot. Assertions and timeouts were not weakened.
 
 The executor is Mock. This does not prove actual GitHub delivery, external IdP login, VM/WireGuard/noVNC operation or concurrent KVM isolation. Consult this UI PR's GitHub record for its own CI and merge results.
 
