@@ -4,7 +4,7 @@ from test_authorization import authorized as authorized
 from test_authorization import create_item, database, sign_in
 from test_integration_authorization import slack_request
 
-from app.models import AgentEvent, Feedback, WorkItem, WorkStatus
+from app.models import AgentEvent, AuditRecord, Feedback, WorkItem, WorkStatus
 
 
 @pytest.mark.parametrize("channel", ["web", "slack"])
@@ -46,16 +46,21 @@ async def test_feedback_respects_work_lifecycle(authorized, channel, initial, ex
     async with database() as session:
         work = await session.get(WorkItem, item["id"])
         feedback = list(await session.scalars(select(Feedback)))
+        audits = list(await session.scalars(select(AuditRecord)))
         events = list(await session.scalars(select(AgentEvent).order_by(AgentEvent.id)))
         if expected is None:
             assert response.json()["detail"] == "work no longer accepts feedback"
             assert not feedback
+            assert not audits
             assert [event.id for event in events] == before_events
             assert work.status == initial
             assert work.version == before_version
             assert work.updated_at == before_updated
         else:
             assert len(feedback) == 1
+            assert len(audits) == 1
+            assert audits[0].target_id == str(feedback[0].id)
+            assert audits[0].transport == channel
             assert feedback[0].message == "Review empty states"
             assert feedback[0].channel == channel
             received = [event for event in events if event.event_type == "feedback.received"]

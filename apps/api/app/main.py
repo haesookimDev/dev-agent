@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .audit import record_feedback_audit
 from .auth import (
     Actor,
     actor_from_identity,
@@ -40,6 +41,7 @@ from .auth import (
 from .authorization import (
     authorize_repository,
     authorized_work,
+    authorized_work_with_decision,
     development_repository,
     slack_actor,
 )
@@ -59,6 +61,7 @@ from .models import (
     AgentEvent,
     Approval,
     Artifact,
+    AuditRecord,
     AuthSession,
     ConsoleLease,
     DeliveryBundle,
@@ -93,6 +96,7 @@ from .schemas import (
     ApprovalCreate,
     ArtifactCreate,
     ArtifactView,
+    AuditRecordView,
     ClaimRequest,
     ClaimResponse,
     ConsoleLeaseRequest,
@@ -548,6 +552,21 @@ async def event_log(
     return list((await session.scalars(statement)).all())
 
 
+@app.get("/api/work-items/{work_item_id}/audit-log", response_model=list[AuditRecordView])
+async def audit_log(
+    work_item_id: str, session: SessionDep, actor: ActorDep, response: Response,
+    after: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> list[AuditRecord]:
+    await authorized_work(session, actor, work_item_id, Role.ADMINISTRATOR)
+    response.headers["Cache-Control"] = "no-store"
+    statement = select(AuditRecord).where(
+        AuditRecord.organization_id == actor.organization,
+        AuditRecord.work_item_id == work_item_id, AuditRecord.id > after,
+    ).order_by(AuditRecord.id).limit(limit)
+    return list((await session.scalars(statement)).all())
+
+
 @app.get("/api/work-items/{work_item_id}/events")
 async def stream_events(
     request: Request,
@@ -598,22 +617,22 @@ async def stream_events(
 
 @app.post("/api/work-items/{work_item_id}/feedback", response_model=WorkItemView)
 async def add_feedback(
+    request: Request,
     work_item_id: str,
     payload: FeedbackCreate,
     session: SessionDep,
     actor: ActorDep,
 ) -> WorkItem:
-    item = await authorized_work(session, actor, work_item_id, Role.OPERATOR, lock=True)
+    item, decision = await authorized_work_with_decision(
+        session, actor, work_item_id, Role.OPERATOR, lock=True,
+    )
     await ensure_worker_not_quarantined(session, item)
     ensure_feedback_allowed(item)
-    session.add(
-        Feedback(
-            work_item_id=work_item_id,
-            actor=actor.subject,
-            channel=payload.channel,
-            message=payload.message,
-        )
+    feedback = Feedback(
+        work_item_id=work_item_id, actor=actor.subject,
+        channel=payload.channel, message=payload.message,
     )
+    session.add(feedback)
     await emit_event(
         session,
         work_item_id,
@@ -637,6 +656,7 @@ async def add_feedback(
             actor=actor.subject,
             message="Feedback received; resuming implementation",
         )
+    record_feedback_audit(session, request, item, actor, decision, feedback, transport="web")
     await session.commit()
     return item
 
@@ -907,20 +927,18 @@ async def slack_command(
     action, work_item_id = parts[:2]
     identity = await slack_actor(session, form.get("team_id", ""), user_id)
     required = Role.APPROVER if action == "approve" else Role.OPERATOR
-    item = await authorized_work(session, identity, work_item_id, required, lock=True)
+    item, decision = await authorized_work_with_decision(
+        session, identity, work_item_id, required, lock=True,
+    )
     await ensure_worker_not_quarantined(session, item)
     actor = identity.principal_id
     if action == "feedback" and len(parts) == 3:
         ensure_feedback_allowed(item)
         message = parts[2]
-        session.add(
-            Feedback(
-                work_item_id=work_item_id,
-                actor=actor,
-                channel="slack",
-                message=message,
-            )
+        feedback = Feedback(
+            work_item_id=work_item_id, actor=actor, channel="slack", message=message,
         )
+        session.add(feedback)
         await emit_event(
             session,
             work_item_id,
@@ -944,6 +962,9 @@ async def slack_command(
                 actor=actor,
                 message="Slack feedback received; resuming implementation",
             )
+        record_feedback_audit(
+            session, request, item, identity, decision, feedback, transport="slack",
+        )
         await session.commit()
         return {"response_type": "ephemeral", "text": f"Feedback sent to {item.title}."}
     if action == "approve":
