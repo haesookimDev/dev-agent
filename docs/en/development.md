@@ -20,11 +20,27 @@ Prioritize work status and next actions in the UI. Check empty/error states, key
 
 Isolate test environments and clean up only resources created for the task. Do not describe Mock Worker success as real Linux/KVM acceptance. For documentation-only changes with nothing to run, record that runtime verification is not applicable and explain why.
 
+### Browser regression tests
+
+Install the API development environment (`.venv`), Go and Web dependencies, then run from the repository root:
+
+```sh
+npm ci --prefix apps/web
+npx --prefix apps/web playwright install chromium
+npm run test:e2e --prefix apps/web
+```
+
+Playwright runs actual Chromium, Next.js, API and Mock Worker processes. Each run migrates a temporary SQLite database, uses a random test Worker credential and cleans up only its own processes and data. Keep ports `13100` (Web) and `18100` (API) free. Stop any `next dev` instance in the same checkout first. Set `KELPIE_E2E_PYTHON` only to override `.venv/bin/python`. On Linux, use `playwright install --with-deps chromium` to install system libraries too.
+
+Coverage includes creation, live events, feedback, re-verification, approval and resource release; search, filters, language and narrow layouts; network/permission failure retries; stream recovery; and invalid work addresses. Failures preserve screenshots and traces in `apps/web/test-results`. The HTML report in `apps/web/playwright-report` is generated and must not be committed. A production build after E2E also regenerates the development-updated `next-env.d.ts` for production.
+
+Playwright is a development dependency for real browser/service contracts that unit tests cannot exercise. No runtime dependency is added. The English managed block in `apps/web/AGENTS.md` preserves the installed Next.js generator's original text and requires consulting version-matched local documentation first.
+
 ## CI and merging
 
 Workflows in `.github/workflows` define the required checks and commands. CI uses parallel language jobs, dependency caching, cancellation of superseded PR runs and timeouts. Missing, failed, cancelled or pending checks are not passing checks. Verify required checks and unresolved reviews for the exact latest head SHA before merging. Do not bypass protection or squash logical commits.
 
-The current `CI` workflow requires `Python`, `Go` and `Web`. Python runs API/Runner tests, Ruff and PostgreSQL 17 upgrade/check/downgrade/re-upgrade. Go runs Worker/Gateway tests and vet. Web runs tests, type checking, ESLint and the production build. Each job has an eight-minute timeout; superseded PR runs are cancelled. These short full checks currently need neither path-based skipping nor a multiple-version matrix.
+The current `CI` workflow requires `Python`, `Go` and `Web`. Python runs API/Runner tests, Ruff and PostgreSQL 17 upgrade/check/downgrade/re-upgrade. Go runs Worker/Gateway tests and vet. Web runs tests, type checking, ESLint, the production build and Chromium E2E. Browser binaries are cached; reports and failure evidence are retained in the `browser-evidence` artifact for seven days. Each job has an eight-minute timeout; superseded PR runs are cancelled. These short full checks currently need neither path-based skipping nor a multiple-version matrix.
 
 GitHub Actions configuration follows the official [workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax) and [dependency caching reference](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching). Keep tokens read-only and pin external actions to verified SHAs.
 

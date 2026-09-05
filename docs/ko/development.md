@@ -20,11 +20,27 @@ UI에서는 작업 현황과 다음 행동을 우선하고, 빈 상태·오류·
 
 테스트 환경과 자원은 격리하고 자신이 만든 자원만 정리합니다. Mock Worker의 성공을 실제 Linux/KVM Acceptance로 표현하지 않습니다. 구동 대상이 없는 문서 변경은 해당 없음과 이유를 기록합니다.
 
+### 브라우저 회귀 테스트
+
+저장소 루트에서 API 개발 환경(`.venv`), Go, Web 의존성을 설치한 뒤 실행합니다.
+
+```sh
+npm ci --prefix apps/web
+npx --prefix apps/web playwright install chromium
+npm run test:e2e --prefix apps/web
+```
+
+Playwright는 실제 Chromium·Next.js·API·Mock Worker를 실행합니다. 매번 임시 SQLite DB를 마이그레이션하고 무작위 테스트 Worker 자격증명을 사용하며 종료 시 자신이 만든 프로세스·데이터만 정리합니다. `13100`(Web), `18100`(API) 포트는 비워 두세요. 같은 체크아웃에서 실행 중인 `next dev`도 먼저 종료해야 합니다. `.venv/bin/python` 대신 다른 Python을 쓸 때만 `KELPIE_E2E_PYTHON`을 지정합니다. Linux에서는 `playwright install --with-deps chromium`으로 시스템 라이브러리도 설치합니다.
+
+작업 생성·실시간 이벤트·피드백·재검증·승인·자원 해제, 검색·필터·언어·좁은 화면, 통신·권한 오류 후 재시도, 연결 복구, 잘못된 작업 주소를 검증합니다. 실패 시 `apps/web/test-results`에 스크린샷과 Trace가 남습니다. `apps/web/playwright-report`의 HTML 보고서는 생성물이므로 커밋하지 않습니다. E2E 이후 운영 빌드를 수행하면 개발용으로 자동 갱신된 `next-env.d.ts`도 운영 기준으로 재생성됩니다.
+
+Playwright는 단위 테스트가 다루지 못하는 실제 브라우저와 서비스 간 계약을 검증하기 위한 개발 의존성입니다. 런타임 의존성을 추가하지 않습니다. `apps/web/AGENTS.md`의 영어 관리 블록은 설치된 Next.js가 생성한 원문을 유지하며, 해당 버전의 로컬 문서를 우선 확인하도록 합니다.
+
 ## CI와 머지
 
 필수 검사와 명령은 `.github/workflows`의 Workflow가 기준입니다. CI는 언어별 병렬 실행, 의존성 캐시, 이전 PR 실행 취소와 Timeout을 사용합니다. 검사 누락·실패·취소·대기는 통과가 아니며, 정확한 최신 Head SHA의 필수 검사와 미해결 리뷰를 확인한 뒤 머지합니다. 보호 규칙을 우회하거나 논리적 커밋을 Squash하지 않습니다.
 
-현재 `CI` Workflow의 필수 검사는 `Python`, `Go`, `Web`입니다. Python은 API·Runner 테스트, Ruff, PostgreSQL 17 Upgrade/Check/Downgrade/Re-upgrade를 실행합니다. Go는 Worker·Gateway 테스트와 vet를 실행합니다. Web은 테스트·타입 검사·ESLint·운영 빌드를 실행합니다. 각 Job의 제한은 8분이며, PR에서는 이전 실행을 취소합니다. 짧은 전체 검사를 유지하므로 현재는 경로 기반 생략이나 다중 Version Matrix를 사용하지 않습니다.
+현재 `CI` Workflow의 필수 검사는 `Python`, `Go`, `Web`입니다. Python은 API·Runner 테스트, Ruff, PostgreSQL 17 Upgrade/Check/Downgrade/Re-upgrade를 실행합니다. Go는 Worker·Gateway 테스트와 vet를 실행합니다. Web은 테스트·타입 검사·ESLint·운영 빌드·Chromium E2E를 실행합니다. 브라우저 바이너리를 캐시하고 보고서와 실패 증거를 `browser-evidence` Artifact로 7일간 보존합니다. 각 Job의 제한은 8분이며, PR에서는 이전 실행을 취소합니다. 짧은 전체 검사를 유지하므로 현재는 경로 기반 생략이나 다중 Version Matrix를 사용하지 않습니다.
 
 GitHub Actions 구성은 [Workflow 문법](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)과 [의존성 캐시 문서](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)를 기준으로 합니다. Token은 읽기 전용으로 제한하고 외부 Action은 검증한 SHA에 고정합니다.
 
