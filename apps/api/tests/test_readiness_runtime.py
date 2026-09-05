@@ -68,6 +68,12 @@ def test_running_api_remains_live_and_fails_readiness_with_an_unresponsive_datab
                             started = time.monotonic()
                             readiness = executor.submit(client.get, "/readyz")
                             assert client.get("/healthz", timeout=0.5).json() == {"status": "ok"}
+                            metrics = client.get("/metrics", timeout=0.5)
+                            assert metrics.status_code == 200
+                            prefix = "kelpie_delivery_startup_recovery_"
+                            assert (f'{prefix}state{{{prefix}state="waiting_for_database"}} 1.0'
+                                    in metrics.text)
+                            assert marker not in metrics.text
                             assert not readiness.done()
                             response = readiness.result(timeout=4)
                             assert 1.5 <= time.monotonic() - started < 3.5

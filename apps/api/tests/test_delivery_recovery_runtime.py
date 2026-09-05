@@ -58,6 +58,7 @@ def test_api_resumes_orphans_after_schema_recovery_without_restarting(tmp_path):
         database.execute("UPDATE alembic_version SET version_num = 'test-unready-revision'")
 
     root = Path(__file__).resolve().parents[3]
+    prefix = "kelpie_delivery_startup_recovery_"
     environment = {
         "PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(root / "apps/api"),
         "DATABASE_URL": database_url, "DATABASE_SCHEMA_MODE": "validate",
@@ -90,6 +91,10 @@ def test_api_resumes_orphans_after_schema_recovery_without_restarting(tmp_path):
                 response = client.get("/readyz")
                 assert response.status_code == 503
                 assert response.json()["database_schema"] == "outdated"
+                metrics = client.get("/metrics")
+                assert metrics.status_code == 200
+                assert (f'{prefix}state{{{prefix}state="waiting_for_database"}} 1.0'
+                        in metrics.text)
                 with sqlite3.connect(database_path) as database:
                     attempts = database.execute(
                         "SELECT sum(attempts) FROM delivery_jobs",
@@ -105,7 +110,10 @@ def test_api_resumes_orphans_after_schema_recovery_without_restarting(tmp_path):
                         rows = database.execute(
                             "SELECT state, attempts, error FROM delivery_jobs",
                         ).fetchall()
-                    if sum(row[0] == "failed" for row in rows) == 3:
+                    metrics = client.get("/metrics")
+                    assert metrics.status_code == 200
+                    completed = f'{prefix}state{{{prefix}state="completed"}} 1.0' in metrics.text
+                    if sum(row[0] == "failed" for row in rows) == 3 and completed:
                         break
                     assert time.monotonic() < deadline, "startup delivery recovery did not retry"
                     time.sleep(0.05)
@@ -114,6 +122,16 @@ def test_api_resumes_orphans_after_schema_recovery_without_restarting(tmp_path):
                 ]
                 assert all(row[2] == "GitHub delivery failed at configuration (internal_error)"
                            for row in rows if row[0] == "failed")
+                assert f'{prefix}checks_total{{outcome="completed"}} 1.0' in metrics.text
+                assert f'{prefix}checks_total{{outcome="error"}} 0.0' in metrics.text
+                assert 'kelpie_delivery_outcomes_total{outcome="failed"} 3.0' in metrics.text
+                assert "acme/recovery" not in metrics.text
+                assert "unused-test.patch" not in metrics.text
+                frozen = next(line for line in metrics.text.splitlines()
+                              if line.startswith(prefix + "duration_seconds "))
+                assert float(frozen.split()[1]) > 0
+                time.sleep(0.02)
+                assert frozen in client.get("/metrics").text
                 with sqlite3.connect(database_path) as database:
                     assert database.execute(
                         "SELECT count(*) FROM agent_events WHERE event_type = 'delivery.failed'",
