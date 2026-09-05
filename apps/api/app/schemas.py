@@ -81,6 +81,7 @@ class AuditRecordView(BaseModel):
     correlation_id: str
     source_ip: str | None
     transport: Literal["web", "slack"]
+    details: dict[str, Any]
     created_at: datetime
 
 

@@ -94,6 +94,7 @@ class AuditRecord(Base):
     correlation_id: Mapped[str] = mapped_column(String(36))
     source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     transport: Mapped[str] = mapped_column(String(16))
+    details: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
