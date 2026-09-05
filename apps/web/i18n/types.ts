@@ -64,6 +64,9 @@ export interface MessageCatalog {
     liveStream: string;
     agentActivity: string;
     live: string;
+    connecting: string;
+    reconnecting: string;
+    refreshError: string;
     humanControl: string;
     title: string;
     openPullRequest: string;

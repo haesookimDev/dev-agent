@@ -1,10 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { localeTag } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
-import { apiJSON, authenticatedFetch, browserApi, requestErrorMessage } from "../lib/browser-api";
+import { apiJSON, browserApi, requestErrorMessage } from "../lib/browser-api";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
 
@@ -29,29 +29,59 @@ export function LiveRun({
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
-  const lastEvent = events.at(-1)?.id ?? 0;
+  const lastEvent = useRef(initialEvents.at(-1)?.id ?? 0);
+  const [connection, setConnection] = useState<"connecting" | "live" | "reconnecting">("connecting");
+  const [streamError, setStreamError] = useState(false);
   const correlationHeaders = useMemo(
     () => ({ "X-Kelpie-Correlation-ID": work.correlation_id }),
     [work.correlation_id],
   );
 
   useEffect(() => {
-    const stream = new EventSource(
-      `${browserApi}/api/work-items/${work.id}/events?after=${lastEvent}`,
-      { withCredentials: true },
-    );
-    stream.onmessage = (message) => {
-      const event = JSON.parse(message.data) as AgentEvent;
-      setEvents((current) => current.some((item) => item.id === event.id) ? current : [...current, event]);
-      if (event.event_type === "work.transitioned") {
-        authenticatedFetch(`${browserApi}/api/work-items/${work.id}`, { headers: correlationHeaders }).then((response) => response.json()).then(setWork);
+    let active = true;
+    let stream: EventSource;
+    let reconnect: ReturnType<typeof setTimeout> | undefined;
+
+    async function refresh() {
+      try {
+        const [updated, evidence] = await Promise.all([
+          apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}`, { headers: correlationHeaders }),
+          apiJSON<Artifact[]>(`${browserApi}/api/work-items/${work.id}/artifacts`, { headers: correlationHeaders }),
+        ]);
+        if (!active) return;
+        setWork((current) => updated.version >= current.version ? updated : current);
+        setArtifacts(evidence);
+        setStreamError(false);
+      } catch {
+        if (active) setStreamError(true);
       }
-      if (event.event_type === "artifact.uploaded") {
-        authenticatedFetch(`${browserApi}/api/work-items/${work.id}/artifacts`, { headers: correlationHeaders }).then((response) => response.json()).then(setArtifacts);
-      }
-    };
-    return () => stream.close();
-  }, [work.id, lastEvent, correlationHeaders]);
+    }
+
+    function connect() {
+      stream = new EventSource(`${browserApi}/api/work-items/${work.id}/events?after=${lastEvent.current}`, { withCredentials: true });
+      stream.onopen = () => { setConnection("live"); void refresh(); };
+      stream.onerror = () => {
+        stream.close();
+        if (!active) return;
+        setConnection("reconnecting");
+        reconnect = setTimeout(connect, 2000);
+      };
+      stream.onmessage = (message) => {
+        if (!active) return;
+        try {
+          const event = JSON.parse(message.data) as AgentEvent;
+          if (event.work_item_id !== work.id || !Number.isInteger(event.id)) return;
+          lastEvent.current = Math.max(lastEvent.current, event.id);
+          setEvents((current) => current.some((item) => item.id === event.id) ? current : [...current, event]);
+          if (["work.transitioned", "artifact.uploaded"].includes(event.event_type)) void refresh();
+        } catch {
+          setStreamError(true);
+        }
+      };
+    }
+    connect();
+    return () => { active = false; clearTimeout(reconnect); stream.close(); };
+  }, [work.id, correlationHeaders]);
 
   const grouped = useMemo(() => [...events].reverse(), [events]);
 
@@ -115,8 +145,9 @@ export function LiveRun({
         <div className="timeline">
           <div className="sectionHeading">
             <div><p className="eyebrow">{messages.run.liveStream}</p><h2>{messages.run.agentActivity}</h2></div>
-            <span className="liveDot">{messages.run.live}</span>
+            <span className={`liveDot connection-${connection}`} role="status">{messages.run[connection]}</span>
           </div>
+          {streamError && <p className="streamError" role="alert">{messages.run.refreshError}</p>}
           <div className="events">
             {grouped.map((event) => (
               <article className={`event event-${event.level}`} key={event.id}>
