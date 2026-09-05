@@ -48,13 +48,19 @@ test("live closure preserves focused input; all closed states have localized rea
   await expect.poll(async () => (await (await request.get(url)).json()).status).toBe("awaiting_approval");
   await page.goto(`/en/work-items/${created.id}`);
   const draft = page.locator('textarea[name="message"]');
+  await draft.fill("Verify the first feedback normally.");
+  await page.getByRole("button", { name: /^Send to agent/ }).click();
+  await expect(page.locator(".actionNotice")).toHaveText("Feedback sent.");
+  await expect(page.getByRole("heading", { name: "Mock revision ready for approval", exact: true })).toBeVisible();
   await draft.fill("Copy this draft before leaving.");
+  await expect(page.locator(".actionNotice")).toHaveCount(0);
   const approval = await request.post(`${url}/approvals`, { data: { kind: "pull_request", decision: "approve", payload: {} } });
   expect(approval.ok()).toBe(true);
   await expect(page.locator(".runStatus")).toContainText("Completed");
   await expect(draft).toHaveAttribute("readonly", "");
   await expect(draft).toHaveValue("Copy this draft before leaving.");
   await expect(draft).toBeFocused();
+  await expect(page.locator(".actionNotice")).toHaveCount(0);
 
   // Presentation fixtures only: the completed real work above is not mutated.
   const completed = await (await request.get(url)).json();

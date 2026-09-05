@@ -213,7 +213,7 @@ export function LiveRun({
                 {feedbackAllowed ? messages.run.feedback : messages.run.unsentFeedback}
                 <textarea
                   name="message" rows={6} required={feedbackAllowed} readOnly={!feedbackAllowed || sending}
-                  value={feedbackDraft} onChange={(event) => setFeedbackDraft(event.target.value)}
+                  value={feedbackDraft} onChange={(event) => { setFeedbackDraft(event.target.value); setActionNotice(""); }}
                   placeholder={messages.run.feedbackPlaceholder}
                 />
               </label>
