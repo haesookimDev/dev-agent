@@ -3,13 +3,15 @@ import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from fastapi import Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
 from .db import get_session
-from .models import AuthSession
+from .models import AuthSession, Membership, Organization, Principal
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,24 @@ class Actor:
     role: str
     identity_provider: str
     organization: str
+    principal_id: str | None = None
+
+
+async def actor_from_identity(
+    session: AsyncSession, issuer: str, subject: str, organization_claim: str,
+) -> Actor:
+    row = (await session.execute(
+        select(Principal, Organization, Membership)
+        .join(Membership, Membership.principal_id == Principal.id)
+        .join(Organization, Organization.id == Membership.organization_id)
+        .where(Principal.issuer == issuer, Principal.subject == subject,
+               Organization.issuer == issuer, Organization.claim == organization_claim)
+    )).first()
+    if row is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "organization membership required")
+    principal, organization, membership = row
+    return Actor(subject=principal.subject, identity_provider=principal.issuer,
+                 organization=organization.id, role=membership.role, principal_id=principal.id)
 
 
 async def current_actor(
@@ -44,12 +64,15 @@ async def current_actor(
         expires_at = expires_at.replace(tzinfo=UTC)
     if expires_at <= datetime.now(UTC):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "authentication session expired")
-    return Actor(
-        subject=authenticated.subject,
-        role="viewer",
-        identity_provider=authenticated.identity_provider,
-        organization=authenticated.organization,
-    )
+    if authenticated.identity_provider != settings.oidc_issuer_url:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "identity provider changed")
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        dashboard = urlsplit(settings.dashboard_url)
+        expected_origin = f"{dashboard.scheme}://{dashboard.netloc}"
+        if request.headers.get("origin") != expected_origin:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "same-origin request required")
+    return await actor_from_identity(session, authenticated.identity_provider,
+                                     authenticated.subject, authenticated.organization)
 
 
 async def require_approver(actor: Annotated[Actor, Depends(current_actor)]) -> Actor:

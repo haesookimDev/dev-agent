@@ -29,7 +29,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .auth import Actor, current_actor, require_approver, require_worker
+from .auth import Actor, actor_from_identity, current_actor, require_approver, require_worker
 from .config import Settings, get_settings
 from .correlation import CorrelationMiddleware
 from .db import (
@@ -402,6 +402,7 @@ async def oidc_callback(
     if expires_at <= now:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC ID token expired")
 
+    await actor_from_identity(session, identity.issuer, identity.subject, identity.organization)
     previous_token = request.cookies.get(config.oidc_session_cookie_name)
     if previous_token:
         previous_hash = hashlib.sha256(previous_token.encode()).hexdigest()
