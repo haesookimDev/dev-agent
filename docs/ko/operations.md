@@ -35,6 +35,8 @@ RBAC Rollback 시에는 먼저 API 유입·Webhook과 Worker를 중지하고 DB 
 
 ## OIDC 인증
 
+Secret 파일 주입·교체와 실패 복구는 [Secret 관리 가이드](secret-management.md)를 따릅니다.
+
 운영 환경에서는 대시보드와 API의 `/auth`, `/api` 경로를 같은 HTTPS 공개 Origin으로 제공합니다. 대시보드 Server Component가 Browser의 Session Cookie를 내부 API 요청에 전달하며, Browser 요청과 Event Stream도 자격증명을 포함합니다. API를 별도 공개 Hostname으로 노출하거나 OIDC 신원 Header를 주입하지 않습니다.
 
 Identity Provider에 Authorization Code Client를 등록하고 Callback URI를 `https://<control-host>/auth/callback`으로 지정합니다. PKCE S256은 Client 종류와 관계없이 항상 사용됩니다. Provider가 공개 Client의 `none` 인증을 Metadata에 선언하지 않는 한 Client Secret을 설정합니다. 조직 Claim은 비어 있지 않은 단일 문자열이어야 합니다.

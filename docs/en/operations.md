@@ -35,6 +35,8 @@ Before rolling back RBAC, stop API ingress, webhooks, and workers and back up th
 
 ## OIDC authentication
 
+Follow the [secret management guide](secret-management.md) for file injection, rotation, and recovery.
+
 Serve the dashboard and the API `/auth` and `/api` paths from the same public HTTPS origin in production. Dashboard Server Components forward the browser session cookie to the internal API, and browser requests and event streams include credentials. Do not expose the API on a separate public hostname or inject OIDC identity headers.
 
 Register an Authorization Code client with the identity provider and set its callback URI to `https://<control-host>/auth/callback`. PKCE S256 is always used, regardless of the client type. Configure a client secret unless the provider advertises `none` authentication for a public client in its metadata. The organization claim must be a non-empty scalar string.
