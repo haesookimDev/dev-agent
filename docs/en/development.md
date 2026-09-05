@@ -38,6 +38,8 @@ Playwright is a development dependency for real browser/service contracts that u
 
 ## CI and merging
 
+Every browser regression checks unhandled page errors through the shared fixture. Even when all tests pass, inspect CI logs for hidden hydration/runtime errors. See the [time-rendering regression and verification](time-hydration.md).
+
 Workflows in `.github/workflows` define the required checks and commands. CI uses parallel language jobs, dependency caching, cancellation of superseded PR runs and timeouts. Missing, failed, cancelled or pending checks are not passing checks. Verify required checks and unresolved reviews for the exact latest head SHA before merging. Do not bypass protection or squash logical commits.
 
 The current `CI` workflow requires `Python`, `Go` and `Web`. Python runs API/Runner tests, Ruff and PostgreSQL 17 upgrade/check/downgrade/re-upgrade. Go runs Worker/Gateway tests and vet. Web runs tests, type checking, ESLint, the production build and Chromium E2E. Browser binaries are cached; reports and failure evidence are retained in the `browser-evidence` artifact for seven days. Each job has an eight-minute timeout; superseded PR runs are cancelled. These short full checks currently need neither path-based skipping nor a multiple-version matrix.
