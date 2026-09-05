@@ -53,7 +53,7 @@ Done when a single Worker can be revoked without rotating every Worker and no se
 
 ### OBS-001 · Observability and correlation — M
 
-Status: baseline correlation IDs/traces/metrics/structured logs, bounded DB readiness, startup recovery metrics, and [baseline alerts](monitoring-alerts.md) are implemented. External dependency readiness, worker heartbeat/lease/live queue alerts, and an integrated operations dashboard remain.
+Status: baseline correlation IDs/traces/metrics/structured logs, bounded DB readiness, startup recovery metrics, and [baseline alerts](monitoring-alerts.md) are implemented. [Continuous Worker heartbeat, active lease expiry, queued-work observation, and unavailable-observation alerts](runtime-monitoring.md) were added (2026-09-06). External dependency readiness, stalled running-work/DeliveryJob coverage, and an integrated operations dashboard remain.
 
 Scope:
 

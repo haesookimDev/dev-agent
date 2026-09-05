@@ -76,3 +76,77 @@ groups:
           summary_ko: 최근 10분 동안 Kelpie 전달 실패가 관찰됐습니다
           runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/monitoring-alerts.md#delivery-failures
           runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/monitoring-alerts.md#delivery-failures
+
+      # Keep the freshness/contract gate in one rule for all runtime alerts.
+      # An absent or partially relabeled observation must not look healthy.
+      - record: kelpie:runtime_snapshot_usable
+        expr: |
+          (kelpie_runtime_snapshot_available{job="kelpie-api"} == 1)
+          and on (job, instance) (up{job="kelpie-api"} == 1)
+          and on (job, instance) (kelpie_runtime_snapshot_age_seconds{job="kelpie-api"} >= 0)
+          and on (job, instance) (kelpie_runtime_snapshot_age_seconds{job="kelpie-api"} <= 30)
+          and on (job, instance) (count by (job, instance) (
+            kelpie_runtime_workers{job="kelpie-api",state=~"online|draining|offline|quarantined"} >= 0
+          ) == 4)
+          and on (job, instance) (count by (job, instance) (
+            kelpie_runtime_leases{job="kelpie-api",state=~"active|expired"} >= 0
+          ) == 2)
+          and on (job, instance) (kelpie_runtime_queued_work{job="kelpie-api"} >= 0)
+          and on (job, instance) (kelpie_runtime_queue_oldest_age_seconds{job="kelpie-api"} >= 0)
+
+      - alert: KelpieRuntimeObservationUnavailable
+        expr: |
+          (up{job="kelpie-api"} == 1)
+          unless on (job, instance) kelpie:runtime_snapshot_usable{job="kelpie-api"}
+        for: 2m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: Kelpie runtime observation is failed, stale, or incomplete
+          summary_ko: Kelpie 실행 상태 관측이 실패했거나 오래됐거나 누락됐습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#observation
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#observation
+
+      - alert: KelpieWorkerHeartbeatLost
+        expr: |
+          (sum without (state) (kelpie_runtime_workers{job="kelpie-api",state="offline"}) > 0)
+          and on (job, instance) kelpie:runtime_snapshot_usable{job="kelpie-api"}
+        for: 2m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: Kelpie has offline workers or lost heartbeats
+          summary_ko: Kelpie Worker가 오프라인이거나 Heartbeat가 끊겼습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#heartbeat
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#heartbeat
+
+      - alert: KelpieActiveLeaseExpired
+        expr: |
+          (sum without (state) (kelpie_runtime_leases{job="kelpie-api",state="expired"}) > 0)
+          and on (job, instance) kelpie:runtime_snapshot_usable{job="kelpie-api"}
+        for: 2m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: Kelpie has expired lease records that are still active
+          summary_ko: Kelpie에 만료됐지만 활성 상태로 남은 Lease가 있습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#lease
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#lease
+
+      - alert: KelpieWorkQueueStalled
+        expr: |
+          (kelpie_runtime_queue_oldest_age_seconds{job="kelpie-api"} > 600)
+          and on (job, instance) (kelpie_runtime_queued_work{job="kelpie-api"} > 0)
+          and on (job, instance) kelpie:runtime_snapshot_usable{job="kelpie-api"}
+        for: 2m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: Kelpie work has remained queued for more than ten minutes
+          summary_ko: Kelpie 작업이 10분 넘게 대기열에 남아 있습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#queue
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#queue

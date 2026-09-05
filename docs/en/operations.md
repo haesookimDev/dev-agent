@@ -115,6 +115,7 @@ Prometheus can scrape the following low-cardinality metrics from `GET /metrics`:
 - Work-state transition count and duration in each state
 - Approval decisions, initial and retried delivery attempts, and delivery outcomes
 - [Startup delivery recovery](delivery-recovery-metrics.md) phase, elapsed time including waits, and readiness/recovery iteration outcomes
+- Latest [Worker/lease/queued-work observation](runtime-monitoring.md) snapshot, freshness, and availability
 
 Work IDs, repository names, users, and correlation IDs are never metric labels. Do not expose `/metrics` publicly; restrict it to the internal Prometheus network with a reverse proxy or network policy.
 
@@ -126,7 +127,7 @@ OTEL_SERVICE_NAME=kelpie-api
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
 ```
 
-When the OTLP endpoint is empty, application spans are not exported, while Prometheus metrics and structured logs remain available. [Baseline alerts and runbooks](monitoring-alerts.md) cover failed/missing scrapes, delayed startup recovery, and observed delivery failures. External object-store, SCM, and delivery-worker readiness, worker/lease alerts, and an integrated operations dashboard remain follow-up OBS-001 scope.
+When the OTLP endpoint is empty, application spans are not exported, while Prometheus metrics and structured logs remain available. [Baseline alerts and runbooks](monitoring-alerts.md) cover failed/missing scrapes, delayed startup recovery, and observed delivery failures. [Continuous observation alerts](runtime-monitoring.md) monitor lost Worker heartbeats, expired active leases, and long-queued work without treating failed, stale, or missing observations as healthy. External object-store, SCM, and delivery-worker readiness, stalled running-work/DeliveryJob coverage, and an integrated operations dashboard remain follow-up OBS-001 scope.
 
 ## GitHub App delivery
 

@@ -13,6 +13,11 @@ from app.recovery_observability import DeliveryRecoveryMetrics
 PREFIX = "kelpie_delivery_startup_recovery_"
 
 
+@pytest.fixture(autouse=True)
+def isolate_unrelated_runtime_monitor(monkeypatch):
+    monkeypatch.setattr(main, "monitor_runtime_health", AsyncMock())
+
+
 @pytest.fixture
 def metrics(monkeypatch):
     clock = SimpleNamespace(now=100.0)

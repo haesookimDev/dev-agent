@@ -18,7 +18,7 @@ Aggregation removes the phase label so `waiting_for_database → running → ret
 
 `for` measures continuous observation by Prometheus, not API boot time or the exact start of every fault. Scrape/evaluation intervals, stale-series disappearance, and Prometheus restarts affect detection time. Cleared conditions resolve at the next evaluation. Legitimate long deliveries can trigger the five-minute warning; adjust thresholds and tests together to match normal deployment behavior. [Official rule semantics](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
 
-Failures before the first counter scrape, processes that start and stop between scrapes, and failures with only an initial value and no observed increase may be missed. A counter reset alone is not a new failure. Alerts do not guarantee every event's delivery or replace jobs/events/audits. Worker heartbeat/lease/live queue state, external object-store/SCM readiness, and an integrated operations dashboard remain separate scope.
+Failures before the first counter scrape, processes that start and stop between scrapes, and failures with only an initial value and no observed increase may be missed. A counter reset alone is not a new failure. Alerts do not guarantee every event's delivery or replace jobs/events/audits. [Continuous Worker heartbeat/lease/queued-work observations and unavailable-observation alerts](runtime-monitoring.md), added to the same rule file, have their own contract and response guide. External object-store/SCM readiness, stalled running-work/DeliveryJob coverage, and an integrated operations dashboard remain.
 
 ## Installation and validation
 
@@ -83,6 +83,8 @@ Inspect phase, elapsed time, `checks_total`, and `/readyz` together. Check conne
 Inspect final work/DeliveryJob state, [safe stage/error codes](delivery-failure-safety.md), the verified bundle, and approval history. Check GitHub installation/repository permissions or temporary SCM outages, but never put tokens, patches, or raw exceptions in alerts. Distinguish recovery completion from individual failure. This rule grants no authority to automatically retry or bypass approval/quarantine gates.
 
 ## Verification record
+
+The following records the original baseline-alert rollout. See [runtime observation verification](runtime-monitoring.md) for the added continuous monitoring.
 
 Verified rules `43af5cf`, test command `04ed249`, and CI `126337f`. Subsequent changes in this PR are instructions/documentation only.
 

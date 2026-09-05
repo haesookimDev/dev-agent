@@ -56,3 +56,5 @@ GitHub Actions 구성은 [Workflow 문법](https://docs.github.com/en/actions/re
 작업 보고에는 커밋별 목적, 테스트와 실제 사용 결과, PR·CI·머지 상태, 미커밋 변경, 남은 MVP 항목과 필요한 외부 환경을 기록합니다. 상세 저장소 규칙은 [AGENTS.md](../../AGENTS.md)를 따릅니다.
 
 [전달 감사](delivery-audit.md)의 실제 Git·API·루프백 SCM 회귀 테스트는 기존 `make test-api`와 필수 `Python` 검사에 포함됩니다. 외부 SCM 자격증명·추가 서비스 Job이 필요하지 않습니다. `test_audit_postgres.py`는 Background 감사 제약과 기존 행 보존 Migration도 검증합니다. 승인 출처를 감사와 함께 기록하고 외부 쓰기 직전에 재검사하는 경계를 향후 전달 변경에서도 유지합니다.
+
+[실행 관측](runtime-monitoring.md) 변경 시 SQLite뿐 아니라 `KELPIE_TEST_POSTGRES_URL`을 지정한 `test_runtime_health.py`도 실행합니다. 필수 `Python` CI는 기존 DB Service를 재사용합니다. 실제 HTTP 장애·Heartbeat·취소 회귀는 `make test-api`, 알림의 시간·누락·복구 조건은 `make test-monitoring`에 포함됩니다. 관측 값의 0·누락·실패를 혼동하거나 속도를 위해 실제 HTTP 검증을 모의 검증으로 대체하지 않습니다.

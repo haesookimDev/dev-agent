@@ -11,6 +11,11 @@ from app.db import SchemaReadiness, SchemaState
 from app.models import DeliveryJob, WorkItem, WorkStatus
 
 
+@pytest.fixture(autouse=True)
+def isolate_unrelated_runtime_monitor(monkeypatch):
+    monkeypatch.setattr(main, "monitor_runtime_health", AsyncMock())
+
+
 async def test_recovery_does_not_reset_an_active_delivery(pending_delivery):
     job = pending_delivery
     entered, release = asyncio.Event(), asyncio.Event()
