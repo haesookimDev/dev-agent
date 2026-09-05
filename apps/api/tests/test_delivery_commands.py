@@ -11,8 +11,25 @@ from app.delivery import run_command
 
 async def test_delivery_command_returns_output_and_reports_failure():
     assert await run_command(sys.executable, "-c", "print('verified')") == "verified\n"
-    with pytest.raises(RuntimeError, match="failed with 3: rejected"):
+    with pytest.raises(RuntimeError, match="delivery subprocess failed with exit code 3"):
         await run_command(sys.executable, "-c", "print('rejected'); raise SystemExit(3)")
+
+
+async def test_failed_command_does_not_expose_stdout_stderr_or_arguments():
+    marker = "synthetic-private-command-output"
+    program = f"import sys; print({marker!r}); print({marker!r}, file=sys.stderr); sys.exit(4)"
+    with pytest.raises(RuntimeError) as result:
+        await run_command(sys.executable, "-c", program)
+    assert marker not in str(result.value)
+    assert str(result.value) == "delivery subprocess failed with exit code 4"
+
+
+async def test_command_start_failure_does_not_expose_the_executable_path(tmp_path):
+    marker = "synthetic-private-command-path"
+    with pytest.raises(RuntimeError) as result:
+        await run_command(str(tmp_path / marker))
+    assert marker not in str(result.value)
+    assert str(result.value) == "delivery subprocess could not start"
 
 
 async def test_cancelled_delivery_command_stops_owned_process_group(tmp_path, monkeypatch):
