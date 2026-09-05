@@ -9,9 +9,14 @@ from .models import WorkerState, WorkSource, WorkStatus
 class WorkItemCreate(BaseModel):
     title: str = Field(min_length=3, max_length=300)
     requirement: str = Field(min_length=3, max_length=100_000)
-    repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", max_length=300)
     budget_minutes: int = Field(default=240, ge=15, le=24 * 60)
     budget_cost: str | None = None
+
+    @field_validator("repository")
+    @classmethod
+    def normalize_repository(cls, value: str) -> str:
+        return value.lower()
 
 
 class WorkItemView(BaseModel):

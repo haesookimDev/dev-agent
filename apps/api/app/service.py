@@ -38,6 +38,7 @@ async def create_work_item(
     *,
     source: WorkSource,
     requested_by: str,
+    organization_id: str,
     source_external_id: str | None = None,
     github_installation_id: int | None = None,
     github_issue_number: int | None = None,
@@ -45,6 +46,7 @@ async def create_work_item(
 ) -> WorkItem:
     item = WorkItem(
         **payload.model_dump(),
+        organization_id=organization_id,
         source=source,
         requested_by=requested_by,
         source_external_id=source_external_id,

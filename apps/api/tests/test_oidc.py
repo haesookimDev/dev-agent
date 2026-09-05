@@ -7,6 +7,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from httpx import AsyncClient
 
 from app.config import Settings, get_settings
+from app.db import get_session
+from app.iam import OrganizationPolicy, apply_policy
 from app.main import app
 from app.oidc import (
     OIDCAuthenticationError,
@@ -73,6 +75,13 @@ async def test_oidc_login_creates_session_and_consumes_state(client: AsyncClient
     provider = FakeOIDCProvider()
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_oidc_provider] = lambda: provider
+    async for session in app.dependency_overrides[get_session]():
+        await apply_policy(session, OrganizationPolicy.model_validate({
+            "organization_id": "acme", "issuer": "https://identity.example", "claim": "acme",
+            "members": [{"subject": "admin", "role": "administrator"},
+                        {"subject": "user-123", "role": "viewer"}],
+        }))
+        await session.commit()
 
     login = await client.get("/auth/login", params={"return_to": "/ko/work-items"})
 

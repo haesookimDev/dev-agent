@@ -1,0 +1,25 @@
+{
+  "organization_id": "acme",
+  "issuer": "https://identity.example.com",
+  "claim": "acme-organization-claim",
+  "members": [
+    {"subject": "example-admin-subject", "role": "administrator"},
+    {"subject": "example-reviewer-subject", "role": "viewer"}
+  ],
+  "repositories": [
+    {
+      "name": "acme/service",
+      "github_installation_id": 12345,
+      "grants": [
+        {"subject": "example-reviewer-subject", "role": "approver"}
+      ]
+    }
+  ],
+  "slack_identities": [
+    {
+      "team_id": "EXAMPLE_TEAM",
+      "user_id": "EXAMPLE_USER",
+      "subject": "example-reviewer-subject"
+    }
+  ]
+}

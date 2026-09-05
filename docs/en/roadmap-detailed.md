@@ -29,7 +29,7 @@ Done when a production-like deployment upgrades without data loss and a schema m
 
 ### IAM-001 · OIDC identity and repository authorization — L
 
-Status: first authentication batch implemented (2026-09-04). It includes Authorization Code + PKCE, OIDC ID-token validation, one-time nonces and opaque sessions, and removal of public identity headers. Organization/repository authorization and immutable audit records remain.
+Status: authentication batch (2026-09-04) and organization/repository RBAC batch (2026-09-05) implemented. This includes registered memberships, repository-specific role elevation, cross-organization denial, registered GitHub installations, linked Slack principals, and permission revocation. Immutable detailed audit records and scoped OIDC preview grants remain.
 
 Scope:
 

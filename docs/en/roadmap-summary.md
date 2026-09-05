@@ -23,7 +23,7 @@ Turn the current deployable vertical slice into a production-grade, multi-worker
 The next release should contain only P0 and the smallest P1 end-to-end path:
 
 1. **Completed:** Replace `create_all` with Alembic and test upgrade/downgrade paths.
-2. Add OIDC authentication, organization/repository authorization, and immutable approval audit records.
+2. **Partially complete:** OIDC authentication and organization/repository authorization are implemented. Immutable detailed approval audit records remain.
 3. Move secrets to a production secret provider and rotate worker credentials independently.
 4. **Partially completed:** OpenTelemetry traces, Prometheus metrics, and structured correlation IDs are implemented. External dependency readiness, alerts, and retention jobs remain.
 5. Build one pinned Ubuntu desktop golden image and complete a real libvirt run.

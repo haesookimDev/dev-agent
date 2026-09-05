@@ -2,7 +2,19 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -43,6 +55,75 @@ class WorkerState(StrEnum):
     OFFLINE = "offline"
 
 
+class Role(StrEnum):
+    VIEWER = "viewer"
+    OPERATOR = "operator"
+    APPROVER = "approver"
+    ADMINISTRATOR = "administrator"
+
+
+def role_type() -> Enum:
+    return Enum(Role, native_enum=False, name="iam_role",
+                values_callable=lambda roles: [role.value for role in roles])
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+    __table_args__ = (UniqueConstraint("issuer", "claim", name="uq_organization_identity"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    issuer: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    claim: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class Principal(Base):
+    __tablename__ = "principals"
+    __table_args__ = (UniqueConstraint("issuer", "subject", name="uq_principal_identity"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    issuer: Mapped[str] = mapped_column(String(1024))
+    subject: Mapped[str] = mapped_column(String(255))
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+    __table_args__ = (CheckConstraint(
+        "role IN ('viewer', 'operator', 'approver', 'administrator')", name="iam_role"
+    ),)
+
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), primary_key=True)
+    role: Mapped[Role] = mapped_column(role_type())
+
+
+class Repository(Base):
+    __tablename__ = "repositories"
+
+    name: Mapped[str] = mapped_column(String(300), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    github_installation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class RepositoryGrant(Base):
+    __tablename__ = "repository_grants"
+    __table_args__ = (CheckConstraint(
+        "role IN ('viewer', 'operator', 'approver', 'administrator')", name="iam_role"
+    ),)
+
+    repository: Mapped[str] = mapped_column(ForeignKey("repositories.name"), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), primary_key=True)
+    role: Mapped[Role] = mapped_column(role_type())
+
+
+class SlackIdentity(Base):
+    __tablename__ = "slack_identities"
+
+    team_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+
+
 class OIDCLoginAttempt(Base):
     __tablename__ = "oidc_login_attempts"
 
@@ -69,6 +150,10 @@ class WorkItem(Base):
     __tablename__ = "work_items"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("organizations.id", name="fk_work_items_organization"),
+        default="legacy", server_default="legacy", index=True,
+    )
     correlation_id: Mapped[str] = mapped_column(
         String(36), index=True, default=lambda: str(uuid.uuid4())
     )

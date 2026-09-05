@@ -29,6 +29,10 @@ Revision `20260904_0002` backfills existing work items and events by using the w
 
 Revision `20260904_0003` adds tables for one-time OIDC login attempts and opaque authentication sessions. Downgrading to `20260904_0002` removes both tables and active login sessions while preserving work-item data. Switch to the previous API version before the downgrade and inform users that they must sign in again.
 
+Revision `20260905_0004` adds organization, principal, membership, repository, grant, and Slack identity tables plus `organization_id` on work items. All historical work is assigned to the `legacy` organization, which has no identity binding or members, and is hidden from ordinary user lists and detail routes. Registering the same repository name does not transfer historical ownership. Work, event, and artifact data are preserved; reassignment of historical work requires separately reviewed follow-up work. Existing worker leases retain their contract.
+
+Before rolling back RBAC, stop API ingress, webhooks, and workers and back up the database and policy files. `alembic downgrade 20260904_0003` preserves work data but removes organization boundaries and authorization tables. Do not re-expose the previous API to multiple organizations. Run it only in an isolated maintenance environment and restore validated backups and policies after recovering the RBAC version.
+
 ## OIDC authentication
 
 Serve the dashboard and the API `/auth` and `/api` paths from the same public HTTPS origin in production. Dashboard Server Components forward the browser session cookie to the internal API, and browser requests and event streams include credentials. Do not expose the API on a separate public hostname or inject OIDC identity headers.
@@ -53,7 +57,34 @@ Start login at `/auth/login`. The `state`, `nonce`, and PKCE verifier are held i
 
 The `trusted_headers` authentication mode has been removed. `X-Kelpie-User` and `X-Kelpie-Role` are not authentication inputs. Development mode also ignores request headers and uses only the fixed administrator identity from `DEVELOPMENT_SUBJECT` and `DEVELOPMENT_ORGANIZATION`; never expose it publicly.
 
-Until the repository-authorization batch lands, OIDC identities are treated as viewers and cannot approve work. The preview gateway also returns 503 in its default `disabled` mode until scoped OIDC preview grants are implemented. Use `KELPIE_GATEWAY_AUTH_MODE=development` only for an isolated local demo.
+OIDC login requires a registered organization and membership. Organizations are identified by `(issuer, organization claim)` and principals by `(issuer, subject)`; arbitrary role claims in ID tokens are not used. Sessions and event streams recheck membership and authorization, so revocation applies on the next request or event query. Cookie-authenticated work mutations require an `Origin` header matching the origin of `DASHBOARD_URL`.
+
+The preview gateway returns 503 in its default `disabled` mode until scoped OIDC preview grants are implemented. Use `KELPIE_GATEWAY_AUTH_MODE=development` only for an isolated local demo.
+
+## Organization and repository authorization
+
+After migration and before opening login traffic, a control-host administrator copies the [policy example](../../config/iam.example.json) and supplies the actual issuer, organization claim, subjects, repositories, GitHub App installation IDs, and Slack team/user IDs. A policy file represents the **entire desired state** of one organization. Keep it on an access-controlled control host without tokens or client secrets.
+
+Run the command inside the API image as an administrative process using the same `DATABASE_URL`. From the repository root with the local virtual environment, use `.venv/bin/python -m app.iam /path/to/organization.json`.
+
+```bash
+python -m app.iam /run/config/organization.json
+```
+
+The command replaces the organization's memberships, repository grants, Slack bindings, and registered repositories in one transaction. Omitted entries are revoked, so always submit the complete policy. At least one administrator is required. Reassigning the organization identity, claiming another organization's registered repository or Slack binding, and granting access to nonmembers are rejected. Failed applications roll back completely. Policy administration requires control-host operational access; there is no public bootstrap or permission-management API.
+
+| Effective role | Read, events, artifacts | Create, feedback, console takeover | PR, budget, console approval |
+| --- | --- | --- | --- |
+| Viewer | Allowed | Denied | Denied |
+| Operator | Allowed | Allowed | Denied |
+| Approver | Allowed | Allowed | Allowed |
+| Administrator | Allowed | Allowed | Allowed |
+
+Organization membership sets the baseline role across all registered repositories in that organization. Repository grants can elevate that role only for the named repository and cannot lower the baseline. No role applies across organizations. `/auth/session` returns the internal organization ID in `organization` and the organization baseline in `role`, excluding repository-specific elevation. Unknown repositories and other organizations' work return 404; insufficient roles within the same organization and unregistered memberships return 403. Work-item response shapes and worker lease contracts remain unchanged, while new repository names are normalized to lowercase.
+
+GitHub webhooks require a valid signature and matching registered repository and installation ID before creating work. Web submissions in OIDC mode also use the policy's installation ID. Slack commands resolve the signed `(team_id, user_id)` binding to a principal and use the same authorization checks; `SLACK_APPROVER_USER_IDS` no longer grants approval rights. Slack work records use the linked principal ID as actor. The global Slack notification channel remains deployment-wide, so enable notifications only where every channel participant may view the transmitted work information.
+
+Isolated development mode auto-registers its dedicated organization and repository on direct work submission. The development organization cannot overlap an OIDC organization or `legacy`. Organization/repository authorization is implemented; immutable detailed audit records and user cancellation remain IAM/OPS follow-up scope.
 
 ## Observability and correlation
 
@@ -88,7 +119,7 @@ GITHUB_PRIVATE_KEY_PATH=/run/secrets/github-app-private-key.pem
 AGENT_TRIGGER_LABEL=agent-ready
 ```
 
-Mount the PEM at the configured path with read permission only for the API user. Installing the App on a repository lets direct web requests resolve its installation automatically. GitHub issue events supply the installation ID in the signed webhook. Applying `agent-ready` queues the issue; the delivery token is not minted until a human approves the verified patch.
+Mount the PEM at the configured path with read permission only for the API user. OIDC mode requires the repository's App installation ID in the organization policy; only direct development-mode requests discover installation metadata automatically. GitHub issues carrying `agent-ready` are queued only when the signature and registered installation ID match. Delivery tokens are not minted until an authorized user approves the verified patch.
 
 ## Production control plane
 
