@@ -88,6 +88,7 @@ from .models import (
 )
 from .observability import (
     DELIVERY_RECOVERY,
+    RUNTIME_HEALTH,
     ObservabilityMiddleware,
     configure_observability,
     metrics_payload,
@@ -100,6 +101,7 @@ from .oidc import (
     code_challenge,
     get_oidc_provider,
 )
+from .runtime_monitor import monitor_runtime_health
 from .schemas import (
     ApprovalCreate,
     ArtifactCreate,
@@ -173,11 +175,19 @@ async def lifespan(_: FastAPI):
             readiness.expected_heads,
         )
     DELIVERY_RECOVERY.start()
+    RUNTIME_HEALTH.reset()
     recovery = asyncio.create_task(recover_startup_deliveries(), name="delivery-startup-recovery")
+    monitor = asyncio.create_task(
+        monitor_runtime_health(RUNTIME_HEALTH, runtime_settings), name="runtime-health-monitor",
+    )
     try:
         yield
     finally:
         recovery.cancel()
+        monitor.cancel()
+        with suppress(asyncio.CancelledError):
+            await monitor
+        RUNTIME_HEALTH.unavailable()  # Also covers cancellation before the task's first step.
         with suppress(asyncio.CancelledError):
             await recovery
         if recovery.cancelled():
