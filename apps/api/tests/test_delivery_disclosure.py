@@ -1,6 +1,9 @@
+import asyncio
 import errno
 import json
+import os
 import sys
+from pathlib import Path
 
 import httpx
 import pytest
@@ -13,7 +16,7 @@ from test_observability import MemoryExporter
 from test_worker_credentials import database as database
 
 from app import delivery
-from app.models import AgentEvent, DeliveryJob, WorkItem, WorkStatus
+from app.models import AgentEvent, DeliveryBundle, DeliveryJob, WorkItem, WorkStatus
 
 real_command = delivery.run_command
 
@@ -101,3 +104,55 @@ async def test_upstream_failure_preserves_only_a_bounded_stage(pending_delivery,
         assert state.error == f"GitHub delivery failed at {stage} (upstream_error)"
         assert event.message == state.error
         assert event.payload == {"stage": stage, "error_code": "upstream_error"}
+
+
+async def test_real_git_patch_failure_does_not_publish_a_private_filename(
+    pending_delivery, tmp_path,
+):
+    job = pending_delivery
+    source = tmp_path / "source"
+    environment = {
+        "PATH": os.environ["PATH"], "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": f"url.{source.as_uri()}.insteadOf",
+        "GIT_CONFIG_VALUE_0": "https://github.com/acme/test.git",
+    }
+    await real_command("git", "init", "--initial-branch=main", str(source),
+                       environment=environment)
+    await asyncio.to_thread((source / "README.md").write_text, "Local acceptance repository\n")
+    await real_command("git", "add", "README.md", cwd=source, environment=environment)
+    await real_command("git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                       "commit", "-m", "Test fixture", cwd=source, environment=environment)
+    marker = "synthetic-private-patch-path"
+    patch = (f"diff --git a/{marker} b/{marker}\n--- a/{marker}\n+++ b/{marker}\n"
+             "@@ -1 +1 @@\n-before\n+after\n").encode()
+    # Establish that real Git, not a mocked exception, emits the private filename.
+    probe = await asyncio.create_subprocess_exec(
+        "git", "apply", "--index", "--binary", "-", cwd=source, env=environment,
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await probe.communicate(patch)
+    assert probe.returncode != 0 and marker.encode() in stderr
+    async with job.sessions() as session:
+        bundle = await session.get(DeliveryBundle, job.work.id)
+        await asyncio.to_thread(Path(bundle.object_path).write_bytes, patch)
+
+    async def command(*args, **kwargs):
+        kwargs["environment"] = {**kwargs.get("environment", {}), **environment}
+        return await real_command(*args, **kwargs)
+
+    job.command.side_effect = command
+    await delivery.deliver_work(job.work.id)
+    async with job.sessions() as session:
+        state = await session.get(DeliveryJob, job.work.id)
+        events = list((await session.scalars(select(AgentEvent))).all())
+        assert state.state == "failed"
+        assert state.error == "GitHub delivery failed at apply (command_failed)"
+        assert all(marker not in event.message for event in events)
+        assert (await session.get(WorkItem, job.work.id)).status == WorkStatus.FAILED
+    assert [call.args[:2] for call in job.command.await_args_list] == [
+        ("git", "clone"), ("git", "checkout"), ("git", "apply"),
+    ]
+    job.github.create_pull_request.assert_not_awaited()
+    assert not list((tmp_path / "artifacts").glob("delivery-*"))
