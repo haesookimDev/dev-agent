@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { localeTag, type Locale } from "../i18n";
+import type { Locale } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
 import { statusLabel } from "../lib/status";
 import { filterWorkItems, matchesFilter, type WorkFilter } from "../lib/work-list";
 import type { WorkItem } from "../lib/types";
 import { CreateWork } from "./create-work";
 import { Icon } from "./icon";
+import { LocalTime } from "./local-time";
 
 export function DashboardWorkspace({ items, locale, messages }: {
   items: WorkItem[]; locale: Locale; messages: MessageCatalog;
@@ -55,7 +56,7 @@ export function DashboardWorkspace({ items, locale, messages }: {
           {visible.map((item) => <Link className="workRow" href={`/${locale}/work-items/${item.id}`} key={item.id}>
             <div className="workIdentity"><span className="repositoryIcon"><Icon name="git" /></span><div><h3>{item.title}</h3><p>{item.repository}<span className="sourceTag">{messages.source[item.source]}</span></p></div></div>
             <span className={`status status-${item.status}`}>{statusLabel(item.status, messages.status)}</span>
-            <time dateTime={item.updated_at}>{new Date(item.updated_at).toLocaleString(localeTag(locale), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
+            <LocalTime value={item.updated_at} locale={locale} />
             <Icon name="arrow" className="rowArrow" />
           </Link>)}
         </div> : <div className="empty">

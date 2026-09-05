@@ -2,11 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "../i18n";
-import { localeTag } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
 import { apiJSON, browserApi, requestErrorMessage } from "../lib/browser-api";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
+import { LocalTime } from "./local-time";
 
 interface LiveRunProps {
   initialWork: WorkItem;
@@ -153,7 +153,7 @@ export function LiveRun({
               <article className={`event event-${event.level}`} key={event.id}>
                 <div>
                   <span>{event.source}</span>
-                  <time>{new Date(event.created_at).toLocaleTimeString(localeTag(locale))}</time>
+                  <LocalTime value={event.created_at} locale={locale} timeOnly />
                 </div>
                 <h3>{event.message || event.event_type}</h3>
                 <p>{event.event_type}</p>
