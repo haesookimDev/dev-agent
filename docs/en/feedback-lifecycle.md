@@ -32,14 +32,16 @@ A stale submission rejected with `409` refreshes the work and shows an unsent no
 ## Verification
 
 - Before the fix, ten regression cases failed: Web/Slack × five closed states.
-- `make test`: API 229 (including real PostgreSQL locking tests, no skips), Runner 6, Web 27 plus type checking, Worker/Gateway Go tests passed.
+- `make test`: API 229 (including real PostgreSQL locking tests, no skips), Runner 6, Web 30 plus type checking, Worker/Gateway Go tests passed.
 - `make lint`, `npm run build --prefix apps/web`: passed.
-- `npm run test:e2e --prefix apps/web`: ten passed, final local run 53.8 seconds. Each invocation provisions a fresh API/database and single-slot Mock Worker.
+- `npm run test:e2e --prefix apps/web`: twelve passed on the integrated code, final local run about 1.1 minutes. Each invocation provisions a fresh API/database and single-slot Mock Worker.
 - After real API/Worker approval and completion, a browser with its SSE stream disconnected receives 409 for late feedback and retains a selectable/copyable draft. Live closure also verifies focus/draft preservation and removal of the old success notice.
 - Five closed states × both locales, 390px overflow and evidence links additionally use explicit presentation response fixtures. These are not proof of actual failed/cancelled execution.
 - In a separate local SQLite API + two scoped-auth Mock Workers + production Web build, used the Orca browser to create work, send valid feedback, re-verify and enter a new draft. Approved the same work in English using Chrome Computer-use, then directly checked SSE closure, draft preservation and removal of send controls in Korean.
 - The final real work is `completed`, version 12, with one accepted feedback event. Late feedback returns 409 without changing work/events, and both Workers have all resources restored. No normal-flow browser console errors or request/page errors in separate English/390px Chromium renders.
 - Hands-on use exposed a stale success notice. Fixed it, rebuilt the production Web bundle and repeated the cross-browser journey.
+- The initial PR CI passed, but log review exposed five Korean time hydration errors, so merging was paused. Merged and integrated the separate [time formatting fix and global browser error guard](time-hydration.md) first. Every E2E now fails on unhandled page errors.
+- After full verification on integration commit `69958be`, rebuilt the production bundle and isolated runtime. Repeated creation, feedback, re-verification, new draft, approval and completion in Orca, then checked the completed English view in actual Chrome. Final images and state/event/resource assertions come from this integrated run; Korean timestamps match browser-local formatting.
 
 Before/after images use different synthetic work items. The before image reuses the existing dashboard verification's completed view. The after draft view was captured directly in Orca; English/390px images render the same production Web build in a separate Chromium browser.
 
