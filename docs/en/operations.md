@@ -123,6 +123,8 @@ When the OTLP endpoint is empty, application spans are not exported, while Prome
 
 ## GitHub App delivery
 
+Diagnose delivery failures with stages and error codes instead of raw exceptions. See [safe delivery-failure diagnostics](delivery-failure-safety.md) for the event contract, historical-record handling, and verification evidence.
+
 Create and install a GitHub App with repository metadata read access and Issues, Contents, and Pull requests read/write access. Configure its webhook URL as `https://<control-host>/webhooks/github`, subscribe to Issues events, and use the same random value for the App webhook secret and `GITHUB_WEBHOOK_SECRET`. Then expose these only to the API process:
 
 ```dotenv
