@@ -144,7 +144,10 @@ async def issue_preview_grant(
     record_preview_audit(session, request, work, actor, decision, grant)
     await session.commit()
     response.headers.update(NO_STORE)
-    return {"launch_code": code, "exchange_url": f"https://{grant.hostname}/_kelpie/authorize",
+    authority = grant.hostname
+    if config.preview_https_port != 443:
+        authority += f":{config.preview_https_port}"
+    return {"launch_code": code, "exchange_url": f"https://{authority}/_kelpie/authorize",
             "expires_at": utc(grant.launch_expires_at)}
 
 

@@ -22,12 +22,15 @@ type config struct {
 	controlURL   string
 	gatewayToken string
 	authMode     string
+	tlsCert      string
+	tlsKey       string
 }
 
 type resolution struct {
-	TargetURL  string `json:"target_url"`
-	WorkItemID string `json:"work_item_id"`
-	ReadOnly   bool   `json:"read_only"`
+	TargetURL  string    `json:"target_url"`
+	WorkItemID string    `json:"work_item_id"`
+	ReadOnly   bool      `json:"read_only"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type gateway struct {
@@ -43,9 +46,15 @@ func main() {
 		controlURL:   strings.TrimRight(env("KELPIE_CONTROL_URL", "http://api:8000"), "/"),
 		gatewayToken: os.Getenv("KELPIE_GATEWAY_TOKEN"),
 		authMode:     env("KELPIE_GATEWAY_AUTH_MODE", "disabled"),
+		tlsCert:      os.Getenv("KELPIE_GATEWAY_TLS_CERT_FILE"),
+		tlsKey:       os.Getenv("KELPIE_GATEWAY_TLS_KEY_FILE"),
 	}
 	if len(configuration.gatewayToken) < 32 {
 		logger.Error("KELPIE_GATEWAY_TOKEN must contain at least 32 characters")
+		os.Exit(2)
+	}
+	if configuration.authMode == "oidc" && (configuration.tlsCert == "" || configuration.tlsKey == "") {
+		logger.Error("OIDC Preview requires TLS certificate and key files")
 		os.Exit(2)
 	}
 	handler := &gateway{config: configuration, client: &http.Client{Timeout: 10 * time.Second}, logger: logger}
@@ -59,13 +68,23 @@ func main() {
 		_ = server.Shutdown(shutdown)
 	}()
 	logger.Info("preview gateway listening", "address", configuration.listen)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("gateway stopped", "error", err)
+	var serveErr error
+	if configuration.authMode == "oidc" {
+		serveErr = server.ListenAndServeTLS(configuration.tlsCert, configuration.tlsKey)
+	} else {
+		serveErr = server.ListenAndServe()
+	}
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		logger.Error("gateway stopped", "error", serveErr)
 		os.Exit(1)
 	}
 }
 
 func (g *gateway) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if g.config.authMode == "oidc" {
+		g.serveOIDC(response, request)
+		return
+	}
 	if g.config.authMode != "development" {
 		http.Error(
 			response,

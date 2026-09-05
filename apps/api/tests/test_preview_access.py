@@ -308,3 +308,18 @@ async def test_resolution_rejects_unsafe_or_malformed_stored_targets(
 
 def test_preview_access_defaults_to_disabled():
     assert Settings(_env_file=None).preview_access_enabled is False
+
+
+async def test_explicit_https_port_does_not_change_host_scope(preview):
+    _, config, _, host = preview
+    config.preview_https_port = 8443
+    launch = await issue(preview)
+    assert launch["exchange_url"] == f"https://{host}:8443/_kelpie/authorize"
+
+
+@pytest.mark.parametrize("port", [0, 65536])
+def test_preview_https_port_must_be_valid(port):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, preview_https_port=port)
