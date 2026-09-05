@@ -32,6 +32,7 @@ export function LiveRun({
   const [actionNotice, setActionNotice] = useState("");
   const [feedbackDraft, setFeedbackDraft] = useState("");
   const feedbackAllowed = canSendFeedback(work.status);
+  const progress = statusProgress(work.status);
   const lastEvent = useRef(initialEvents.at(-1)?.id ?? 0);
   const [connection, setConnection] = useState<"connecting" | "live" | "reconnecting">("connecting");
   const [streamError, setStreamError] = useState(false);
@@ -148,8 +149,14 @@ export function LiveRun({
         </div>
         <div className="runStatus">
           <span className={`status status-${work.status}`}>{statusLabel(work.status, messages.status)}</span>
-          <strong>{statusProgress(work.status)}%</strong>
-          <div className="progress"><i style={{ width: `${statusProgress(work.status)}%` }} /></div>
+          {progress === null ? (
+            <p className="stoppedProgress">{messages.run.stoppedProgress}</p>
+          ) : (
+            <>
+              <strong>{progress}%</strong>
+              <div className="progress"><i style={{ width: `${progress}%` }} /></div>
+            </>
+          )}
         </div>
       </section>
       <section className="runGrid">

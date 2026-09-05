@@ -6,13 +6,18 @@ describe("status helpers", () => {
   it("maps the normal delivery path monotonically", () => {
     const path = ["queued", "analyzing", "verifying", "committing", "completed"] as const;
     const values = path.map(statusProgress);
-    expect(values).toEqual([...values].sort((a, b) => a - b));
+    expect(values).not.toContain(null);
+    expect(values).toEqual([...values].sort((a, b) => Number(a) - Number(b)));
     expect(values.at(-1)).toBe(100);
   });
 
   it("marks human intervention states", () => {
     expect(isAttentionStatus("awaiting_approval")).toBe(true);
     expect(isAttentionStatus("implementing")).toBe(false);
+  });
+
+  it.each(["failed", "cancelled"] as const)("does not claim completion for %s work", (status) => {
+    expect(statusProgress(status)).toBeNull();
   });
 
   it("uses localized status labels", () => {

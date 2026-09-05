@@ -55,4 +55,4 @@ Before/after images use different synthetic work items. The before image reuses 
 
 No new dependencies or changes to authentication/approval policy. Roll back the related feature commits if necessary, noting that this re-enables ineffective feedback after termination. Actual GitHub delivery, IdP, VM, WireGuard and noVNC operation are outside this Mock verification.
 
-Misleading 100% progress for failed/cancelled work is a separate follow-up UI change. Remaining documented MVP items (immutable audit, preview authorization, secret checks, operational readiness and real VM verification) still require work; this change does not complete the MVP.
+Misleading 100% progress for failed/cancelled work was fixed in a [separate follow-up UI change](terminal-progress.md). Remaining documented MVP items (immutable audit, preview authorization, secret checks, operational readiness and real VM verification) still require work; this change does not complete the MVP.

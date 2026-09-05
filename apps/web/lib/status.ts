@@ -12,9 +12,9 @@ const steps: WorkStatus[] = [
   "completed",
 ];
 
-export function statusProgress(status: WorkStatus): number {
+export function statusProgress(status: WorkStatus): number | null {
   if (status === "completed") return 100;
-  if (["failed", "cancelled"].includes(status)) return 100;
+  if (["failed", "cancelled"].includes(status)) return null;
   if (["awaiting_feedback", "awaiting_input", "budget_exhausted"].includes(status)) return 62;
   const index = steps.indexOf(status);
   return index < 0 ? 0 : Math.round((index / (steps.length - 1)) * 100);
