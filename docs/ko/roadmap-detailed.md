@@ -53,7 +53,7 @@
 
 ### OBS-001 · Observability 및 Correlation — M
 
-상태: 기본 Correlation ID·Trace·Metric·구조화 Log, DB 준비 검사 제한, 시작 시 전달 복구 지표와 [기본 장애 알림](monitoring-alerts.md)을 구현했습니다. 외부 의존성 Readiness, Worker Heartbeat·Lease·상시 Queue 알림과 통합 운영 Dashboard는 남아 있습니다.
+상태: 기본 Correlation ID·Trace·Metric·구조화 Log, DB 준비 검사 제한, 시작 시 전달 복구 지표와 [기본 장애 알림](monitoring-alerts.md)을 구현했습니다. [Worker Heartbeat·활성 Lease 만료·Queued 작업의 지속 관측과 관측 실패 알림](runtime-monitoring.md)을 추가했습니다(2026-09-06). 외부 의존성 Readiness, 실행·DeliveryJob 전체의 정체 감시와 통합 운영 Dashboard는 남아 있습니다.
 
 범위:
 

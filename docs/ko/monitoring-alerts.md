@@ -18,7 +18,7 @@
 
 `for`는 Prometheus가 조건을 연속 관찰한 시간이며 API 기동 시각이나 모든 장애의 정확한 시작 시각이 아닙니다. Scrape·평가 간격, 오래된 시계열 소멸과 Prometheus 재기동이 감지 시점에 영향을 줍니다. 조건 소멸 후 다음 평가에서 해제됩니다. 정상적인 긴 전달도 5분 Warning을 만들 수 있으므로 기준과 테스트를 배포의 정상 처리 시간에 맞춰 함께 조정하세요. [공식 규칙 의미](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
 
-Counter 첫 수집 이전 실패, Scrape 사이에 시작·종료한 프로세스, 최초 값만 있고 증가를 관찰하지 못한 실패는 놓칠 수 있습니다. Counter Reset 자체는 새 실패로 세지 않습니다. 알림은 모든 Event 전달을 보장하거나 Job·Event·감사를 대체하지 않습니다. Worker Heartbeat·Lease·상시 Queue, 외부 Object Store/SCM Readiness와 통합 운영 Dashboard는 별도 범위입니다.
+Counter 첫 수집 이전 실패, Scrape 사이에 시작·종료한 프로세스, 최초 값만 있고 증가를 관찰하지 못한 실패는 놓칠 수 있습니다. Counter Reset 자체는 새 실패로 세지 않습니다. 알림은 모든 Event 전달을 보장하거나 Job·Event·감사를 대체하지 않습니다. 같은 규칙 파일에 추가된 [Worker Heartbeat·Lease·Queued 작업 지속 관측과 관측 실패 알림](runtime-monitoring.md)은 별도 계약과 대응 절차를 따릅니다. 외부 Object Store/SCM Readiness, 실행·DeliveryJob 전체의 정체 감시와 통합 운영 Dashboard는 남아 있습니다.
 
 ## 설치·검증
 
@@ -83,6 +83,8 @@ Prometheus `/targets` 오류와 API 프로세스·내부 DNS/Network·Proxy 제�
 Work/DeliveryJob의 최종 상태, [안전한 단계·오류 코드](delivery-failure-safety.md), 검증 Bundle과 승인 이력을 확인합니다. GitHub 설치·저장소 권한 또는 일시적인 SCM 장애를 점검하되 Token·Patch·원본 예외를 알림에 넣지 마세요. 복구 완료와 개별 실패를 혼동하지 않습니다. 이 규칙은 자동 재시도하거나 승인·격리 Gate를 우회할 권한을 부여하지 않습니다.
 
 ## 검증 기록
+
+아래는 기본 알림 도입 당시 기록입니다. 추가된 지속 관측의 검증은 [실행 관측 문서](runtime-monitoring.md)를 확인하세요.
 
 규칙 `43af5cf`, 검증 명령 `04ed249`, CI `126337f` 기준입니다. 이후 이 PR의 변경은 지침·문서뿐입니다.
 

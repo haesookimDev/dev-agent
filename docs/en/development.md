@@ -56,3 +56,5 @@ Required check `Python` also runs `python -m pytest -q apps/api/tests/test_cance
 Report each commit's purpose, automated and hands-on results, PR/CI/merge status, uncommitted changes, remaining MVP items and required external environments. Follow [AGENTS.md](../../AGENTS.md) for detailed repository rules.
 
 [Delivery audit](delivery-audit.md)'s real Git/API/loopback-SCM regression runs in existing `make test-api` and required `Python` CI, without external SCM credentials or an extra service job. `test_audit_postgres.py` also verifies background constraints and retained-row migration. Future delivery changes must preserve approval provenance recording and revalidation immediately before external writes.
+
+For [runtime observation](runtime-monitoring.md) changes, run `test_runtime_health.py` with `KELPIE_TEST_POSTGRES_URL` as well as SQLite. Required `Python` CI reuses its existing database service. Real HTTP failure/heartbeat/cancellation regression is in `make test-api`; alert timing, missing-data, and recovery semantics are in `make test-monitoring`. Do not confuse zero/missing/failed observations or replace actual HTTP verification with mocks for speed.
