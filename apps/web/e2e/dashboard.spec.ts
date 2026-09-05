@@ -12,7 +12,10 @@ test("create, stream, feedback, re-verify and approve work using real services",
   await expect(page).toHaveURL(/\/en\/work-items\/[a-f0-9-]+$/);
   await expect(page.locator(".runStatus")).toContainText("Awaiting approval");
   await page.getByRole("textbox", { name: "Feedback", exact: true }).fill("Check the empty state before delivery.");
+  const feedbackResponse = page.waitForResponse((response) => response.url().endsWith("/feedback") && response.request().method() === "POST");
   await page.getByRole("button", { name: /^Send to agent/ }).click();
+  const acceptedFeedback = await feedbackResponse;
+  expect(acceptedFeedback.status()).toBe(200);
   await expect(page.getByRole("heading", { name: "Check the empty state before delivery.", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Mock revision ready for approval", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /^Approve commit & PR/ }).click();
@@ -22,10 +25,18 @@ test("create, stream, feedback, re-verify and approve work using real services",
   await expect(page.getByRole("button", { name: /^Send to agent/ })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Feedback", exact: true })).toHaveCount(0);
   const workId = page.url().split("/").at(-1);
+  const auditResponse = await request.get(`http://127.0.0.1:18100/api/work-items/${workId}/audit-log`);
+  expect(auditResponse.status()).toBe(200);
+  expect(auditResponse.headers()["cache-control"]).toBe("no-store");
+  const audit = await auditResponse.json();
+  expect(audit).toHaveLength(1);
+  expect(audit[0]).toMatchObject({ action: "feedback.created", transport: "web", identity_provider: "development", effective_role: "administrator", required_role: "operator", request_id: acceptedFeedback.headers()["x-request-id"] });
+  expect(JSON.stringify(audit)).not.toContain("Check the empty state before delivery.");
   const late = await request.post(`http://127.0.0.1:18100/api/work-items/${workId}/feedback`, { data: {
     message: "Must not accept feedback after delivery",
   } });
   expect(late.status()).toBe(409);
+  expect(await (await request.get(`http://127.0.0.1:18100/api/work-items/${workId}/audit-log`)).json()).toEqual(audit);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Feedback closed", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Switch to Korean" }).click();
