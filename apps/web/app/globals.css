@@ -123,6 +123,7 @@ form button { width: 100%; justify-content: space-between; margin-top: 1px; }
 .requirement { color: var(--muted); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin-top: 14px; }
 .runStatus { padding: 17px; border: 1px solid var(--line); background: white; border-radius: 9px; }
 .runStatus strong { display: block; font-size: 27px; margin-top: 10px; letter-spacing: -.04em; }
+.stoppedProgress { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .progress { height: 4px; overflow: hidden; background: #e9eef7; border-radius: 4px; margin-top: 10px; }
 .progress i { display: block; height: 100%; background: var(--blue); transition: width .3s; }
 .runGrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; align-items: start; }

@@ -70,6 +70,7 @@ export interface MessageCatalog {
     permissionError: string;
   };
   run: {
+    stoppedProgress: string;
     back: string;
     liveStream: string;
     agentActivity: string;

@@ -71,6 +71,7 @@ export const en = {
     permissionError: "You do not have permission to create work in this repository. Contact your administrator.",
   },
   run: {
+    stoppedProgress: "This work did not complete. Review the activity log.",
     back: "All work",
     liveStream: "Live stream",
     agentActivity: "Agent activity",

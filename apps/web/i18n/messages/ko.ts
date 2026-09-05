@@ -71,6 +71,7 @@ export const ko = {
     permissionError: "이 저장소에 작업을 생성할 권한이 없습니다. 관리자에게 권한을 확인하세요.",
   },
   run: {
+    stoppedProgress: "작업이 완료되지 않았습니다. 활동 기록을 확인하세요.",
     back: "전체 작업",
     liveStream: "실시간 스트림",
     agentActivity: "에이전트 활동",

@@ -76,6 +76,18 @@ test("live closure preserves focused input; all closed states have localized rea
       await page.route(url, (route) => route.fulfill({ json: { ...completed, status, version: completed.version + 100 } }));
       await page.goto(`/${locale}/work-items/${created.id}`);
       await expect(page.locator(".runStatus")).toContainText(messages.status[status]);
+      if (status === "failed" || status === "cancelled") {
+        await expect(page.locator(".runStatus")).not.toContainText("%");
+        await expect(page.locator(".runStatus .progress")).toHaveCount(0);
+        await expect(page.locator(".stoppedProgress")).toHaveText(messages.run.stoppedProgress);
+      } else if (status === "completed") {
+        await expect(page.locator(".runStatus")).toContainText("100%");
+        await expect.poll(() => page.locator(".runStatus .progress").evaluate((element) => {
+          const width = element.getBoundingClientRect().width;
+          const filled = element.firstElementChild!.getBoundingClientRect().width;
+          return width > 0 && Math.abs(width - filled) < 0.5;
+        })).toBe(true);
+      }
       await expect(page.getByRole("heading", { name: messages.run.feedbackClosedTitle, exact: true })).toBeVisible();
       await expect(page.locator(".controlPanel textarea, .controlPanel button")).toHaveCount(0);
       await expect(page.locator(".artifactList a").first()).toBeVisible();
