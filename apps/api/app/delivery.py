@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
+import httpx
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 from sqlalchemy import select
@@ -27,6 +28,22 @@ DELIVERY_WRITE_SECONDS = 45
 
 class DeliveryStopped(Exception):
     """The work no longer permits publication; do not overwrite its current outcome."""
+
+
+class DeliveryCommandError(RuntimeError):
+    """A subprocess failed; its arguments and output must remain private."""
+
+
+def delivery_error_code(error: Exception) -> str:
+    if isinstance(error, DeliveryCommandError):
+        return "command_failed"
+    if isinstance(error, (TimeoutError, httpx.TimeoutException)):
+        return "timeout"
+    if isinstance(error, httpx.HTTPError):
+        return "upstream_error"
+    if isinstance(error, OSError):
+        return "filesystem_error"
+    return "internal_error"
 
 
 async def lock_delivery(
@@ -62,14 +79,17 @@ async def run_command(
     cwd: Path | None = None,
     environment: dict[str, str] | None = None,
 ) -> str:
-    process = await asyncio.create_subprocess_exec(
-        *command,
-        cwd=cwd,
-        env=environment,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        start_new_session=True,
-    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=cwd,
+            env=environment,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError:
+        raise DeliveryCommandError("delivery subprocess could not start") from None
     try:
         output, _ = await process.communicate()
     except asyncio.CancelledError:
@@ -78,11 +98,11 @@ async def run_command(
             os.killpg(process.pid, signal.SIGKILL)
         await process.communicate()
         raise
-    text = output.decode(errors="replace")
     if process.returncode != 0:
-        safe_command = " ".join(command[:2])
-        raise RuntimeError(f"{safe_command} failed with {process.returncode}: {text[-4000:]}")
-    return text
+        raise DeliveryCommandError(
+            f"delivery subprocess failed with exit code {process.returncode}",
+        )
+    return output.decode(errors="replace")
 
 
 def branch_name(work: WorkItem) -> str:
@@ -133,22 +153,28 @@ async def _deliver_work(work_item_id: str) -> None:
     except DeliveryStopped:
         return
 
+    stage = "configuration"
     try:
         if not work.github_installation_id:
             raise RuntimeError("repository has no GitHub App installation")
+        stage = "token"
         async with guard_delivery_write(work_item_id):
             token = await github.installation_token(work.github_installation_id)
+        stage = "metadata"
         metadata = await github.repository(work.repository, token)
         base_branch = metadata["default_branch"]
         target_branch = branch_name(work)
         owner = work.repository.split("/", 1)[0]
+        stage = "existing_pull_request"
         pull_request_url = await github.find_pull_request(
             work.repository, token, owner=owner, head=target_branch
         )
+        stage = "existing_branch"
         branch_exists = pull_request_url is None and await github.branch_exists(
             work.repository, token, target_branch
         )
         if pull_request_url is None and not branch_exists:
+            stage = "workspace"
             temporary, repository, askpass = await asyncio.to_thread(
                 prepare_delivery_workspace, settings.artifact_root
             )
@@ -159,6 +185,7 @@ async def _deliver_work(work_item_id: str) -> None:
                     "GIT_TERMINAL_PROMPT": "0",
                     "KELPIE_GIT_PASSWORD": token,
                 }
+                stage = "clone"
                 await run_command(
                     "git",
                     "clone",
@@ -170,10 +197,13 @@ async def _deliver_work(work_item_id: str) -> None:
                     str(repository),
                     environment=environment,
                 )
+                stage = "checkout"
                 await run_command("git", "checkout", "-b", target_branch, cwd=repository)
+                stage = "apply"
                 await run_command(
                     "git", "apply", "--index", "--binary", bundle.object_path, cwd=repository
                 )
+                stage = "commit"
                 await run_command(
                     "git", "config", "user.name", settings.git_bot_name, cwd=repository
                 )
@@ -181,6 +211,7 @@ async def _deliver_work(work_item_id: str) -> None:
                     "git", "config", "user.email", settings.git_bot_email, cwd=repository
                 )
                 await run_command("git", "commit", "-m", work.title, cwd=repository)
+                stage = "push"
                 async with guard_delivery_write(work_item_id):
                     await run_command(
                         "git",
@@ -194,6 +225,7 @@ async def _deliver_work(work_item_id: str) -> None:
             finally:
                 await asyncio.to_thread(temporary.cleanup)
         if pull_request_url is None:
+            stage = "pull_request"
             async with guard_delivery_write(work_item_id):
                 pull_request_url = await github.create_pull_request(
                     work.repository,
@@ -203,6 +235,7 @@ async def _deliver_work(work_item_id: str) -> None:
                     base=base_branch,
                     body=pull_request_body(work),
                 )
+        stage = "finalize"
         async with SessionLocal() as session:
             current, job = await lock_delivery(session, work_item_id)
             current.pull_request_url = pull_request_url
@@ -229,14 +262,19 @@ async def _deliver_work(work_item_id: str) -> None:
     except DeliveryStopped:
         return
     except Exception as error:
+        error_code = delivery_error_code(error)
+        message = f"GitHub delivery failed at {stage} ({error_code})"
         span = trace.get_current_span()
-        span.record_exception(error)
-        span.set_status(Status(StatusCode.ERROR, str(error)))
+        span.set_attribute("kelpie.delivery.stage", stage)
+        span.set_attribute("kelpie.delivery.error_code", error_code)
+        # Do not export upstream messages, arguments, paths, or chained tracebacks.
+        span.record_exception(RuntimeError(message))
+        span.set_status(Status(StatusCode.ERROR, message))
         try:
             async with SessionLocal() as session:
                 current, job = await lock_delivery(session, work_item_id)
                 job.state = "failed"
-                job.error = str(error)[:4000]
+                job.error = message
                 job.updated_at = utcnow()
                 await emit_event(
                     session,
@@ -245,7 +283,8 @@ async def _deliver_work(work_item_id: str) -> None:
                         event_type="delivery.failed",
                         source="delivery:github",
                         level="error",
-                        message=str(error)[:4000],
+                        message=message,
+                        payload={"stage": stage, "error_code": error_code},
                     ),
                 )
                 await transition_work_item(

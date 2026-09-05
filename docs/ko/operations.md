@@ -123,6 +123,8 @@ OTLP Endpoint를 비워 두면 Application Span은 외부로 전송하지 않지
 
 ## GitHub App 전달
 
+전달 실패는 원본 예외 대신 단계와 오류 코드로 진단합니다. 이벤트 계약, 과거 기록 처리와 검증 증거는 [안전한 전달 실패 진단](delivery-failure-safety.md)을 참고하세요.
+
 저장소 Metadata 읽기와 Issues, Contents, Pull requests 읽기·쓰기 권한을 가진 GitHub App을 만들고 설치합니다. Webhook URL을 `https://<control-host>/webhooks/github`으로 설정하고 Issues Event를 구독합니다. App Webhook Secret과 `GITHUB_WEBHOOK_SECRET`에는 같은 무작위 값을 사용합니다. 다음 값은 API 프로세스에만 제공합니다.
 
 ```dotenv
