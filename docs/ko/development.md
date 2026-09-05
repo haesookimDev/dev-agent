@@ -38,6 +38,8 @@ Playwright는 단위 테스트가 다루지 못하는 실제 브라우저와 서
 
 ## CI와 머지
 
+모든 브라우저 회귀 테스트는 공통 Fixture에서 처리되지 않은 화면 오류를 검사합니다. 테스트 수가 모두 통과해도 CI 로그에 숨은 Hydration·런타임 오류가 없는지 확인합니다. [시간 표시 오류와 검증 사례](time-hydration.md)를 참고하세요.
+
 필수 검사와 명령은 `.github/workflows`의 Workflow가 기준입니다. CI는 언어별 병렬 실행, 의존성 캐시, 이전 PR 실행 취소와 Timeout을 사용합니다. 검사 누락·실패·취소·대기는 통과가 아니며, 정확한 최신 Head SHA의 필수 검사와 미해결 리뷰를 확인한 뒤 머지합니다. 보호 규칙을 우회하거나 논리적 커밋을 Squash하지 않습니다.
 
 현재 `CI` Workflow의 필수 검사는 `Python`, `Go`, `Web`입니다. Python은 API·Runner 테스트, Ruff, PostgreSQL 17 Upgrade/Check/Downgrade/Re-upgrade를 실행합니다. Go는 Worker·Gateway 테스트와 vet를 실행합니다. Web은 테스트·타입 검사·ESLint·운영 빌드·Chromium E2E를 실행합니다. 브라우저 바이너리를 캐시하고 보고서와 실패 증거를 `browser-evidence` Artifact로 7일간 보존합니다. 각 Job의 제한은 8분이며, PR에서는 이전 실행을 취소합니다. 짧은 전체 검사를 유지하므로 현재는 경로 기반 생략이나 다중 Version Matrix를 사용하지 않습니다.

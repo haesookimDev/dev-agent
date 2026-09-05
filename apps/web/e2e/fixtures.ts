@@ -1,7 +1,13 @@
 import { expect, test as base } from "@playwright/test";
 
 export { expect };
-export const test = base.extend<{ releaseWork: void }>({
+export const test = base.extend<{ releaseWork: void; runtimeErrors: void }>({
+  runtimeErrors: [async ({ page }, use) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await use();
+    expect(errors, "Unhandled browser errors must fail acceptance, including hydration failures").toEqual([]);
+  }, { auto: true }],
   releaseWork: [async ({ request }, use) => {
     await use();
     // This API is freshly provisioned for this serial suite, never a reused service.
