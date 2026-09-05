@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from .models import WorkerState, WorkSource, WorkStatus
+from .models import Role, WorkerState, WorkSource, WorkStatus
 
 
 class WorkItemCreate(BaseModel):
@@ -58,6 +58,29 @@ class EventView(EventCreate):
     id: int
     work_item_id: str
     correlation_id: str
+    created_at: datetime
+
+
+class AuditRecordView(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    organization_id: str
+    work_item_id: str
+    repository: str
+    action: str
+    target_id: str
+    actor_id: str | None
+    actor_subject: str
+    identity_provider: str
+    organization_role: Role
+    repository_role: Role | None
+    effective_role: Role
+    required_role: Role
+    request_id: str
+    correlation_id: str
+    source_ip: str | None
+    transport: Literal["web", "slack"]
     created_at: datetime
 
 
