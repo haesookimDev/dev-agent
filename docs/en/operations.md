@@ -11,6 +11,16 @@
 
 The `demo` Compose profile already starts the mock worker. It deliberately does not make GitHub writes.
 
+## Worker resource-report ordering
+
+The Worker serializes each heartbeat snapshot and request, claim and local reservation, and release and local return under the same process lock. An old heartbeat therefore cannot overwrite available resources just after an API release and delay the next task until the periodic heartbeat. Execution itself and ordinary work events do not hold this lock.
+
+A successful release returns the local reservation for that work exactly once. If status lookup, terminal transition, or release cannot be confirmed after execution fails, the reservation is retained and execution slots may remain unavailable. Check API connectivity, lease state, and actual VM liveness before recovery. Do not restart the Worker or manually edit database capacity merely to clear reservations.
+
+This ordering guarantee covers concurrent requests within one Worker process only. Restart recovery, multiple daemons sharing an identity, claims with lost responses, and confirmed VM termination or retained-disk reclamation are separate lifecycle work. An API release response does not prove physical VM deletion.
+
+API formats, database schema, and environment variables are unchanged. To apply the update, stop new assignments to the affected Worker and safely settle active work before replacing its binary. Rollback can restore the previous binary under the same conditions, but reintroduces the resource-report race; prefer correcting the cause and rolling forward.
+
 ## Database migrations
 
 In Compose deployments, the one-shot `api-migrate` service must complete `alembic upgrade head` before the API starts. Outside Compose, run the following command from a deployment environment using the same `DATABASE_URL` before rolling out the new API version. The API container image can run `alembic upgrade head` directly.
