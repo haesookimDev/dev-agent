@@ -58,4 +58,4 @@ Webhook과 Gateway는 현재 Secret 하나만 검증하므로 교체에는 소�
 - `make test-api`: 파일 우선순위, 원자적·Projected Volume 방식 교체, 오류 차단, OIDC 캐시를 거친 교체, Webhook·Slack·GitHub 소비자를 검증합니다.
 - `test_secret_runtime.py`: 실제 Uvicorn/SQLite/HTTP 프로세스에서 교체 → 이전 값 401 → 새 값 성공 → 파일 누락 503 → 복구 성공을 재시작 없이 검증합니다. 생성한 테스트 토큰이 API 로그와 DB에 없는지도 검사합니다.
 - 지원하는 여섯 평문 Secret 설정은 Settings의 기본 repr/직렬화에서 제외합니다. 이것은 전체 로그·프로세스 메모리·Crash Dump의 Secret 비노출을 보장하는 기능이 아닙니다.
-- OIDC/Slack 네트워크 소비자 테스트는 모의 공급자를 사용합니다. 실제 외부 계정, 전체 Event/Artifact/Crash Dump/cloud-init 스캔, 침해 Worker 일괄 격리 및 운영 Secret 정책은 아직 완료되지 않았습니다. SEC-001 전체 완료로 표시하지 않습니다.
+- OIDC/Slack 네트워크 소비자 테스트는 모의 공급자를 사용합니다. [Worker 제어 영역 격리](worker-quarantine.md)는 구현했지만 실제 Host/VM/네트워크·기존 연결 차단, 실제 외부 계정, 전체 Event/Artifact/Crash Dump/cloud-init 스캔 및 운영 Secret 정책은 남아 있습니다. SEC-001 전체 완료로 표시하지 않습니다.

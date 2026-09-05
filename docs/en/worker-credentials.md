@@ -46,7 +46,7 @@ Securely deliver the new file to the target host, then atomically replace the de
 
 - Lifetime defaults to 30 days; `--lifetime-seconds` accepts 60 seconds–90 days. Overlap defaults to 600 seconds and accepts 60–3600 seconds. The old token's original expiration is never extended.
 - Replacement tokens belong to the same Worker. `revoke` affects only the specified credential and is idempotent without duplicate events. Other Workers and replacement tokens remain valid.
-- Routine rotation/revocation does not invalidate active work leases. **This is not a compromised-host quarantine command.** VM termination, WireGuard isolation, Preview connection termination, and bulk lease invalidation remain follow-up incident-response work. Do not consider a compromised host contained by this feature alone.
+- Routine rotation/revocation does not invalidate active work leases. Use the separate [control-plane quarantine command](worker-quarantine.md) to block a suspected compromised Worker's credentials, active leases, and delivery together. VM termination, WireGuard isolation, and existing Preview connection termination require separate physical response; token revocation alone does not complete it.
 - The database stores only SHA-256 token hashes. Management events record OS UID, reason, and time. This is not an audit store immutable to database administrators; shared OS accounts cannot identify individuals.
 
 ## Gateway separation and development compatibility
@@ -57,13 +57,13 @@ Shared tokens are accepted only in isolated local demos explicitly setting both 
 
 ## Migration and rollback
 
-The migration preserves existing Workers and resource reservations while adding credential/event tables, an individual-credential-required flag, and a quarantine timestamp. The timestamp supports authentication blocking; operational bulk quarantine is not implemented yet. Request/response bodies are unchanged, but authentication and the Gateway environment rename are breaking changes.
+The migration preserves existing Workers and resource reservations while adding credential/event tables, an individual-credential-required flag, and a quarantine timestamp. The subsequent control-plane quarantine command uses this same schema. Request/response bodies are unchanged, but authentication and the Gateway environment rename are breaking changes.
 
 Roll back only during maintenance with external traffic and Workers blocked. Back up the database before `alembic downgrade 20260905_0004`, which deletes credential, history, and quarantine metadata. Re-upgrading cannot recover it; issue new credentials. Do not reopen production traffic on an older API lacking scoped authentication; roll forward to a corrected version. Never recover production with development shared tokens.
 
 ## Verification
 
 - `make test-api`: real CLI, output protection, permissions, failure cleanup, Worker binding, rotation/revocation/expiration, Gateway separation, and shared-token bypass prevention.
-- Set `KELPIE_TEST_POSTGRES_URL` to an isolated PostgreSQL database with the current schema and run `pytest -q apps/api/tests/test_worker_postgres.py`: both authentication/revocation races and independent Worker progress. Only these two tests skip without that URL; CI always runs them in a dedicated step.
+- Set `KELPIE_TEST_POSTGRES_URL` to an isolated PostgreSQL database with the current schema and run `pytest -q apps/api/tests/test_worker_postgres.py`: authentication/revocation and lease/Preview/delivery quarantine races, independent Worker progress, and publication deadlines. These PostgreSQL tests skip without that URL; CI always runs them in a dedicated step.
 - `make test-worker` and `go test -race ./...` in the Worker directory: atomic replacement, fail-closed missing files, and active work lease separation.
 - `npm run test:e2e --prefix apps/web`: creation, feedback, re-verification, and approval through a real API and scoped-authenticated Mock Worker. Mock verification is not evidence of isolation between two real KVM/browser VMs.

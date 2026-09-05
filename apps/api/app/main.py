@@ -117,6 +117,7 @@ from .service import (
     transition_work_item,
     validate_lease,
 )
+from .worker_quarantine import ensure_worker_not_quarantined
 
 logger = logging.getLogger(__name__)
 
@@ -602,6 +603,7 @@ async def add_feedback(
     actor: ActorDep,
 ) -> WorkItem:
     item = await authorized_work(session, actor, work_item_id, Role.OPERATOR, lock=True)
+    await ensure_worker_not_quarantined(session, item)
     session.add(
         Feedback(
             work_item_id=work_item_id,
@@ -646,6 +648,7 @@ async def decide_approval(
     background_tasks: BackgroundTasks,
 ) -> WorkItem:
     item = await authorized_work(session, actor, work_item_id, Role.APPROVER, lock=True)
+    await ensure_worker_not_quarantined(session, item)
     target: WorkStatus | None = None
     should_deliver = False
     if payload.kind == "pull_request":
@@ -903,6 +906,7 @@ async def slack_command(
     identity = await slack_actor(session, form.get("team_id", ""), user_id)
     required = Role.APPROVER if action == "approve" else Role.OPERATOR
     item = await authorized_work(session, identity, work_item_id, required, lock=True)
+    await ensure_worker_not_quarantined(session, item)
     actor = identity.principal_id
     if action == "feedback" and len(parts) == 3:
         message = parts[2]
@@ -1337,7 +1341,8 @@ async def console_lease(
     session: SessionDep,
     actor: ActorDep,
 ) -> ConsoleLease:
-    await authorized_work(session, actor, work_item_id, Role.OPERATOR)
+    item = await authorized_work(session, actor, work_item_id, Role.OPERATOR, lock=True)
+    await ensure_worker_not_quarantined(session, item)
     lease = await session.get(ConsoleLease, work_item_id, with_for_update=True)
     if lease is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "console is not registered")
@@ -1378,13 +1383,23 @@ async def resolve_preview(
     host: str,
     console: bool = False,
 ) -> dict[str, str | bool]:
-    endpoint = (
-        await session.execute(
-            select(PreviewEndpoint).where(PreviewEndpoint.hostname == host.lower())
-        )
-    ).scalar_one_or_none()
-    if endpoint is None:
+    match = (await session.execute(
+        select(PreviewEndpoint.id, WorkItem.assigned_worker_id)
+        .join(WorkItem, PreviewEndpoint.work_item_id == WorkItem.id)
+        .where(PreviewEndpoint.hostname == host.lower())
+    )).one_or_none()
+    if match is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "preview not found")
+    # Serialize new resolutions with quarantine before reading endpoint/console state.
+    worker = (
+        await session.get(WorkerHost, match.assigned_worker_id, with_for_update=True)
+        if match.assigned_worker_id else None
+    )
+    if worker is None or worker.quarantined_at is not None:
+        raise HTTPException(status.HTTP_410_GONE, "preview unavailable")
+    endpoint = await session.get(PreviewEndpoint, match.id, populate_existing=True)
+    if endpoint is None:
+        raise HTTPException(status.HTTP_410_GONE, "preview unavailable")
     expires_at = endpoint.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)

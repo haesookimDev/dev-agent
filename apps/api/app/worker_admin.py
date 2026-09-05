@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import os
+from dataclasses import asdict
 from pathlib import Path
 
 from sqlalchemy import select
@@ -17,6 +18,7 @@ from .worker_credentials import (
     revoke_credential,
     rotate_credential,
 )
+from .worker_quarantine import quarantine_worker
 
 
 class CredentialFileError(RuntimeError):
@@ -57,6 +59,10 @@ def remove_created_file(path: Path, identity: tuple[int, int]) -> None:
 
 async def execute(session: AsyncSession, arguments: argparse.Namespace) -> dict | list:
     actor = f"uid:{os.getuid()}"
+    if arguments.command == "quarantine":
+        result = await quarantine_worker(session, arguments.worker_id, actor=actor,
+                                         reason=arguments.reason)
+        return {**asdict(result), "physical_cleanup_required": True}
     if arguments.command == "list":
         rows = (await session.execute(select(WorkerCredential, WorkerHost.name).join(
             WorkerHost, WorkerCredential.worker_id == WorkerHost.id,
@@ -108,6 +114,10 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Manage worker credentials on the control host")
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("list", help="list metadata without tokens or hashes")
+    quarantine = commands.add_parser("quarantine",
+        help="revoke control-plane access; physical host/VM isolation is still required")
+    quarantine.add_argument("--worker-id", required=True)
+    quarantine.add_argument("--reason", required=True)
     for command in ("issue", "rotate", "revoke"):
         child = commands.add_parser(command)
         child.add_argument("--reason", required=True)
