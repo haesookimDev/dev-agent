@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth import Actor
 from .authorization import RoleDecision
 from .correlation import current_request_id
-from .models import AuditRecord, ConsoleLease, Feedback, WorkItem
+from .models import Approval, AuditRecord, ConsoleLease, DeliveryBundle, Feedback, WorkItem
 
 
 def request_source_ip(request: Request) -> str | None:
@@ -58,6 +58,41 @@ def record_console_audit(
             "holder_before": before.holder, "version_before": before.version,
             "holder_type_after": lease.holder_type, "holder_after": lease.holder,
             "version_after": lease.version, "expires_at": expiry.isoformat(),
+        },
+    )
+
+
+@dataclass(frozen=True)
+class ApprovalState:
+    budget_minutes: int
+    status: str
+    version: int
+
+    @classmethod
+    def capture(cls, item: WorkItem) -> "ApprovalState":
+        return cls(item.budget_minutes, item.status.value, item.version)
+
+
+async def record_approval_audit(
+    session: AsyncSession, request: Request, item: WorkItem, actor: Actor,
+    decision: RoleDecision, approval: Approval, before: ApprovalState,
+    *, transport: Literal["web", "slack"], delivery_queued: bool,
+) -> None:
+    if approval.id is None:
+        raise ValueError("approval must be flushed before recording its audit identity")
+    bundle = await session.get(DeliveryBundle, item.id) if delivery_queued else None
+    if delivery_queued and bundle is None:
+        raise ValueError("queued delivery requires its approved bundle audit identity")
+    _record_actor_audit(
+        session, request, item, actor, decision, action="approval.decided",
+        target_id=str(approval.id), transport=transport, details={
+            "kind": approval.kind, "decision": approval.decision,
+            "budget_minutes_before": before.budget_minutes,
+            "budget_minutes_after": item.budget_minutes,
+            "work_status_before": before.status, "work_status_after": item.status.value,
+            "work_version_before": before.version, "work_version_after": item.version,
+            "delivery_queued": delivery_queued,
+            "delivery_bundle_sha256": bundle.sha256 if bundle else None,
         },
     )
 
