@@ -102,6 +102,21 @@ export interface MessageCatalog {
     minuteUnit: string;
     version: string;
   };
+  preview: {
+    title: string;
+    description: string;
+    open: string;
+    opening: string;
+    opened: string;
+    expiryHint: string;
+    checking: string;
+    unavailable: string;
+    checkError: string;
+    retry: string;
+    popupBlocked: string;
+    permissionError: string;
+    openError: string;
+  };
   status: Record<WorkStatus, string>;
   source: Record<"web" | "github" | "autonomous", string>;
 }

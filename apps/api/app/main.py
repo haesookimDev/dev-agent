@@ -98,6 +98,7 @@ from .oidc import (
     code_challenge,
     get_oidc_provider,
 )
+from .preview_access import router as preview_access_router
 from .schemas import (
     ApprovalCreate,
     ArtifactCreate,
@@ -153,6 +154,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Kelpie Control Plane", version="0.1.0", lifespan=lifespan)
+app.include_router(preview_access_router)
 settings = get_settings()
 slack = SlackNotifier(settings)
 github = GitHubAppClient(settings)

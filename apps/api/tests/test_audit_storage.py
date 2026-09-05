@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from alembic import command
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import Session
-from test_migrations import HEAD_REVISION, migration_config, sqlite_url, sync_sqlite_url
+from test_migrations import migration_config, sqlite_url, sync_sqlite_url
 
 from app.db import bootstrap_schema
 from app.models import AuditRecord, Base, Role, utcnow
@@ -79,7 +79,7 @@ def test_orm_cannot_rewrite_audit_records(audit_engine, mutation):
 
 def test_migration_refuses_to_destroy_retained_audit_records(tmp_path):
     config = migration_config(sqlite_url(tmp_path))
-    command.upgrade(config, "head")
+    command.upgrade(config, "20260906_0007")
     engine = sa.create_engine(sync_sqlite_url(tmp_path))
     with engine.begin() as connection:
         connection.execute(sa.insert(AuditRecord).values(**audit_values()))
@@ -87,9 +87,10 @@ def test_migration_refuses_to_destroy_retained_audit_records(tmp_path):
         command.downgrade(config, "-1")
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == (
-            HEAD_REVISION
+            "20260906_0007"
         )
         assert connection.scalar(sa.select(AuditRecord.actor_subject)) == "test-subject"
+    command.upgrade(config, "head")
     command.check(config)
     engine.dispose()
 

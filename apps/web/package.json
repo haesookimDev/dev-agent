@@ -7,7 +7,8 @@
     "build": "next build",
     "lint": "eslint .",
     "test": "vitest run && tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:preview": "playwright test --config playwright.preview.config.ts"
   },
   "dependencies": {
     "next": "16.3.4",

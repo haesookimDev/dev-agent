@@ -140,6 +140,12 @@ form button { width: 100%; justify-content: space-between; margin-top: 1px; }
 .event h3 { font-size: 12px; font-weight: 550; white-space: pre-wrap; overflow-wrap: anywhere; margin: 7px 0 4px; }
 .event p { color: #8392a7; font-size: 9px; overflow-wrap: anywhere; }
 .controlPanel { padding: 24px; }
+.previewCard { margin-top: 22px; padding: 16px; border: 1px solid #ccd9f4; border-radius: 8px; background: #f5f8ff; }
+.previewHeading { display: flex; align-items: center; gap: 8px; color: #284899; }
+.previewHeading h3 { margin: 0; font-size: 13px; }
+.previewCard p { margin: 10px 0; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.previewCard .primaryButton { width: 100%; justify-content: space-between; margin-top: 4px; white-space: normal; text-align: left; }
+.previewCard .previewHint { margin-bottom: 0; font-size: 11px; color: #4b5f83; }
 .feedbackClosed { margin-top: 22px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: #f6f8fc; }
 .feedbackClosed h3 { margin: 0 0 8px; font-size: 13px; }
 .feedbackClosed p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }

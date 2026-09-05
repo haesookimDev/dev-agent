@@ -350,6 +350,23 @@ class PreviewEndpoint(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class PreviewGrant(Base):
+    __tablename__ = "preview_grants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id"), index=True)
+    auth_session_hash: Mapped[str] = mapped_column(
+        ForeignKey("auth_sessions.token_hash", ondelete="CASCADE"), index=True,
+    )
+    hostname: Mapped[str] = mapped_column(String(255))
+    launch_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    launch_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    exchanged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ConsoleLease(Base):
     __tablename__ = "console_leases"
 

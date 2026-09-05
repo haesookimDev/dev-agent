@@ -9,7 +9,7 @@ from alembic.config import Config
 from app.models import Base, WebhookDelivery
 
 API_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "20260906_0007"
+HEAD_REVISION = "20260906_0008"
 
 
 def migration_config(database_url: str) -> Config:
@@ -41,6 +41,28 @@ def test_empty_database_upgrades_to_head(tmp_path: Path) -> None:
     expected_tables = set(Base.metadata.tables) | {"alembic_version"}
     assert set(sa.inspect(engine).get_table_names()) == expected_tables
     assert current_revision(engine) == HEAD_REVISION
+    command.check(config)
+    engine.dispose()
+
+
+def test_preview_grant_downgrade_revokes_access_without_removing_auth_or_audit(tmp_path):
+    from test_audit_storage import audit_values
+
+    from app.models import AuditRecord
+
+    config = migration_config(sqlite_url(tmp_path))
+    command.upgrade(config, "head")
+    engine = sa.create_engine(sync_sqlite_url(tmp_path))
+    with engine.begin() as connection:
+        connection.execute(sa.insert(AuditRecord).values(**audit_values()))
+    command.downgrade(config, "20260906_0007")
+    assert "preview_grants" not in sa.inspect(engine).get_table_names()
+    assert "auth_sessions" in sa.inspect(engine).get_table_names()
+    with engine.begin() as connection:
+        assert connection.scalar(sa.select(AuditRecord.actor_subject)) == "test-subject"
+        with pytest.raises(sa.exc.IntegrityError, match="append-only"):
+            connection.execute(sa.text("DELETE FROM audit_records"))
+    command.upgrade(config, "head")
     command.check(config)
     engine.dispose()
 

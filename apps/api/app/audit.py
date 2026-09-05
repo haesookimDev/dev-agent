@@ -9,7 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth import Actor
 from .authorization import RoleDecision
 from .correlation import current_request_id
-from .models import Approval, AuditRecord, ConsoleLease, DeliveryBundle, Feedback, WorkItem
+from .models import (
+    Approval,
+    AuditRecord,
+    ConsoleLease,
+    DeliveryBundle,
+    Feedback,
+    PreviewGrant,
+    WorkItem,
+)
 
 
 def request_source_ip(request: Request) -> str | None:
@@ -94,6 +102,17 @@ async def record_approval_audit(
             "delivery_queued": delivery_queued,
             "delivery_bundle_sha256": bundle.sha256 if bundle else None,
         },
+    )
+
+
+def record_preview_audit(
+    session: AsyncSession, request: Request, item: WorkItem, actor: Actor,
+    decision: RoleDecision, grant: PreviewGrant,
+) -> None:
+    _record_actor_audit(
+        session, request, item, actor, decision, action="preview.granted",
+        target_id=grant.id, transport="web", details={"scope": "http_preview",
+                                                     "hostname": grant.hostname},
     )
 
 
