@@ -2,14 +2,35 @@
 
 import asyncio
 import os
+import secrets
 import uuid
+from datetime import timedelta
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.models import WorkerCredential, WorkerCredentialEvent, WorkerHost
+from app import delivery
+from app.auth import hash_token
+from app.main import resolve_preview
+from app.models import (
+    AgentEvent,
+    ConsoleLease,
+    DeliveryJob,
+    PreviewEndpoint,
+    ResourceLease,
+    WorkerCredential,
+    WorkerCredentialEvent,
+    WorkerHost,
+    WorkItem,
+    WorkSource,
+    WorkStatus,
+    utcnow,
+)
+from app.service import validate_lease
 from app.worker_credentials import authenticate_worker, issue_credential, revoke_credential
+from app.worker_quarantine import quarantine_worker
 
 DATABASE_URL = os.environ.get("KELPIE_TEST_POSTGRES_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="dedicated PostgreSQL test URL not set")
@@ -94,3 +115,140 @@ async def test_authentication_waiting_on_revoke_reads_new_committed_state(creden
             if not authenticating.done():
                 authenticating.cancel()
                 await asyncio.gather(authenticating, return_exceptions=True)
+
+
+@pytest.fixture
+async def assigned_runs(credentials):
+    sessions, first, second = credentials
+    runs = []
+    try:
+        async with sessions() as session:
+            for identity in (first, second):
+                work = WorkItem(source=WorkSource.WEB, title="PG quarantine test",
+                    requirement="Isolated row-lock regression", repository="acme/pg-test",
+                    assigned_worker_id=identity.worker_id, status=WorkStatus.COMMITTING)
+                session.add(work)
+                await session.flush()
+                token = secrets.token_urlsafe(32)
+                expiry = utcnow() + timedelta(minutes=5)
+                session.add_all([
+                    ResourceLease(work_item_id=work.id, worker_id=identity.worker_id,
+                                  token_hash=hash_token(token), expires_at=expiry),
+                    DeliveryJob(work_item_id=work.id, state="running"),
+                    PreviewEndpoint(work_item_id=work.id, hostname=f"{work.id}.preview.localhost",
+                                    target_url="http://10.0.0.2:3000", expires_at=expiry),
+                    ConsoleLease(work_item_id=work.id, expires_at=expiry),
+                ])
+                runs.append((work, token))
+            await session.commit()
+        yield sessions, runs
+    finally:
+        identifiers = [work.id for work, _ in runs]
+        async with sessions() as session:
+            for model in (AgentEvent, ConsoleLease, PreviewEndpoint, DeliveryJob, ResourceLease):
+                await session.execute(delete(model).where(model.work_item_id.in_(identifiers)))
+            await session.execute(delete(WorkItem).where(WorkItem.id.in_(identifiers)))
+            await session.commit()
+
+
+async def access_run(session, run, operation):
+    work, token = run
+    if operation == "lease":
+        return await validate_lease(session, work.id, token, 120)
+    if operation == "preview":
+        return await resolve_preview(session, None, host=f"{work.id}.preview.localhost")
+    return await delivery.lock_delivery(session, work.id)
+
+
+@pytest.mark.parametrize("operation", ["lease", "preview", "delivery"])
+async def test_inflight_access_serializes_quarantine_without_blocking_other_worker(
+    assigned_runs, operation,
+):
+    sessions, runs = assigned_runs
+    started = asyncio.Event()
+
+    async def quarantine():
+        async with sessions() as session:
+            started.set()
+            await quarantine_worker(session, runs[0][0].assigned_worker_id,
+                                    actor="test", reason="row-lock regression")
+            await session.commit()
+
+    async with sessions() as inflight:
+        await access_run(inflight, runs[0], operation)
+        isolating = asyncio.create_task(quarantine())
+        try:
+            await started.wait()
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(isolating), timeout=0.1)
+            async with sessions() as independent:
+                await asyncio.wait_for(access_run(independent, runs[1], operation), timeout=2)
+                await independent.commit()
+            await inflight.commit()
+            await asyncio.wait_for(isolating, timeout=2)
+        finally:
+            if not isolating.done():
+                isolating.cancel()
+                await asyncio.gather(isolating, return_exceptions=True)
+    async with sessions() as subsequent:
+        with pytest.raises((HTTPException, delivery.DeliveryStopped)):
+            await access_run(subsequent, runs[0], operation)
+
+
+@pytest.mark.parametrize("operation", ["lease", "preview", "delivery"])
+async def test_access_waiting_for_quarantine_reads_committed_denial(assigned_runs, operation):
+    sessions, runs = assigned_runs
+    started = asyncio.Event()
+
+    async def access():
+        async with sessions() as session:
+            started.set()
+            return await access_run(session, runs[0], operation)
+
+    async with sessions() as isolating:
+        await quarantine_worker(isolating, runs[0][0].assigned_worker_id,
+                                actor="test", reason="row-lock regression")
+        accessing = asyncio.create_task(access())
+        try:
+            await started.wait()
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(accessing), timeout=0.1)
+            await isolating.commit()
+            with pytest.raises((HTTPException, delivery.DeliveryStopped)) as rejected:
+                await asyncio.wait_for(accessing, timeout=2)
+            if operation != "delivery":
+                assert rejected.value.status_code == (401 if operation == "lease" else 410)
+        finally:
+            if not accessing.done():
+                accessing.cancel()
+                await asyncio.gather(accessing, return_exceptions=True)
+
+
+async def test_publication_timeout_releases_quarantine_lock(assigned_runs, monkeypatch):
+    sessions, runs = assigned_runs
+    monkeypatch.setattr(delivery, "SessionLocal", sessions)
+    monkeypatch.setattr(delivery, "DELIVERY_WRITE_SECONDS", 0.3)
+    started = asyncio.Event()
+
+    async def publish():
+        async with delivery.guard_delivery_write(runs[0][0].id):
+            started.set()
+            await asyncio.Event().wait()
+
+    publishing = asyncio.create_task(publish())
+    try:
+        await asyncio.wait_for(started.wait(), timeout=2)
+        async with sessions() as isolating:
+            await asyncio.wait_for(quarantine_worker(isolating, runs[0][0].assigned_worker_id,
+                actor="test", reason="bounded publication regression"), timeout=2)
+            await isolating.commit()
+        with pytest.raises(TimeoutError):
+            await publishing
+        async with delivery.guard_delivery_write(runs[1][0].id):
+            pass
+        with pytest.raises(delivery.DeliveryStopped):
+            async with delivery.guard_delivery_write(runs[0][0].id):
+                pytest.fail("publication after quarantine must not start")
+    finally:
+        publishing.cancel()
+        await asyncio.gather(publishing, return_exceptions=True)
