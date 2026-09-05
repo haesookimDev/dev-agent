@@ -1,12 +1,24 @@
 from functools import lru_cache
 from typing import Annotated, Literal, Self
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from .secrets import (
+    EnvironmentSecretProvider,
+    FileSecretProvider,
+    SecretProvider,
+    SecretUnavailableError,
+)
+
+SecretName = Literal[
+    "oidc_client_secret", "worker_shared_secret", "github_webhook_secret",
+    "slack_signing_secret", "slack_bot_token", "github_private_key",
+]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     database_url: str = "sqlite+aiosqlite:///./kelpie.db"
     database_schema_mode: Literal["validate", "bootstrap"] = "validate"
@@ -15,7 +27,8 @@ class Settings(BaseSettings):
     development_organization: str = "local"
     oidc_issuer_url: str = ""
     oidc_client_id: str = ""
-    oidc_client_secret: str = ""
+    oidc_client_secret: str = Field(default="", repr=False, exclude=True)
+    oidc_client_secret_file: str = ""
     oidc_redirect_uri: str = ""
     oidc_organization_claim: str = "organization"
     oidc_scopes: Annotated[list[str], NoDecode] = ["openid", "profile"]
@@ -26,11 +39,19 @@ class Settings(BaseSettings):
     oidc_login_ttl_seconds: int = 300
     oidc_session_ttl_seconds: int = 28800
     oidc_clock_skew_seconds: int = 30
-    worker_shared_secret: str = "development-worker-secret-change-me"
-    github_webhook_secret: str = "development-webhook-secret"
+    worker_shared_secret: str = Field(
+        default="development-worker-secret-change-me", repr=False, exclude=True,
+    )
+    worker_shared_secret_file: str = ""
+    github_webhook_secret: str = Field(
+        default="development-webhook-secret", repr=False, exclude=True,
+    )
+    github_webhook_secret_file: str = ""
     agent_trigger_label: str = "agent-ready"
-    slack_signing_secret: str = ""
-    slack_bot_token: str = ""
+    slack_signing_secret: str = Field(default="", repr=False, exclude=True)
+    slack_signing_secret_file: str = ""
+    slack_bot_token: str = Field(default="", repr=False, exclude=True)
+    slack_bot_token_file: str = ""
     slack_channel_id: str = ""
     slack_approver_user_ids: Annotated[list[str], NoDecode] = []
     dashboard_url: str = "http://localhost:3000"
@@ -48,6 +69,26 @@ class Settings(BaseSettings):
     log_format: Literal["json", "text"] = "json"
     otel_service_name: str = "kelpie-api"
     otel_exporter_otlp_traces_endpoint: str = ""
+
+    def secret_provider(self, name: SecretName) -> SecretProvider:
+        if name == "github_private_key":
+            path = self.github_private_key_path
+            return FileSecretProvider(path) if path else EnvironmentSecretProvider("")
+        if name not in {
+            "oidc_client_secret", "worker_shared_secret", "github_webhook_secret",
+            "slack_signing_secret", "slack_bot_token",
+        }:
+            raise ValueError("unknown secret name")
+        path = getattr(self, f"{name}_file")
+        if path:
+            return FileSecretProvider(path)
+        return EnvironmentSecretProvider(getattr(self, name))
+
+    def read_secret(self, name: SecretName, *, required: bool = False) -> str:
+        value = self.secret_provider(name).read()
+        if required and not value.strip():
+            raise SecretUnavailableError()
+        return value
 
     @field_validator("cors_origins", mode="before")
     @classmethod
