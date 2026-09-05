@@ -25,7 +25,7 @@ class GitHubAppClient:
         )
         now = int(time.time())
         return jwt.encode(
-            {"iat": now - 30, "exp": now + 9 * 60, "iss": self.settings.github_app_id},
+            {"iat": now - 30, "exp": now + 9 * 60, "iss": str(self.settings.github_app_id)},
             private_key,
             algorithm="RS256",
         )
