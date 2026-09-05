@@ -695,8 +695,8 @@ async def decide_approval(
         if item.status != WorkStatus.BUDGET_EXHAUSTED:
             raise HTTPException(status.HTTP_409_CONFLICT, "work has not exhausted its budget")
         if payload.decision == "approve":
-            extension = int(payload.payload.get("minutes", 60))
-            if extension < 15 or extension > 24 * 60:
+            extension = payload.payload.get("minutes", 60)
+            if type(extension) is not int or not 15 <= extension <= 24 * 60:
                 raise HTTPException(
                     status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid budget extension"
                 )
