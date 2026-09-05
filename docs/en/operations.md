@@ -114,6 +114,7 @@ Prometheus can scrape the following low-cardinality metrics from `GET /metrics`:
 - Worker claim outcomes and queue latency
 - Work-state transition count and duration in each state
 - Approval decisions, initial and retried delivery attempts, and delivery outcomes
+- [Startup delivery recovery](delivery-recovery-metrics.md) phase, elapsed time including waits, and readiness/recovery iteration outcomes
 
 Work IDs, repository names, users, and correlation IDs are never metric labels. Do not expose `/metrics` publicly; restrict it to the internal Prometheus network with a reverse proxy or network policy.
 

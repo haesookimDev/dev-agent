@@ -13,13 +13,13 @@ API가 시작할 때 DB가 내려가 있거나 Schema가 준비되지 않았다�
 
 이 중복 실행 방지는 **단일 API 프로세스** 안에서만 유효합니다. 같은 DB를 사용하는 여러 Uvicorn Worker나 API Replica, 겹치는 구·신 API의 전달 소유권은 보장하지 않습니다. 현재 Compose/Dockerfile의 단일 프로세스 구성을 유지하고, 교체 시 이전 API의 전달 작업과 프로세스가 종료된 뒤 새 API를 시작하세요. 다중 프로세스 운영에는 분산 Lease/Fencing이 선행되어야 합니다.
 
-시작 시 복구이지 상시 Queue Worker가 아닙니다. 첫 복구가 성공한 뒤 새롭게 고립된 Job을 주기적으로 찾아내는 기능, SCM 실패 자동 재시도, 처리량·지연 SLO, 복구 완료 Metric/Alert는 별도 작업입니다. `/readyz`의 200은 Schema만 검증하며 전달 Queue의 완료나 외부 SCM의 건강 상태를 증명하지 않습니다. `delivery_jobs.state/attempts`, 작업 상태와 Event, 기존 전달 Metric을 함께 확인하세요.
+시작 시 복구이지 상시 Queue Worker가 아닙니다. 첫 복구가 성공한 뒤 새롭게 고립된 Job을 주기적으로 찾아내는 기능, SCM 실패 자동 재시도, 처리량·지연 SLO와 Alert는 별도 작업입니다. [복구 상태 Metric](delivery-recovery-metrics.md)은 시작 시 복구 절차를 관찰하며 개별 전달 성공을 뜻하지 않습니다. `/readyz`의 200은 Schema만 검증하며 전달 Queue의 완료나 외부 SCM의 건강 상태를 증명하지 않습니다. `delivery_jobs.state/attempts`, 작업 상태와 Event, 기존 전달 Metric을 함께 확인하세요.
 
 API 응답·Schema·환경변수·의존성은 바뀌지 않습니다. `DELIVERY_RECOVERY_RETRY_SECONDS=5`, `DELIVERY_RECOVERY_DB_SECONDS=2`는 내부 코드 상수입니다. Rollback은 이전 API 배포로 가능하지만 DB가 준비되지 않은 기동에서 전달 재개를 놓치는 동작과 추적되지 않는 복구 Task가 다시 생깁니다. Migration/Downgrade는 필요하지 않습니다.
 
 ## 검증
 
-구현 `1e3db7a`, 실제 프로세스 테스트 `c166d09` 기준입니다. 이후 변경은 이 문서의 기록뿐입니다.
+아래는 구현 `1e3db7a`, 실제 프로세스 테스트 `c166d09`의 검증 기록입니다. 후속 Metric 검증은 [별도 기록](delivery-recovery-metrics.md)을 참고하세요.
 
 - 회귀 테스트 8개가 수정 전 실패했습니다. 복구 후 재개, 같은 프로세스에서의 중복 실행 방지, 정상 전달, 오류 재시도·고정 경고, 종료 시 하위 작업 취소를 검증합니다.
 - `KELPIE_TEST_POSTGRES_URL=<격리된 PostgreSQL> make test-api`: 357개 통과(약 37초). `make lint` 통과. 관련 전달 테스트 35개도 별도로 통과했습니다.

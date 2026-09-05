@@ -86,6 +86,7 @@ from .models import (
     utcnow,
 )
 from .observability import (
+    DELIVERY_RECOVERY,
     ObservabilityMiddleware,
     configure_observability,
     metrics_payload,
@@ -135,15 +136,23 @@ DELIVERY_RECOVERY_RETRY_SECONDS = 5
 
 
 async def recover_startup_deliveries() -> None:
-    while True:
-        try:
-            if (await get_schema_readiness()).ready:
-                await resume_pending_deliveries()
-                return
-        except Exception:
-            # Exception strings can include DB URLs or query parameters.
-            logger.warning("delivery recovery failed; retrying")
-        await asyncio.sleep(DELIVERY_RECOVERY_RETRY_SECONDS)
+    try:
+        while True:
+            try:
+                if (await get_schema_readiness()).ready:
+                    DELIVERY_RECOVERY.running()
+                    await resume_pending_deliveries()
+                    DELIVERY_RECOVERY.complete()
+                    return
+                DELIVERY_RECOVERY.database_unready()
+            except Exception:
+                DELIVERY_RECOVERY.error()
+                # Exception strings can include DB URLs or query parameters.
+                logger.warning("delivery recovery failed; retrying")
+            await asyncio.sleep(DELIVERY_RECOVERY_RETRY_SECONDS)
+    except asyncio.CancelledError:
+        DELIVERY_RECOVERY.cancel()
+        raise
 
 
 @asynccontextmanager
@@ -160,6 +169,7 @@ async def lifespan(_: FastAPI):
             readiness.current_heads,
             readiness.expected_heads,
         )
+    DELIVERY_RECOVERY.start()
     recovery = asyncio.create_task(recover_startup_deliveries(), name="delivery-startup-recovery")
     try:
         yield
@@ -167,6 +177,9 @@ async def lifespan(_: FastAPI):
         recovery.cancel()
         with suppress(asyncio.CancelledError):
             await recovery
+        if recovery.cancelled():
+            # A task cancelled before its first step cannot execute its own cleanup.
+            DELIVERY_RECOVERY.cancel()
 
 
 app = FastAPI(title="Kelpie Control Plane", version="0.1.0", lifespan=lifespan)
