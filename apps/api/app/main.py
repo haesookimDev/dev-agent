@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .audit import record_feedback_audit
+from .audit import ConsoleOwnership, record_console_audit, record_feedback_audit
 from .auth import (
     Actor,
     actor_from_identity,
@@ -1360,18 +1360,22 @@ async def register_preview(
 
 @app.post("/api/work-items/{work_item_id}/console-lease", response_model=ConsoleLeaseView)
 async def console_lease(
+    request: Request,
     work_item_id: str,
     payload: ConsoleLeaseRequest,
     session: SessionDep,
     actor: ActorDep,
 ) -> ConsoleLease:
-    item = await authorized_work(session, actor, work_item_id, Role.OPERATOR, lock=True)
+    item, decision = await authorized_work_with_decision(
+        session, actor, work_item_id, Role.OPERATOR, lock=True,
+    )
     await ensure_worker_not_quarantined(session, item)
     lease = await session.get(ConsoleLease, work_item_id, with_for_update=True)
     if lease is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "console is not registered")
     if payload.expected_version is not None and lease.version != payload.expected_version:
         raise HTTPException(status.HTTP_409_CONFLICT, "console lease version mismatch")
+    before = ConsoleOwnership.capture(lease)
     if payload.action == "acquire":
         if lease.holder_type == "user" and lease.holder != actor.subject:
             raise HTTPException(status.HTTP_409_CONFLICT, "console is held by another user")
@@ -1395,6 +1399,9 @@ async def console_lease(
             message=message,
             payload={"holder_type": lease.holder_type, "holder": lease.holder},
         ),
+    )
+    record_console_audit(
+        session, request, item, actor, decision, lease, before, action=payload.action,
     )
     await session.commit()
     return lease

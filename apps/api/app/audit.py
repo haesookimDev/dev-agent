@@ -1,4 +1,6 @@
 import ipaddress
+from dataclasses import dataclass
+from datetime import UTC
 from typing import Literal
 
 from fastapi import Request
@@ -7,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth import Actor
 from .authorization import RoleDecision
 from .correlation import current_request_id
-from .models import AuditRecord, Feedback, WorkItem
+from .models import AuditRecord, ConsoleLease, Feedback, WorkItem
 
 
 def request_source_ip(request: Request) -> str | None:
@@ -26,12 +28,51 @@ def record_feedback_audit(
 ) -> None:
     if feedback.id is None:
         raise ValueError("feedback must be flushed before recording its audit identity")
+    _record_actor_audit(session, request, item, actor, decision, action="feedback.created",
+                        target_id=str(feedback.id), transport=transport, details={})
+
+
+@dataclass(frozen=True)
+class ConsoleOwnership:
+    holder_type: str
+    holder: str
+    version: int
+
+    @classmethod
+    def capture(cls, lease: ConsoleLease) -> "ConsoleOwnership":
+        return cls(lease.holder_type, lease.holder, lease.version)
+
+
+def record_console_audit(
+    session: AsyncSession, request: Request, item: WorkItem, actor: Actor,
+    decision: RoleDecision, lease: ConsoleLease, before: ConsoleOwnership,
+    *, action: Literal["acquire", "release"],
+) -> None:
+    expiry = lease.expires_at
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    _record_actor_audit(
+        session, request, item, actor, decision, action="console.transferred",
+        target_id=item.id, transport="web", details={
+            "action": action, "holder_type_before": before.holder_type,
+            "holder_before": before.holder, "version_before": before.version,
+            "holder_type_after": lease.holder_type, "holder_after": lease.holder,
+            "version_after": lease.version, "expires_at": expiry.isoformat(),
+        },
+    )
+
+
+def _record_actor_audit(
+    session: AsyncSession, request: Request, item: WorkItem, actor: Actor,
+    decision: RoleDecision, *, action: str, target_id: str,
+    transport: Literal["web", "slack"], details: dict,
+) -> None:
     session.add(AuditRecord(
         organization_id=item.organization_id, work_item_id=item.id, repository=item.repository,
-        action="feedback.created", target_id=str(feedback.id), actor_id=actor.principal_id,
+        action=action, target_id=target_id, actor_id=actor.principal_id,
         actor_subject=actor.subject, identity_provider=actor.identity_provider,
         organization_role=decision.organization_role, repository_role=decision.repository_role,
         effective_role=decision.effective_role, required_role=decision.required_role,
         request_id=current_request_id(), correlation_id=item.correlation_id,
-        source_ip=request_source_ip(request), transport=transport,
+        source_ip=request_source_ip(request), transport=transport, details=details,
     ))
