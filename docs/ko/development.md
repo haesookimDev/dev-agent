@@ -54,3 +54,5 @@ GitHub Actions 구성은 [Workflow 문법](https://docs.github.com/en/actions/re
 필수 `Python` 검사는 `python -m pytest -q apps/api/tests/test_cancellation_postgres.py`로 취소와 Claim의 실제 PostgreSQL 경쟁도 검증합니다. 로컬에서는 `KELPIE_TEST_POSTGRES_URL`에 전용 테스트 DB URL을 지정하세요. 테스트마다 임의 이름의 전용 스키마를 만들고 그 스키마만 정리하며, 기존 데이터나 감사 기록을 삭제하지 않습니다. URL이 없으면 이 네 테스트는 Skip되므로 기본 SQLite 테스트 통과만으로 경쟁 검증을 완료 처리하지 않습니다.
 
 작업 보고에는 커밋별 목적, 테스트와 실제 사용 결과, PR·CI·머지 상태, 미커밋 변경, 남은 MVP 항목과 필요한 외부 환경을 기록합니다. 상세 저장소 규칙은 [AGENTS.md](../../AGENTS.md)를 따릅니다.
+
+[전달 감사](delivery-audit.md)의 실제 Git·API·루프백 SCM 회귀 테스트는 기존 `make test-api`와 필수 `Python` 검사에 포함됩니다. 외부 SCM 자격증명·추가 서비스 Job이 필요하지 않습니다. `test_audit_postgres.py`는 Background 감사 제약과 기존 행 보존 Migration도 검증합니다. 승인 출처를 감사와 함께 기록하고 외부 쓰기 직전에 재검사하는 경계를 향후 전달 변경에서도 유지합니다.

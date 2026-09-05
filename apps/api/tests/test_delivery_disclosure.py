@@ -10,15 +10,42 @@ import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
-from sqlalchemy import select
+from sqlalchemy import select, text
 from test_delivery_quarantine import pending_delivery as pending_delivery
 from test_observability import MemoryExporter
 from test_worker_credentials import database as database
 
 from app import delivery
-from app.models import AgentEvent, DeliveryBundle, DeliveryJob, WorkItem, WorkStatus
+from app.models import AgentEvent, AuditRecord, DeliveryBundle, DeliveryJob, WorkItem, WorkStatus
 
 real_command = delivery.run_command
+
+
+@pytest.mark.parametrize("action", ["delivery.started", "delivery.completed"])
+async def test_database_audit_failures_do_not_export_private_errors(
+    pending_delivery, monkeypatch, action,
+):
+    job = pending_delivery
+    marker = "synthetic-private-database-value"
+    exporter = MemoryExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(delivery, "tracer", provider.get_tracer("delivery-db-disclosure-test"))
+    async with job.sessions() as session:
+        await session.execute(text(
+            "CREATE TRIGGER test_audit_failure BEFORE INSERT ON audit_records "
+            f"WHEN NEW.action = '{action}' BEGIN SELECT RAISE(ABORT, '{marker}'); END"
+        ))
+        await session.commit()
+    try:
+        with pytest.raises(delivery.DeliveryPersistenceError):
+            await delivery.deliver_work(job.work.id)
+        assert exporter.spans[-1].status.status_code == StatusCode.ERROR
+        contains_private_value = marker in json.dumps([span.to_json() for span in exporter.spans])
+        assert not contains_private_value
+        assert len(exporter.spans[-1].events) == 1
+    finally:
+        provider.shutdown()
 
 
 @pytest.mark.parametrize("kind,code", [
@@ -66,9 +93,18 @@ async def test_failure_evidence_never_retains_private_exception_details(
             events = list((await session.scalars(select(AgentEvent))).all())
             failure = [event for event in events if event.event_type == "delivery.failed"]
             assert len(failure) == 1
+            audits = list(await session.scalars(select(AuditRecord).where(
+                AuditRecord.transport == "background",
+            ).order_by(AuditRecord.id)))
+            assert [record.action for record in audits] == ["delivery.started", "delivery.failed"]
+            assert audits[0].request_id == audits[1].request_id
+            assert audits[1].details["stage"] == "clone"
+            assert audits[1].details["error_code"] == code
+            assert audits[1].details["approval_audit_id"] == job.approval.id
             evidence = json.dumps({"job": state.error, "events": [
                 {"message": event.message, "payload": event.payload} for event in events
-            ], "traces": [span.to_json() for span in exporter.spans]})
+            ], "audits": [record.details for record in audits],
+                "traces": [span.to_json() for span in exporter.spans]})
             # Only a boolean fails, so even regression diagnostics do not print a credential.
             contains_private_value = marker in evidence
             assert not contains_private_value

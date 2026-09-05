@@ -73,14 +73,14 @@ class AuditRecordView(BaseModel):
     actor_id: str | None
     actor_subject: str
     identity_provider: str
-    organization_role: Role
+    organization_role: Role | None
     repository_role: Role | None
-    effective_role: Role
-    required_role: Role
+    effective_role: Role | None
+    required_role: Role | None
     request_id: str
     correlation_id: str
     source_ip: str | None
-    transport: Literal["web", "slack"]
+    transport: Literal["web", "slack", "background"]
     details: dict[str, Any]
     created_at: datetime
 

@@ -102,7 +102,7 @@ Organization membership sets the baseline role across all registered repositorie
 
 GitHub webhooks require a valid signature and matching registered repository and installation ID before creating work. Web submissions in OIDC mode also use the policy's installation ID. Slack commands resolve the signed `(team_id, user_id)` binding to a principal and use the same authorization checks; `SLACK_APPROVER_USER_IDS` no longer grants approval rights. Slack work records use the linked principal ID as actor. The global Slack notification channel remains deployment-wide, so enable notifications only where every channel participant may view the transmitted work information.
 
-Isolated development mode auto-registers its dedicated organization and repository on direct work submission. The development organization cannot overlap an OIDC organization or `legacy`. Organization/repository authorization and append-only feedback, console, approval, and [unassigned queued cancellation](work-cancellation.md) audits are implemented. Active-run administrator cancellation and delivery auditing remain IAM/OPS follow-up scope.
+Isolated development mode auto-registers its dedicated organization and repository on direct work submission. The development organization cannot overlap an OIDC organization or `legacy`. Organization/repository authorization and append-only feedback, console, approval, [unassigned queued cancellation](work-cancellation.md), and [approval-linked delivery](delivery-audit.md) audits are implemented. Review delivery's new background/nullable-role response, legacy-job denial, migration and forward-recovery procedure before rollout. Active-run administrator cancellation remains IAM/OPS follow-up scope.
 
 ## Observability and correlation
 

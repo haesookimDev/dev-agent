@@ -29,7 +29,7 @@
 
 ### IAM-001 · OIDC 신원 및 저장소 권한 — L
 
-상태: 인증 Batch(2026-09-04)와 조직·저장소 RBAC Batch(2026-09-05) 구현 완료. 등록된 Membership과 저장소별 Role 승격, 조직 간 접근 차단, GitHub 설치 등록과 Slack Principal 연결, 권한 회수를 포함합니다. [피드백](feedback-audit.md), [Console·승인](control-action-audit.md), [미배정 대기 작업 취소](work-cancellation.md)의 추가 전용 감사를 구현했습니다(2026-09-06). 실행 중 관리자 취소·전달 감사와 OIDC Preview Grant는 남아 있습니다.
+상태: 인증 Batch(2026-09-04)와 조직·저장소 RBAC Batch(2026-09-05) 구현 완료. 등록된 Membership과 저장소별 Role 승격, 조직 간 접근 차단, GitHub 설치 등록과 Slack Principal 연결, 권한 회수를 포함합니다. [피드백](feedback-audit.md), [Console·승인](control-action-audit.md), [미배정 대기 작업 취소](work-cancellation.md), [승인에 연결된 전달](delivery-audit.md)의 추가 전용 감사를 구현했습니다(2026-09-06). 실행 중 관리자 취소와 OIDC Preview Grant는 남아 있습니다.
 
 범위:
 

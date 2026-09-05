@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx
 from alembic import command
+from delivery_fixtures import seed_delivery_approval
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from test_migrations import migration_config
 
@@ -40,9 +41,10 @@ def test_api_resumes_orphans_after_schema_recovery_without_restarting(tmp_path):
                     )
                     session.add(item)
                     await session.flush()
+                    approval = await seed_delivery_approval(session, item, "0" * 64)
                     session.add_all([
                         DeliveryJob(work_item_id=item.id, state="running" if state == "quarantined"
-                                    else state),
+                                    else state, approval_audit_id=approval.id),
                         DeliveryBundle(work_item_id=item.id, object_path="unused-test.patch",
                                        sha256="0" * 64, size_bytes=0),
                     ])

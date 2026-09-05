@@ -7,6 +7,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
+from delivery_fixtures import seed_delivery_approval
 from fastapi import HTTPException
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -17,6 +18,7 @@ from app.main import resolve_preview
 from app.models import (
     AgentEvent,
     ConsoleLease,
+    DeliveryBundle,
     DeliveryJob,
     PreviewEndpoint,
     ResourceLease,
@@ -145,7 +147,8 @@ async def assigned_runs(credentials):
     finally:
         identifiers = [work.id for work, _ in runs]
         async with sessions() as session:
-            for model in (AgentEvent, ConsoleLease, PreviewEndpoint, DeliveryJob, ResourceLease):
+            for model in (AgentEvent, ConsoleLease, PreviewEndpoint, DeliveryJob, DeliveryBundle,
+                          ResourceLease):
                 await session.execute(delete(model).where(model.work_item_id.in_(identifiers)))
             await session.execute(delete(WorkItem).where(WorkItem.id.in_(identifiers)))
             await session.commit()
@@ -226,12 +229,22 @@ async def test_access_waiting_for_quarantine_reads_committed_denial(assigned_run
 
 async def test_publication_timeout_releases_quarantine_lock(assigned_runs, monkeypatch):
     sessions, runs = assigned_runs
+    authority_ids = []
+    async with sessions() as session:
+        for work, _ in runs:
+            approval = await seed_delivery_approval(session, work, "0" * 64)
+            (await session.get(DeliveryJob, work.id)).approval_audit_id = approval.id
+            session.add(DeliveryBundle(work_item_id=work.id, sha256="0" * 64,
+                                       object_path="unused-lock-test.patch", size_bytes=0))
+            authority_ids.append(approval.id)
+        # These two test snapshots remain append-only until the dedicated test DB is removed.
+        await session.commit()
     monkeypatch.setattr(delivery, "SessionLocal", sessions)
     monkeypatch.setattr(delivery, "DELIVERY_WRITE_SECONDS", 0.3)
     started = asyncio.Event()
 
     async def publish():
-        async with delivery.guard_delivery_write(runs[0][0].id):
+        async with delivery.guard_delivery_write(runs[0][0].id, approval_audit_id=authority_ids[0]):
             started.set()
             await asyncio.Event().wait()
 
@@ -244,10 +257,11 @@ async def test_publication_timeout_releases_quarantine_lock(assigned_runs, monke
             await isolating.commit()
         with pytest.raises(TimeoutError):
             await publishing
-        async with delivery.guard_delivery_write(runs[1][0].id):
+        async with delivery.guard_delivery_write(runs[1][0].id, approval_audit_id=authority_ids[1]):
             pass
         with pytest.raises(delivery.DeliveryStopped):
-            async with delivery.guard_delivery_write(runs[0][0].id):
+            async with delivery.guard_delivery_write(runs[0][0].id,
+                                                     approval_audit_id=authority_ids[0]):
                 pytest.fail("publication after quarantine must not start")
     finally:
         publishing.cancel()

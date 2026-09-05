@@ -84,6 +84,8 @@ async def test_approval_audit_captures_identity_roles_and_bounded_before_after_d
         assert record.correlation_id == item["correlation_id"]
         assert record.source_ip == "127.0.0.1"
         assert record.transport == transport
+        job = await session.get(DeliveryJob, item["id"])
+        assert (job.approval_audit_id if job else None) == (record.id if central else None)
         assert record.details == {
             "kind": kind, "decision": choice,
             "budget_minutes_before": item["budget_minutes"],
@@ -196,3 +198,24 @@ async def test_unverified_bundle_cannot_be_approved_or_audited(authorized, trans
     async with database() as session:
         assert not list(await session.scalars(select(AuditRecord)))
         assert not list(await session.scalars(select(Approval)))
+
+
+async def test_queue_failure_rolls_back_the_approval_audit_link(authorized, monkeypatch):
+    item, deliveries = await prepare_work(authorized, monkeypatch)
+
+    async def fail(*_, **__):
+        raise RuntimeError("synthetic queue failure")
+
+    monkeypatch.setattr("app.main.queue_delivery", fail)
+    with pytest.raises(RuntimeError, match="synthetic queue failure"):
+        await authorized.post(f"/api/work-items/{item['id']}/approvals", json={
+            "kind": "pull_request", "decision": "approve",
+        })
+    async with database() as session:
+        assert not list(await session.scalars(select(AuditRecord)))
+        assert not list(await session.scalars(select(Approval)))
+        assert not list(await session.scalars(select(DeliveryJob)))
+        work = await session.get(WorkItem, item["id"])
+        assert work.status == WorkStatus.AWAITING_APPROVAL
+        assert work.version == item["version"]
+    assert deliveries == []

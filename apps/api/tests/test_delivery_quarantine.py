@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from delivery_fixtures import seed_delivery_approval
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from test_worker_credentials import database as database
@@ -22,8 +23,9 @@ async def pending_delivery(database, tmp_path, monkeypatch):
                     assigned_worker_id=identity.worker_id, github_installation_id=1)
     database.add(work)
     await database.flush()
+    approval = await seed_delivery_approval(database, work, "0" * 64)
     database.add_all([
-        DeliveryJob(work_item_id=work.id),
+        DeliveryJob(work_item_id=work.id, approval_audit_id=approval.id),
         DeliveryBundle(work_item_id=work.id, object_path=str(tmp_path / "verified.patch"),
                         sha256="0" * 64, size_bytes=0),
     ])
@@ -42,7 +44,7 @@ async def pending_delivery(database, tmp_path, monkeypatch):
     monkeypatch.setattr(delivery, "run_command", command)
     monkeypatch.setattr(delivery, "settings", Settings(artifact_root=str(tmp_path / "artifacts")))
     return SimpleNamespace(work=work, worker_id=identity.worker_id, sessions=sessions,
-                           github=github, command=command)
+                           github=github, command=command, approval=approval)
 
 
 async def quarantine(job):

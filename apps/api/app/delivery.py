@@ -3,6 +3,7 @@ import os
 import re
 import signal
 import tempfile
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -11,10 +12,17 @@ import httpx
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import get_settings
 from .db import SessionLocal
+from .delivery_audit import (
+    DeliveryAuthority,
+    DeliveryAuthorityError,
+    delivery_authority,
+    record_delivery_audit,
+)
 from .integrations.github import GitHubAppClient
 from .models import DeliveryBundle, DeliveryJob, WorkerHost, WorkItem, WorkStatus, utcnow
 from .observability import observe_delivery_attempt, observe_delivery_outcome, tracer
@@ -36,7 +44,13 @@ class DeliveryCommandError(RuntimeError):
     """A subprocess failed; its arguments and output must remain private."""
 
 
+class DeliveryPersistenceError(RuntimeError):
+    """The attempted DB transaction rolled back; preserve durable state for recovery."""
+
+
 def delivery_error_code(error: Exception) -> str:
+    if isinstance(error, DeliveryAuthorityError):
+        return error.code
     if isinstance(error, DeliveryCommandError):
         return "command_failed"
     if isinstance(error, (TimeoutError, httpx.TimeoutException)):
@@ -68,11 +82,17 @@ async def lock_delivery(
 
 
 @asynccontextmanager
-async def guard_delivery_write(work_item_id: str) -> AsyncIterator[None]:
+async def guard_delivery_write(
+    work_item_id: str, *, approval_audit_id: int,
+) -> AsyncIterator[None]:
     # Quarantine waits for an already-started write. After it commits, no new write starts.
     async with asyncio.timeout(DELIVERY_WRITE_SECONDS):
         async with SessionLocal() as session:
-            await lock_delivery(session, work_item_id)
+            work, job = await lock_delivery(session, work_item_id)
+            bundle = await session.get(DeliveryBundle, work_item_id)
+            authority = await delivery_authority(session, work, job, bundle)
+            if authority.audit_id != approval_audit_id:
+                raise DeliveryAuthorityError("approval_mismatch")
             yield
 
 
@@ -144,16 +164,31 @@ async def _exclusive_delivery(work_item_id: str, *, recover_running: bool) -> No
             try:
                 async with asyncio.timeout(DELIVERY_RECOVERY_DB_SECONDS):
                     async with SessionLocal() as session:
-                        _, job = await lock_delivery(
+                        work, job = await lock_delivery(
                             session, work_item_id, states=("pending", "retry", "running"),
                         )
                         if job.state == "running":
+                            bundle = await session.get(DeliveryBundle, work_item_id)
+                            try:
+                                authority = await delivery_authority(session, work, job, bundle)
+                            except DeliveryAuthorityError:
+                                authority = None
                             job.state = "retry"
                             job.error = "control plane restarted during delivery"
+                            record_delivery_audit(
+                                session, work, job, action="delivery.interrupted",
+                                request_id=str(uuid.uuid4()), attempt=job.attempts,
+                                authority=authority, stage="recovery", publication="unknown",
+                                error_code="process_restarted",
+                            )
                         await session.commit()
             except DeliveryStopped:
                 return
         await _traced_delivery(work_item_id)
+    except SQLAlchemyError:
+        # Do not turn an uncertain/rolled-back finalization into an ordinary failed run,
+        # or export raw DB connection/query details through a background-task traceback.
+        raise DeliveryPersistenceError("delivery persistence failed; recovery required") from None
     finally:
         _active_deliveries.remove(work_item_id)
 
@@ -164,32 +199,58 @@ async def _traced_delivery(work_item_id: str) -> None:
     attributes = {"kelpie.work_id": work_item_id}
     if work is not None:
         attributes["kelpie.correlation_id"] = work.correlation_id
-    with tracer.start_as_current_span("delivery.run", attributes=attributes):
-        await _deliver_work(work_item_id)
+    with tracer.start_as_current_span(
+        "delivery.run", attributes=attributes,
+        record_exception=False, set_status_on_exception=False,
+    ) as span:
+        try:
+            await _deliver_work(work_item_id)
+        except SQLAlchemyError:
+            message = "delivery persistence failed; recovery required"
+            span.record_exception(RuntimeError(message))
+            span.set_status(Status(StatusCode.ERROR, message))
+            raise DeliveryPersistenceError(message) from None
 
 
 async def _deliver_work(work_item_id: str) -> None:
+    request_id = str(uuid.uuid4())
     try:
         async with SessionLocal() as session:
             work, job = await lock_delivery(session, work_item_id, states=("pending", "retry"))
             bundle = await session.get(DeliveryBundle, work_item_id)
-            if bundle is None:
-                return
             attempt_type = "retry" if job.attempts > 0 or job.state == "retry" else "initial"
             job.state = "running"
             job.attempts += 1
+            attempt = job.attempts
             job.updated_at = utcnow()
+            try:
+                authority = await delivery_authority(session, work, job, bundle)
+            except DeliveryAuthorityError as error:
+                await fail_delivery(
+                    session, work, job, request_id=request_id, attempt=attempt,
+                    authority=None, stage="authorization", error_code=error.code,
+                )
+                await session.commit()
+                observe_delivery_attempt(attempt_type)
+                observe_delivery_outcome("failed")
+                return
+            record_delivery_audit(
+                session, work, job, action="delivery.started", request_id=request_id,
+                attempt=attempt, authority=authority, stage="authorization",
+            )
             await session.commit()
             observe_delivery_attempt(attempt_type)
     except DeliveryStopped:
         return
 
     stage = "configuration"
+    publication = "not_started"
+    pull_request_url = None
     try:
         if not work.github_installation_id:
             raise RuntimeError("repository has no GitHub App installation")
         stage = "token"
-        async with guard_delivery_write(work_item_id):
+        async with guard_delivery_write(work_item_id, approval_audit_id=authority.audit_id):
             token = await github.installation_token(work.github_installation_id)
         stage = "metadata"
         metadata = await github.repository(work.repository, token)
@@ -204,6 +265,8 @@ async def _deliver_work(work_item_id: str) -> None:
         branch_exists = pull_request_url is None and await github.branch_exists(
             work.repository, token, target_branch
         )
+        publication = ("existing_pull_request" if pull_request_url else
+                       "existing_branch" if branch_exists else "new_branch")
         if pull_request_url is None and not branch_exists:
             stage = "workspace"
             temporary, repository, askpass = await asyncio.to_thread(
@@ -243,7 +306,7 @@ async def _deliver_work(work_item_id: str) -> None:
                 )
                 await run_command("git", "commit", "-m", work.title, cwd=repository)
                 stage = "push"
-                async with guard_delivery_write(work_item_id):
+                async with guard_delivery_write(work_item_id, approval_audit_id=authority.audit_id):
                     await run_command(
                         "git",
                         "push",
@@ -257,7 +320,7 @@ async def _deliver_work(work_item_id: str) -> None:
                 await asyncio.to_thread(temporary.cleanup)
         if pull_request_url is None:
             stage = "pull_request"
-            async with guard_delivery_write(work_item_id):
+            async with guard_delivery_write(work_item_id, approval_audit_id=authority.audit_id):
                 pull_request_url = await github.create_pull_request(
                     work.repository,
                     token,
@@ -269,6 +332,11 @@ async def _deliver_work(work_item_id: str) -> None:
         stage = "finalize"
         async with SessionLocal() as session:
             current, job = await lock_delivery(session, work_item_id)
+            final_authority = await delivery_authority(
+                session, current, job, await session.get(DeliveryBundle, work_item_id),
+            )
+            if final_authority != authority:
+                raise DeliveryAuthorityError("approval_mismatch")
             current.pull_request_url = pull_request_url
             await transition_work_item(
                 session,
@@ -288,10 +356,19 @@ async def _deliver_work(work_item_id: str) -> None:
             )
             job.state = "completed"
             job.error = None
+            record_delivery_audit(
+                session, current, job, action="delivery.completed", request_id=request_id,
+                attempt=attempt, authority=authority, stage=stage, publication=publication,
+                pull_request_url=pull_request_url,
+            )
             await session.commit()
             observe_delivery_outcome("completed")
     except DeliveryStopped:
+        await audit_stopped_delivery(work_item_id, request_id, attempt, authority, stage,
+                                     publication, pull_request_url)
         return
+    except SQLAlchemyError:
+        raise
     except Exception as error:
         error_code = delivery_error_code(error)
         message = f"GitHub delivery failed at {stage} ({error_code})"
@@ -304,32 +381,57 @@ async def _deliver_work(work_item_id: str) -> None:
         try:
             async with SessionLocal() as session:
                 current, job = await lock_delivery(session, work_item_id)
-                job.state = "failed"
-                job.error = message
-                job.updated_at = utcnow()
-                await emit_event(
-                    session,
-                    work_item_id,
-                    EventCreate(
-                        event_type="delivery.failed",
-                        source="delivery:github",
-                        level="error",
-                        message=message,
-                        payload={"stage": stage, "error_code": error_code},
-                    ),
-                )
-                await transition_work_item(
-                    session,
-                    current,
-                    WorkStatus.FAILED,
-                    expected_version=current.version,
-                    actor="delivery:github",
-                    message="GitHub delivery failed",
+                await fail_delivery(
+                    session, current, job, request_id=request_id, attempt=attempt,
+                    authority=authority, stage=stage, error_code=error_code,
+                    publication=publication, pull_request_url=pull_request_url,
                 )
                 await session.commit()
         except DeliveryStopped:
+            await audit_stopped_delivery(work_item_id, request_id, attempt, authority, stage,
+                                         publication, pull_request_url)
             return
         observe_delivery_outcome("failed")
+
+
+async def fail_delivery(
+    session: AsyncSession, work: WorkItem, job: DeliveryJob, *, request_id: str, attempt: int,
+    authority: DeliveryAuthority | None, stage: str, error_code: str,
+    publication: str = "not_started", pull_request_url: str | None = None,
+) -> None:
+    message = f"GitHub delivery failed at {stage} ({error_code})"
+    job.state = "failed"
+    job.error = message
+    job.updated_at = utcnow()
+    await emit_event(session, work.id, EventCreate(
+        event_type="delivery.failed", source="delivery:github", level="error", message=message,
+        payload={"stage": stage, "error_code": error_code},
+    ))
+    await transition_work_item(session, work, WorkStatus.FAILED, expected_version=work.version,
+                               actor="delivery:github", message="GitHub delivery failed")
+    record_delivery_audit(
+        session, work, job, action="delivery.failed", request_id=request_id, attempt=attempt,
+        authority=authority, stage=stage, error_code=error_code, publication=publication,
+        pull_request_url=pull_request_url,
+    )
+
+
+async def audit_stopped_delivery(
+    work_item_id: str, request_id: str, attempt: int, authority: DeliveryAuthority,
+    stage: str, publication: str, pull_request_url: str | None,
+) -> None:
+    # Audit the observed stop without undoing quarantine or changing work/resources.
+    async with SessionLocal() as session:
+        work = await session.get(WorkItem, work_item_id, with_for_update=True)
+        job = await session.get(DeliveryJob, work_item_id, with_for_update=True)
+        if work is None or job is None:
+            return
+        record_delivery_audit(
+            session, work, job, action="delivery.stopped", request_id=request_id, attempt=attempt,
+            authority=authority, stage=stage, publication=publication,
+            error_code="execution_fenced", pull_request_url=pull_request_url,
+        )
+        await session.commit()
 
 
 async def resume_pending_deliveries() -> None:
