@@ -17,7 +17,7 @@ API 필드·상태·권한·승인 정책은 변경하지 않습니다. `SCHEMA_
 
 DB가 느려 2초를 넘으면 Revision이 올바르더라도 해당 검사는 준비되지 않은 상태입니다. 연결 Pool 고갈, 네트워크, DB 부하와 Schema 잠금을 확인하세요. `unreachable`은 Timeout 전용 코드가 아니며 다른 연결 실패도 포함합니다. 응답에는 DB 주소·비밀번호·원본 오류를 넣지 않습니다.
 
-연결 복구 후 다음 `/readyz` 요청은 다시 검사합니다. 단, 기동 당시 Schema가 준비되지 않았다면 기존 전달 Job의 시작 시 재개는 건너뛰므로, 이후 `/readyz`의 200만으로 전달 Queue도 복구됐다고 판단하면 안 됩니다. Delivery Worker 상태·복구는 별도 OBS-001/OPS-001 범위입니다. DB 준비 상태는 Object Store·SCM·실제 VM 건강 상태도 증명하지 않습니다.
+연결 복구 후 다음 `/readyz` 요청은 다시 검사합니다. 기동 당시 Schema가 준비되지 않았다면 [시작 시 전달 복구](delivery-recovery.md)가 백그라운드에서 재시도합니다. 이후 `/readyz`의 200만으로 전달 Queue도 완료됐다고 판단하면 안 됩니다. 지속적인 Delivery Worker 건강 상태는 별도 OBS-001/OPS-001 범위입니다. DB 준비 상태는 Object Store·SCM·실제 VM 건강 상태도 증명하지 않습니다.
 
 ## 검증 결과
 

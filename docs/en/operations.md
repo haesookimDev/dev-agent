@@ -45,6 +45,10 @@ Revision `20260905_0004` adds organization, principal, membership, repository, g
 
 Before rolling back RBAC, stop API ingress, webhooks, and workers and back up the database and policy files. `alembic downgrade 20260904_0003` preserves work data but removes organization boundaries and authorization tables. Do not re-expose the previous API to multiple organizations. Run it only in an isolated maintenance environment and restore validated backups and policies after recovering the RBAC version.
 
+## Startup delivery recovery
+
+An API started with an unready database [resumes pending deliveries](delivery-recovery.md) after connectivity/schema recovery. This recovery supports one API process only: fully stop the previous API before starting its replacement. Do not use a 200 from `/readyz` as a delivery-completion signal.
+
 ## OIDC authentication
 
 Follow the [secret management guide](secret-management.md) for file injection, rotation, and recovery. First complete [per-worker credential issuance and migration](worker-credentials.md) for Workers.

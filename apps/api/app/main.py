@@ -7,7 +7,7 @@ import logging
 import os
 import secrets
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -131,6 +131,19 @@ from .service import (
 from .worker_quarantine import ensure_worker_not_quarantined
 
 logger = logging.getLogger(__name__)
+DELIVERY_RECOVERY_RETRY_SECONDS = 5
+
+
+async def recover_startup_deliveries() -> None:
+    while True:
+        try:
+            if (await get_schema_readiness()).ready:
+                await resume_pending_deliveries()
+                return
+        except Exception:
+            # Exception strings can include DB URLs or query parameters.
+            logger.warning("delivery recovery failed; retrying")
+        await asyncio.sleep(DELIVERY_RECOVERY_RETRY_SECONDS)
 
 
 @asynccontextmanager
@@ -140,16 +153,20 @@ async def lifespan(_: FastAPI):
     if runtime_settings.database_schema_mode == "bootstrap":
         await bootstrap_schema()
     readiness = await get_schema_readiness()
-    if readiness.ready:
-        await resume_pending_deliveries()
-    else:
+    if not readiness.ready:
         logger.warning(
             "database schema is not ready: state=%s current_heads=%s expected_heads=%s",
             readiness.state,
             readiness.current_heads,
             readiness.expected_heads,
         )
-    yield
+    recovery = asyncio.create_task(recover_startup_deliveries(), name="delivery-startup-recovery")
+    try:
+        yield
+    finally:
+        recovery.cancel()
+        with suppress(asyncio.CancelledError):
+            await recovery
 
 
 app = FastAPI(title="Kelpie Control Plane", version="0.1.0", lifespan=lifespan)
