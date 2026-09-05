@@ -1,7 +1,9 @@
 import asyncio
 import os
 import re
+import signal
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 from opentelemetry import trace
@@ -31,8 +33,16 @@ async def run_command(
         env=environment,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True,
     )
-    output, _ = await process.communicate()
+    try:
+        output, _ = await process.communicate()
+    except asyncio.CancelledError:
+        # Cancellation must stop git and its children before a delivery guard unlocks.
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        await process.communicate()
+        raise
     text = output.decode(errors="replace")
     if process.returncode != 0:
         safe_command = " ".join(command[:2])
