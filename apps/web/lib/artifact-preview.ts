@@ -3,7 +3,7 @@ import { authenticatedFetch, browserApi } from "./browser-api";
 // Match the API's artifact byte boundary; this is not a replacement for server validation.
 export const MAX_PREVIEW_BYTES = 10 * 1024 * 1024;
 export const PREVIEW_TIMEOUT_MS = 15_000;
-export type PreviewFailure = "authentication" | "permission" | "missing" | "unavailable" |
+export type PreviewFailure = "authentication" | "permission" | "missing" | "unavailable" | "expired" |
   "tooLarge" | "unsupported" | "invalid" | "timeout" | "network" | "server";
 export class ArtifactPreviewError extends Error {
   constructor(readonly reason: PreviewFailure) { super(reason); }
@@ -14,6 +14,31 @@ export type ArtifactPreview = { mediaType: string; size: number } & (
 
 export function artifactURL(workId: string, artifactId: string): string {
   return `${browserApi}/api/work-items/${encodeURIComponent(workId)}/artifacts/${encodeURIComponent(artifactId)}`;
+}
+
+async function goneReason(response: Response): Promise<"expired" | "unavailable"> {
+  if (response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") return "unavailable";
+  const reader = response.body?.getReader();
+  if (!reader) return "unavailable";
+  const bytes = new Uint8Array(1024);
+  let size = 0;
+  let complete = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) { complete = true; break; }
+      if (size + value.byteLength > bytes.length) return "unavailable";
+      bytes.set(value, size);
+      size += value.byteLength;
+    }
+    const data: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size)));
+    return data !== null && typeof data === "object" && "detail" in data &&
+      data.detail === "artifact retention period has expired" ? "expired" : "unavailable";
+  } catch { return "unavailable"; }
+  finally {
+    if (!complete) void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
 }
 
 export async function loadArtifactPreview(workId: string, artifactId: string, signal: AbortSignal): Promise<ArtifactPreview> {
@@ -31,6 +56,8 @@ export async function loadArtifactPreview(workId: string, artifactId: string, si
       throw new ArtifactPreviewError(reason);
     };
     if (!response.ok) {
+      // Only this bounded, fixed API reason is interpreted; no server diagnostic is rendered.
+      if (response.status === 410) reject(await goneReason(response));
       const reasons: Record<number, PreviewFailure> = { 401: "authentication", 403: "permission", 404: "missing", 410: "unavailable" };
       reject(reasons[response.status] ?? "server");
     }

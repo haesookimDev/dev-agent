@@ -79,6 +79,8 @@ export interface MessageCatalog {
     content: string;
     loading: string;
     errorTitle: string;
+    expired: string;
+    expiredHint: string;
     retry: string;
     empty: string;
     emptyFile: string;

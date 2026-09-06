@@ -17,15 +17,17 @@ export function artifactSize(size: number, locale: Locale): string {
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)} ${unit}`;
 }
 
-function PreviewDialog({ workId, artifact, locale, messages, onDismiss }: {
-  workId: string; artifact: Artifact; locale: Locale; messages: Messages; onDismiss: () => void;
+function PreviewDialog({ workId, artifact, locale, messages, expired, onExpired, onDismiss }: {
+  workId: string; artifact: Artifact; locale: Locale; messages: Messages; expired: boolean;
+  onExpired: (id: string) => void; onDismiss: () => void;
 }) {
   const id = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const imageURL = useRef<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<PreviewState>({ phase: "loading" });
+  const [loaded, setState] = useState<PreviewState>({ phase: "loading" });
+  const state: PreviewState = expired ? { phase: "error", reason: "expired" } : loaded;
   const clearImage = useCallback(() => {
     if (imageURL.current) URL.revokeObjectURL(imageURL.current);
     imageURL.current = null;
@@ -38,6 +40,7 @@ function PreviewDialog({ workId, artifact, locale, messages, onDismiss }: {
   }, []);
 
   useEffect(() => {
+    if (expired) return;
     let active = true;
     const controller = new AbortController();
     request.current = controller;
@@ -48,10 +51,12 @@ function PreviewDialog({ workId, artifact, locale, messages, onDismiss }: {
     }).catch((error: unknown) => {
       if (!active) return;
       clearImage();
-      setState({ phase: "error", reason: error instanceof ArtifactPreviewError ? error.reason : "network" });
+      const reason = error instanceof ArtifactPreviewError ? error.reason : "network";
+      setState({ phase: "error", reason });
+      if (reason === "expired") onExpired(artifact.id);
     });
     return () => { active = false; controller.abort(); clearImage(); };
-  }, [workId, artifact.id, attempt, clearImage]);
+  }, [workId, artifact.id, attempt, clearImage, expired, onExpired]);
 
   function close() {
     request.current?.abort();
@@ -90,9 +95,9 @@ function PreviewDialog({ workId, artifact, locale, messages, onDismiss }: {
       <div className="previewBody" role="region" aria-label={messages.content} tabIndex={0} aria-busy={state.phase === "loading"}>
         {state.phase === "loading" && <p className="previewStatus" role="status">{messages.loading}</p>}
         {state.phase === "error" && <div className="previewFailure">
-          <p className="eyebrow">{messages.errorTitle}</p>
+          <p className="eyebrow">{state.reason === "expired" ? messages.expired : messages.errorTitle}</p>
           <p role="alert">{messages.errors[state.reason]}</p>
-          <button className="secondaryButton" type="button" onClick={retry}>{messages.retry}</button>
+          {state.reason !== "expired" && <button className="secondaryButton" type="button" onClick={retry}>{messages.retry}</button>}
         </div>}
         {state.phase === "ready" && (state.content.kind === "text" ? (
           state.content.text.length === 0 ? <p className="previewStatus" role="status">{messages.emptyFile}</p> :
@@ -105,8 +110,8 @@ function PreviewDialog({ workId, artifact, locale, messages, onDismiss }: {
         ))}
       </div>
       <footer className="previewFooter">
-        <p id={`${id}-hint`}>{messages.hint}</p>
-        <a className="secondaryButton" href={artifactURL(workId, artifact.id)} target="_blank" rel="noreferrer">{messages.original} ↗</a>
+        <p id={`${id}-hint`}>{expired ? messages.expiredHint : messages.hint}</p>
+        {!expired && <a className="secondaryButton" href={artifactURL(workId, artifact.id)} target="_blank" rel="noreferrer">{messages.original} ↗</a>}
       </footer>
     </dialog>
   );
@@ -116,25 +121,36 @@ export function ArtifactEvidence({ workId, artifacts, locale, messages }: {
   workId: string; artifacts: Artifact[]; locale: Locale; messages: Messages;
 }) {
   const heading = useId();
+  const headingElement = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
   const [selected, setSelected] = useState<Artifact | null>(null);
+  const [knownExpired, setKnownExpired] = useState<Set<string>>(new Set());
+  const onExpired = useCallback((id: string) => setKnownExpired((previous) => new Set(previous).add(id)), []);
+  const isExpired = (artifact: Artifact) => Boolean(artifact.expired_at) || knownExpired.has(artifact.id);
+  const current = selected && (artifacts.find((artifact) => artifact.id === selected.id) ?? selected);
   return (
     <section className="artifactList" aria-labelledby={heading}>
-      <div className="artifactListHeading"><h3 id={heading}>{messages.title}</h3><span>{artifacts.length}</span></div>
+      <div className="artifactListHeading"><h3 id={heading} ref={headingElement} tabIndex={-1}>{messages.title}</h3><span>{artifacts.length}</span></div>
       {artifacts.length === 0 ? <p className="artifactEmpty">{messages.empty}</p> : (
-        <ul>{artifacts.map((artifact) => <li className="artifactRow" key={artifact.id}>
-          <button className="previewTrigger" type="button" aria-haspopup="dialog" aria-label={`${messages.open}: ${artifact.name}`}
+        <ul>{artifacts.map((artifact) => <li className="artifactRow" key={artifact.id} data-expired={isExpired(artifact) || undefined}>
+          {isExpired(artifact) ? <div className="artifactExpired">
+            <span className="artifactExpiredBadge">{messages.expired}</span>
+            <span className="artifactName">{artifact.name}</span>
+            <span className="artifactSummary">{artifact.content_type} · {artifactSize(artifact.size_bytes, locale)}</span>
+            <p className="artifactExpiredHint">{messages.errors.expired}</p>
+          </div> : <><button className="previewTrigger" type="button" aria-haspopup="dialog" aria-label={`${messages.open}: ${artifact.name}`}
             onClick={(event) => { opener.current = event.currentTarget; setSelected(artifact); }}>
             <span className="artifactName">{artifact.name}</span>
             <span className="artifactSummary">{artifact.content_type} · {artifactSize(artifact.size_bytes, locale)}</span>
             <span className="artifactAction">{messages.open} <span aria-hidden="true">→</span></span>
           </button>
           <a className="artifactOriginal" href={artifactURL(workId, artifact.id)} target="_blank" rel="noreferrer"
-            aria-label={`${messages.original}: ${artifact.name}`}>{messages.original} ↗</a>
+            aria-label={`${messages.original}: ${artifact.name}`}>{messages.original} ↗</a></>}
         </li>)}</ul>
       )}
-      {selected && <PreviewDialog key={selected.id} workId={workId} artifact={selected} locale={locale} messages={messages}
-        onDismiss={() => { setSelected(null); opener.current?.focus(); }} />}
+      {current && <PreviewDialog key={current.id} workId={workId} artifact={current} locale={locale} messages={messages}
+        expired={isExpired(current)} onExpired={onExpired}
+        onDismiss={() => { setSelected(null); (opener.current?.isConnected ? opener.current : headingElement.current)?.focus(); }} />}
     </section>
   );
 }
