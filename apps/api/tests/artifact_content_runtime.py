@@ -7,6 +7,7 @@ import zlib
 MARKUP = (b'<!doctype html><meta charset="utf-8"><h1 id="probe">Synthetic probe not run</h1>'
           b"<script>document.documentElement.dataset.artifactProbe='executed';"
           b"document.getElementById('probe').textContent='Synthetic script executed';</script>")
+FILENAME_PROBES = ("검증 결과 ✅.txt", "100%20 complete; v2.txt")
 
 
 def png_evidence():
@@ -32,6 +33,13 @@ def seed_content(runtime):
         assert response.status_code == 201
         artifacts[name] = response.json()["id"]
     key = runtime.key(artifacts["plain-probe.txt"])
+    for name in FILENAME_PROBES:
+        response = client.post(f"/api/runs/{work}/artifacts", headers=runtime.leases[work], json={
+            "kind": "evidence", "name": name, "content_type": "text/plain",
+            "object_key": key, "size_bytes": len(MARKUP),
+        })
+        assert response.status_code == 201
+        artifacts[name] = response.json()["id"]
     response = client.post(f"/api/runs/{work}/artifacts", headers=runtime.leases[work], json={
         "kind": "evidence", "name": "unsupported-report.html", "content_type": "text/html",
         "object_key": key, "size_bytes": len(MARKUP),

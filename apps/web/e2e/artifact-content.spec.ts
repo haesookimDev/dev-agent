@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { buffer } from "node:stream/consumers";
 import { expect, test } from "./fixtures";
 
 // Traces include HTTP headers: never publish the disposable scoped-auth cookies.
@@ -45,6 +46,7 @@ test("artifact documents stay inert while valid evidence remains readable", asyn
       await page.waitForLoadState();
       return await response;
     };
+    let probeBytes: Buffer | undefined;
     for (const [name, contentType] of [
       ["plain-probe.txt", "text/plain"], ["evidence.png", "image/png"], ["result.json", "application/json"],
     ]) {
@@ -56,6 +58,7 @@ test("artifact documents stay inert while valid evidence remains readable", asyn
       expect(await page.evaluate(() => window.origin)).toBe("null");
       expect(await page.locator("html").getAttribute("data-artifact-probe")).toBeNull();
       if (name === "plain-probe.txt") {
+        probeBytes = await response.body();
         await expect(page.locator("body")).toContainText("<script>");
         await expect(page.locator("h1#probe, script")).toHaveCount(0);
       } else if (name === "evidence.png") {
@@ -65,6 +68,18 @@ test("artifact documents stay inert while valid evidence remains readable", asyn
       } else {
         await expect(page.locator("body")).toContainText('"result":"synthetic evidence"');
       }
+    }
+    for (const name of ["검증 결과 ✅.txt", "100%20 complete; v2.txt"]) {
+      await page.goto(evidence.bootstrapUrl);
+      const pending = page.waitForEvent("download");
+      // Chromium's real link-download gesture parses the API's Content-Disposition itself.
+      await page.getByRole("link", { name, exact: true }).click({ modifiers: ["Alt"] });
+      const download = await pending;
+      expect(download.suggestedFilename()).toBe(name);
+      expect(await download.failure()).toBeNull();
+      const stream = await download.createReadStream();
+      if (!stream || !probeBytes) throw new Error("Downloaded filename evidence is missing");
+      expect(await buffer(stream)).toEqual(probeBytes);
     }
     const denied = await open("unsupported-report.html");
     expect(denied.status()).toBe(410);

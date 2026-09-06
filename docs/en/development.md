@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Artifact filename regression
+
+[Filename/header boundaries](artifact-filenames.md) run in existing `make test-api`/`Python` CI, covering international names, controls and safe fallback for retained names. The `Web` content case also asserts filenames chosen by actual Chromium downloads and original bytes. Do not replace this with only header-string checks or forced download names. Existing content, authorization and page-error checks remain; no CI job is added.
+
 ## Artifact content regression
 
 [The content execution boundary](artifact-content.md) checks registration/download formats, actual bytes and security headers in `make test-api` and existing `Python` CI. Existing `Web` CI runs `artifact-content.spec.ts` against real HTTP services to verify inert text, loaded images, JSON and rejection of retained HTML. Only this case excludes traces containing temporary scoped-auth headers; page-error assertions, failure screenshots and shared resource-release checks remain. Also lint its Python service with `.venv/bin/python -m ruff check apps/web/e2e/artifact-runtime.py`. No job or dependency is added.

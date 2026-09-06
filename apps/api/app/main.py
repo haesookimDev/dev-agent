@@ -30,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .artifact_content import ALLOWED_ARTIFACT_TYPES, artifact_content_matches
+from .artifact_names import artifact_disposition, valid_artifact_name
 from .artifact_storage import (
     MAX_ARTIFACT_BYTES,
     ArtifactStorageError,
@@ -1246,6 +1247,8 @@ async def register_artifact(
     except ValueError:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             "artifact key must belong to this work") from None
+    if not valid_artifact_name(payload.name):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid artifact name")
     if payload.content_type not in ALLOWED_ARTIFACT_TYPES:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "unsupported artifact type")
     artifact = Artifact(work_item_id=work_item_id, **payload.model_dump())
@@ -1277,7 +1280,7 @@ async def upload_artifact(
 ) -> ArtifactView:
     await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
     await get_work_item(session, work_item_id)
-    if Path(name).name != name or any(character in name for character in '"/\\\r\n'):
+    if not valid_artifact_name(name):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid artifact name")
     if content_type not in ALLOWED_ARTIFACT_TYPES:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "unsupported artifact type")
@@ -1367,7 +1370,7 @@ async def download_artifact(
         content=content,
         media_type=artifact.content_type,
         headers={
-            "Content-Disposition": f'inline; filename="{artifact.name}"',
+            "Content-Disposition": artifact_disposition(artifact.name),
             "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "sandbox",
         },

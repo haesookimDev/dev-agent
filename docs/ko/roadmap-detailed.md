@@ -66,7 +66,7 @@
 
 ### OPS-001 · 보존 및 복구 Worker — M
 
-[일반 산출물의 작업별 저장·읽기 경계](artifact-isolation.md)와 [실행 문서 차단·다운로드 콘텐츠 재검사](artifact-content.md)를 추가했습니다(2026-09-06). 범위 밖 기존 키·하위 링크·미지원 MIME은 제공하지 않습니다. 파일명 인코딩·HTTP 캐시 보호, 산출물 열람 UI의 대비/오류 안내와 파일 자체의 Backup/Restore는 별도 후속 작업입니다.
+[일반 산출물의 작업별 저장·읽기 경계](artifact-isolation.md), [실행 문서 차단·다운로드 콘텐츠 재검사](artifact-content.md)와 [한글 파일명·기존 Header 안전성](artifact-filenames.md)을 추가했습니다(2026-09-06). 범위 밖 기존 키·하위 링크·미지원 MIME은 제공하지 않습니다. HTTP 캐시 보호, 산출물 열람 UI의 대비/오류 안내와 파일 자체의 Backup/Restore는 별도 후속 작업입니다.
 
 상태: [미배정 대기 작업의 관리자 취소와 감사](work-cancellation.md), [PostgreSQL 백업·새 DB 복원 절차와 데이터·권한·감사 검증](postgres-restore.md), [전달 Patch의 실제 바이트 검증과 고정 사본 적용](delivery-integrity.md)을 구현했습니다. 실행 중 VM 종료·정리를 보장하는 취소, 재시도, 강제 임대 해제, 보존 정책·Janitor, 일반 Artifact와 Object Store 복구 및 실제 운영 복구 검증은 남아 있습니다.
 

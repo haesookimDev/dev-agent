@@ -2,6 +2,10 @@
 
 한국어 | [English](../en/development.md)
 
+## 산출물 파일명 회귀
+
+[파일명과 Header 경계](artifact-filenames.md)는 기존 `make test-api`/`Python` CI에서 한글·제어 문자·기존 이름의 안전한 대체를 검증합니다. `Web` CI의 콘텐츠 사례는 실제 Chromium 다운로드가 결정한 파일명과 원본 바이트까지 검사합니다. Header 문자열 검사나 강제 지정한 다운로드 이름만으로 이를 대체하지 않습니다. 기존 콘텐츠·권한·화면 오류 검사를 유지하며 새 CI Job은 추가하지 않습니다.
+
 ## 산출물 콘텐츠 회귀
 
 [콘텐츠 실행 경계](artifact-content.md)는 `make test-api`와 기존 `Python` CI에서 등록·다운로드 형식·실제 바이트·보안 Header를 검사합니다. 기존 `Web` CI의 `artifact-content.spec.ts`는 실제 HTTP 서비스에서 텍스트 비실행, 이미지 로드, JSON과 기존 HTML 거부를 검증합니다. 임시 Scoped 인증 Header가 남는 Trace만 이 사례에서 제외하며 화면 오류 검사·실패 스크린샷·공통 자원 해제 검증은 유지합니다. 검증용 Python 서비스도 `.venv/bin/python -m ruff check apps/web/e2e/artifact-runtime.py`로 검사합니다. 새 Job·의존성은 추가하지 않습니다.
