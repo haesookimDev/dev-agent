@@ -66,6 +66,8 @@ Done when one run can be traced end to end and an intentionally stuck run produc
 
 ### OPS-001 · Retention and recovery workers — M
 
+[Work-scoped ordinary artifact writes/reads](artifact-isolation.md) were added (2026-09-06). Retained out-of-scope keys and descendant links are not served. Content presentation/HTTP cache protection and physical file backup/restore are separate follow-up work.
+
 Status: [administrator cancellation of unassigned queued work with auditing](work-cancellation.md), [PostgreSQL backup/new-database restoration with data/permission/audit verification](postgres-restore.md), and [delivery-patch byte verification with fixed-copy application](delivery-integrity.md) are implemented. Active-run cancellation with verified VM termination/cleanup, retry, forced lease release, retention policies/janitors, ordinary artifact/object-store recovery, and actual operational recovery verification remain.
 
 Scope:
