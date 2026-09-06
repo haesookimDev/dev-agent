@@ -52,6 +52,7 @@ from .authorization import (
     development_repository,
     slack_actor,
 )
+from .bundle_storage import MAX_BUNDLE_BYTES, BundleIntegrityError, verified_bundle_bytes
 from .config import Settings, get_settings
 from .correlation import CorrelationMiddleware
 from .db import (
@@ -238,7 +239,7 @@ async def get_work_item(
     return item
 
 
-async def validate_delivery_ready(session: AsyncSession, item: WorkItem) -> bool:
+async def validate_delivery_ready(session: AsyncSession, item: WorkItem, config: Settings) -> bool:
     """Return whether central GitHub delivery is required for this run."""
     worker = (
         await session.get(WorkerHost, item.assigned_worker_id)
@@ -247,7 +248,8 @@ async def validate_delivery_ready(session: AsyncSession, item: WorkItem) -> bool
     )
     if worker is not None and worker.labels.get("virtualization") == "mock":
         return False
-    if await session.get(DeliveryBundle, item.id) is None:
+    bundle = await session.get(DeliveryBundle, item.id)
+    if bundle is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "the runner has not uploaded a verified delivery bundle",
@@ -257,6 +259,12 @@ async def validate_delivery_ready(session: AsyncSession, item: WorkItem) -> bool
             status.HTTP_409_CONFLICT,
             "GitHub App installation is not configured for this repository",
         )
+    try:
+        await asyncio.to_thread(verified_bundle_bytes, config.artifact_root,
+                                bundle.object_path, bundle.sha256, bundle.size_bytes)
+    except BundleIntegrityError:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "delivery bundle is unavailable or invalid") from None
     return True
 
 
@@ -282,14 +290,6 @@ def write_delivery_bundle(root: str, work_item_id: str, content: bytes) -> Path:
     temporary.write_bytes(content)
     os.replace(temporary, destination)
     return destination
-
-
-def read_delivery_bundle(root: str, object_path: str) -> bytes | None:
-    artifact_root = Path(root).resolve()
-    path = Path(object_path).resolve()
-    if not path.is_relative_to(artifact_root) or not path.is_file():
-        return None
-    return path.read_bytes()
 
 
 def write_artifact_content(root: str, object_key: str, content: bytes) -> Path:
@@ -742,6 +742,7 @@ async def decide_approval(
     session: SessionDep,
     actor: ActorDep,
     background_tasks: BackgroundTasks,
+    config: SettingsDep,
 ) -> WorkItem:
     item, decision = await authorized_work_with_decision(
         session, actor, work_item_id, Role.APPROVER, lock=True,
@@ -754,7 +755,7 @@ async def decide_approval(
         if item.status != WorkStatus.AWAITING_APPROVAL:
             raise HTTPException(status.HTTP_409_CONFLICT, "work is not awaiting PR approval")
         if payload.decision == "approve":
-            should_deliver = await validate_delivery_ready(session, item)
+            should_deliver = await validate_delivery_ready(session, item, config)
             target = WorkStatus.COMMITTING
         else:
             target = WorkStatus.IMPLEMENTING
@@ -1050,7 +1051,7 @@ async def slack_command(
     if action == "approve":
         if item.status != WorkStatus.AWAITING_APPROVAL:
             raise HTTPException(status.HTTP_409_CONFLICT, "work is not awaiting approval")
-        should_deliver = await validate_delivery_ready(session, item)
+        should_deliver = await validate_delivery_ready(session, item, config)
         before = ApprovalState.capture(item)
         approval = Approval(
             work_item_id=work_item_id,
@@ -1189,7 +1190,7 @@ async def upload_delivery_bundle(
             "delivery bundles are accepted only after implementation verification",
         )
     content_length = request.headers.get("content-length")
-    maximum_size = 20 * 1024 * 1024
+    maximum_size = MAX_BUNDLE_BYTES
     if content_length:
         try:
             declared_size = int(content_length)
@@ -1246,11 +1247,11 @@ async def download_delivery_bundle(
     bundle = await session.get(DeliveryBundle, work_item_id)
     if bundle is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "delivery bundle not found")
-    content = await asyncio.to_thread(
-        read_delivery_bundle, config.artifact_root, bundle.object_path
-    )
-    if content is None:
-        raise HTTPException(status.HTTP_410_GONE, "delivery bundle is unavailable")
+    try:
+        content = await asyncio.to_thread(verified_bundle_bytes, config.artifact_root,
+                                         bundle.object_path, bundle.sha256, bundle.size_bytes)
+    except BundleIntegrityError:
+        raise HTTPException(status.HTTP_410_GONE, "delivery bundle is unavailable") from None
     return Response(
         content=content,
         media_type="text/x-diff",

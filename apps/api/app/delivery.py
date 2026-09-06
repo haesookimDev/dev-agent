@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .bundle_storage import BundleIntegrityError, verified_bundle_bytes, write_bundle_snapshot
 from .config import get_settings
 from .db import SessionLocal
 from .delivery_audit import (
@@ -49,7 +50,7 @@ class DeliveryPersistenceError(RuntimeError):
 
 
 def delivery_error_code(error: Exception) -> str:
-    if isinstance(error, DeliveryAuthorityError):
+    if isinstance(error, (DeliveryAuthorityError, BundleIntegrityError)):
         return error.code
     if isinstance(error, DeliveryCommandError):
         return "command_failed"
@@ -249,6 +250,10 @@ async def _deliver_work(work_item_id: str) -> None:
     try:
         if not work.github_installation_id:
             raise RuntimeError("repository has no GitHub App installation")
+        stage = "bundle"
+        content = await asyncio.to_thread(verified_bundle_bytes, settings.artifact_root,
+                                         bundle.object_path, authority.bundle_sha256,
+                                         bundle.size_bytes)
         stage = "token"
         async with guard_delivery_write(work_item_id, approval_audit_id=authority.audit_id):
             token = await github.installation_token(work.github_installation_id)
@@ -273,6 +278,9 @@ async def _deliver_work(work_item_id: str) -> None:
                 prepare_delivery_workspace, settings.artifact_root
             )
             try:
+                snapshot = await asyncio.to_thread(
+                    write_bundle_snapshot, Path(temporary.name), content,
+                )
                 environment = {
                     **os.environ,
                     "GIT_ASKPASS": str(askpass),
@@ -295,7 +303,7 @@ async def _deliver_work(work_item_id: str) -> None:
                 await run_command("git", "checkout", "-b", target_branch, cwd=repository)
                 stage = "apply"
                 await run_command(
-                    "git", "apply", "--index", "--binary", bundle.object_path, cwd=repository
+                    "git", "apply", "--index", "--binary", str(snapshot), cwd=repository
                 )
                 stage = "commit"
                 await run_command(
