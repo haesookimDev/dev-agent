@@ -96,7 +96,10 @@ test("live closure preserves focused input; all closed states have localized rea
         })).toBe(true);
       }
       await expect(page.getByRole("heading", { name: messages.run.feedbackClosedTitle, exact: true })).toBeVisible();
-      await expect(page.locator(".controlPanel textarea, .controlPanel button")).toHaveCount(0);
+      await expect(page.locator(".controlPanel textarea")).toHaveCount(0);
+      // Closed work permits exactly the read-only evidence preview, never feedback/approval controls.
+      await expect(page.locator(".controlPanel button")).toHaveCount(1);
+      await expect(page.getByRole("button", { name: `${messages.artifacts.open}: verification.txt`, exact: true })).toBeEnabled();
       await expect(page.locator(".artifactList a").first()).toBeVisible();
       await expect(page.locator(".artifactList a").first()).toHaveAttribute("href", `${url}/artifacts/presentation-evidence`);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

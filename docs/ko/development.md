@@ -2,6 +2,10 @@
 
 한국어 | [English](../en/development.md)
 
+## 산출물 미리보기 회귀
+
+[산출물 미리보기](artifact-preview.md)는 `make test-web`과 기존 `Web` CI에서 제한된 읽기·형식·취소와 실제 업로드·모달 포커스·재시도·원본 다운로드를 검증합니다. `npm run test:e2e --prefix apps/web -- artifact-preview.spec.ts`로 집중 실행하며 Seed Helper는 `.venv/bin/python -m ruff check apps/web/e2e/seed-artifacts.py`로 검사합니다. 완료 작업의 읽기 전용 열람과 변경 동작 금지를 구분해 검증합니다. 오류 Fixture를 실제 권한·복구 검증으로 표현하지 말고 운영 빌드와 Scoped API의 화면도 확인하세요.
+
 ## 산출물 캐시 회귀
 
 [산출물 HTTP 캐시 보호](artifact-cache.md)는 기존 `make test-api`/`Python`과 `Web` CI에 포함됩니다. 목록·파일·처리된 오류의 `no-store`/`Vary: Origin`, 실제 HTTP Header, 기본 캐시를 유지한 Chromium의 직접 탐색 → 복구 → 같은 URL 재조회와 권한 변경을 검증합니다. 캐시 비활성화·URL Nonce·Mock으로 대체하지 않습니다. 브라우저 Helper는 `.venv/bin/python -m ruff check apps/web/e2e/artifact-cache-runtime.py`로 검사합니다. 새 CI Job·Timeout은 추가하지 않습니다.
