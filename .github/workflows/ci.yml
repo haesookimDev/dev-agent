@@ -88,7 +88,9 @@ jobs:
           KELPIE_TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           test -n "$KELPIE_TEST_POSTGRES_CONTAINER"
-          python -m pytest -q apps/api/tests/test_postgres_restore.py apps/api/tests/test_postgres_restore_runtime.py
+          python -m pytest -q apps/api/tests/test_postgres_restore.py \
+            apps/api/tests/test_postgres_restore_runtime.py \
+            apps/api/tests/test_artifact_restore_runtime.py
 
   go:
     name: Go
