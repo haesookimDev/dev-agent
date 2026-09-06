@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .artifact_content import ALLOWED_ARTIFACT_TYPES, artifact_content_matches
 from .artifact_storage import (
     MAX_ARTIFACT_BYTES,
     ArtifactStorageError,
@@ -317,24 +318,7 @@ def ensure_allowed_preview_target(target_url: str, allowed_cidrs: list[str]) -> 
 
 
 def validate_artifact_content(content_type: str, content: bytes) -> None:
-    valid = True
-    if content_type == "image/png":
-        valid = content.startswith(b"\x89PNG\r\n\x1a\n")
-    elif content_type == "image/jpeg":
-        valid = content.startswith(b"\xff\xd8\xff")
-    elif content_type == "image/webp":
-        valid = len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
-    elif content_type == "application/json":
-        try:
-            json.loads(content)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            valid = False
-    elif content_type == "text/plain":
-        try:
-            content.decode("utf-8")
-        except UnicodeDecodeError:
-            valid = False
-    if not valid:
+    if not artifact_content_matches(content_type, content):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "artifact content does not match its declared type",
@@ -1262,6 +1246,8 @@ async def register_artifact(
     except ValueError:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             "artifact key must belong to this work") from None
+    if payload.content_type not in ALLOWED_ARTIFACT_TYPES:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "unsupported artifact type")
     artifact = Artifact(work_item_id=work_item_id, **payload.model_dump())
     session.add(artifact)
     await emit_event(
@@ -1293,8 +1279,7 @@ async def upload_artifact(
     await get_work_item(session, work_item_id)
     if Path(name).name != name or any(character in name for character in '"/\\\r\n'):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid artifact name")
-    allowed_types = {"image/png", "image/jpeg", "image/webp", "text/plain", "application/json"}
-    if content_type not in allowed_types:
+    if content_type not in ALLOWED_ARTIFACT_TYPES:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "unsupported artifact type")
     maximum_size = MAX_ARTIFACT_BYTES
     declared = request.headers.get("content-length")
@@ -1369,10 +1354,14 @@ async def download_artifact(
     artifact = await session.get(Artifact, artifact_id)
     if artifact is None or artifact.work_item_id != work_item_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
+    if artifact.content_type not in ALLOWED_ARTIFACT_TYPES:
+        raise HTTPException(status.HTTP_410_GONE, "artifact content is unavailable")
     content = await asyncio.to_thread(
         read_artifact_content, config.artifact_root, work_item_id, artifact.object_key
     )
-    if content is None:
+    if content is None or not await asyncio.to_thread(
+        artifact_content_matches, artifact.content_type, content,
+    ):
         raise HTTPException(status.HTTP_410_GONE, "artifact content is unavailable")
     return Response(
         content=content,
@@ -1380,6 +1369,7 @@ async def download_artifact(
         headers={
             "Content-Disposition": f'inline; filename="{artifact.name}"',
             "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
         },
     )
 
