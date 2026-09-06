@@ -4,7 +4,7 @@
 
 ## 범위와 복구 지점
 
-OPS-001의 로컬 `ARTIFACT_ROOT` 일반 Artifact 파일을 대응 DB Dump와 연결하는 오프라인 운영 명령입니다. `pg_dump`에는 외부 파일이 없으므로 [DB 백업·복원](postgres-restore.md)과 함께 사용합니다. API·DB Schema·환경변수 기본값·조직 권한·다운로드 정책은 변경하지 않습니다. Delivery Bundle, VM Disk, Preview, 외부 Object Store, 예약 Backup·PITR·Janitor는 이 Snapshot에 포함되지 않습니다.
+OPS-001의 로컬 `ARTIFACT_ROOT` 일반 Artifact 파일을 대응 DB Dump와 연결하는 오프라인 운영 명령입니다. `pg_dump`에는 외부 파일이 없으므로 [DB 백업·복원](postgres-restore.md)과 함께 사용합니다. 이 백업 명령 자체는 API·DB Schema·환경변수 기본값·조직 권한·다운로드 정책을 변경하지 않습니다. [일반 파일 보존 정리](artifact-retention.md)의 0010 만료 상태는 백업 V2로 유지합니다. Delivery Bundle, VM Disk, Preview, 외부 Object Store, 예약 Backup·PITR·Janitor는 이 Snapshot에 포함되지 않습니다.
 
 - 승인된 Control Host에서 배포된 API와 같은 Version으로 실행합니다. `DATABASE_URL`은 Secret Manager가 안전하게 주입한 검증 대상 DB를 가리켜야 합니다. CLI에는 Schema 조회와 Artifact SELECT 권한만 필요하며 API 시작·Migration·DB 쓰기·서비스 중지·재개·경로 전환을 수행하지 않습니다.
 - 유입과 DB/파일 Writer를 운영자가 정지·조정한 상태에서 DB Dump → 파일 Snapshot을 만들고, 완료까지 같은 복구 지점을 유지합니다. `--writers-stopped`는 이 조정을 했다는 확인일 뿐 정지 명령·Lock·정지 증명이 아닙니다. 시작/종료의 메타데이터·Dump 해시 대조도 모든 동시 쓰기를 탐지하지는 못합니다.

@@ -51,6 +51,8 @@ RBAC Rollback 시에는 먼저 API 유입·Webhook과 Worker를 중지하고 DB 
 
 [백업·복원 절차와 실제 PostgreSQL 회귀](postgres-restore.md)는 새 DB에서 전체 행·권한·감사·Sequence 보존과 실패 시 원자적 Rollback을 검증합니다. 자동 전달 재개 위험, 외부 파일·Role·폐기 상태 대조와 운영 전환 Gate를 확인하세요. 예약 운영 Backup이나 Object Store·VM 복구 완료를 의미하지 않습니다.
 
+일반 산출물의 정리는 [보존 기간 CLI·만료 UI·백업 V2 절차](artifact-retention.md)를 따릅니다. 기본은 dry run이며 모든 API 인스턴스의 0010 호환 업그레이드와 승인된 보존 정책을 확인한 후에만 `--apply`를 사용합니다. 실행 중 작업·격리·미해제 임대는 보호하며 VM·감사·Delivery Bundle이나 이전 백업을 삭제하지 않습니다.
+
 ## 시작 시 전달 복구
 
 DB가 준비되지 않은 상태로 시작한 API도 연결·Schema 복구 후 [대기 중인 전달을 재개](delivery-recovery.md)합니다. 이 복구는 단일 API 프로세스 전용이며, 교체 시 이전 API를 완전히 종료한 뒤 새 API를 시작해야 합니다. `/readyz` 200을 전달 완료 신호로 사용하지 마세요.

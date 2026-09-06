@@ -4,7 +4,7 @@
 
 ## Scope and recovery point
 
-This offline OPS-001 control-host command binds ordinary files in local `ARTIFACT_ROOT` to a matching database dump. Use it with [database backup/restore](postgres-restore.md): `pg_dump` does not contain external files. API/database schemas, environment defaults, organization permissions and download policies are unchanged. Delivery bundles, VM disks, previews, external object stores, scheduled backups, PITR and janitors are not included.
+This offline OPS-001 control-host command binds ordinary files in local `ARTIFACT_ROOT` to a matching database dump. Use it with [database backup/restore](postgres-restore.md): `pg_dump` does not contain external files. The backup command itself does not change API/database schemas, environment defaults, organization permissions or download policies. Backup V2 retains revision 0010 expiration state from [ordinary-file retention](artifact-retention.md). Delivery bundles, VM disks, previews, external object stores, scheduled backups, PITR and janitors are not included.
 
 - Run the deployed API version on an authorized control host. Secret management must safely supply `DATABASE_URL` for the intended database. The CLI needs schema inspection and Artifact SELECT privileges only. It never starts the API, migrates/writes the DB, stops/restarts services or switches their paths.
 - Operators must stop/coordinate ingress and DB/file writers, then create the DB dump and file snapshot at the same recovery point. `--writers-stopped` acknowledges this coordination; it is not a stop command, lock or proof. Before/after metadata and dump-hash comparisons cannot detect every concurrent write.

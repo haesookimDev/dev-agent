@@ -38,7 +38,11 @@ English | [한국어](../ko/development.md)
 
 [Backup/restore verification](postgres-restore.md) runs `test_postgres_restore.py` and `test_postgres_restore_runtime.py` with dedicated `KELPIE_TEST_POSTGRES_URL` and `KELPIE_TEST_POSTGRES_CONTAINER` settings pointing to the same server. Existing `Python` CI reuses its PostgreSQL 17 container's tools. Locally, missing variables skip six tests; passing default tests alone does not complete restore verification. Cleanup removes only test-created UUID databases/roles, never existing databases or audits.
 
-[Ordinary artifact file restoration](artifact-backup.md) adds 61 file/CLI tests and two actual DB/file/HTTP tests in `test_artifact_restore_runtime.py`. The same required CI restore step runs eight tests within the unchanged eight-minute limit. Operational commands require writer coordination acknowledgement, a separately trusted manifest hash and a new path. Restored DB rows or an existing marker alone never count as successful file recovery.
+[Ordinary artifact file restoration](artifact-backup.md) verifies 90 file/CLI tests including V2 expiration state and three actual DB/file/HTTP tests in `test_artifact_restore_runtime.py`. The same required CI restore step runs nine tests within the unchanged eight-minute limit. Operational commands require writer coordination acknowledgement, a separately trusted manifest hash and a new path. Restored DB rows or an existing marker alone never count as successful file recovery.
+
+## Artifact retention regression
+
+[Ordinary artifact retention](artifact-retention.md) uses existing `Python` CI for SQLite safety checks and 31 real PostgreSQL schema/lease/quarantine concurrency cases in `test_artifact_retention_postgres.py` and `test_artifact_retention_runtime_postgres.py`. These 31 cases skip without the local PostgreSQL URL, so verify with a real database separately. Existing `Web` CI runs `artifact-retention.spec.ts` for actual CLI cleanup, expired UI in both locales and stale-list 410 handling. Also check the seed helper with `.venv/bin/python -m ruff check apps/web/e2e/seed-retention.py`. No new job, dependency or timeout is added; never run a test `--apply` against production files.
 
 ## Definition of done
 

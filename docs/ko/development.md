@@ -38,7 +38,11 @@
 
 [백업·복원 검증](postgres-restore.md)은 전용 `KELPIE_TEST_POSTGRES_URL`과 같은 서버의 `KELPIE_TEST_POSTGRES_CONTAINER`를 설정한 뒤 `test_postgres_restore.py`·`test_postgres_restore_runtime.py`를 실행합니다. 기존 `Python` CI가 PostgreSQL 17 Container의 도구를 재사용합니다. 로컬에서 환경변수가 없으면 6개가 Skip되므로 기본 테스트 성공만으로 복원 검증을 완료하지 않습니다. 테스트가 만든 UUID DB·Role만 정리하며 기존 DB나 감사를 삭제하지 않습니다.
 
-[일반 산출물 파일 복원](artifact-backup.md)은 파일/CLI 61개 테스트와 `test_artifact_restore_runtime.py`의 실제 DB·파일·HTTP 복원 2개를 추가합니다. 같은 필수 CI 복원 Step이 총 8개를 실행하며 8분 제한은 유지합니다. 운영 명령은 Writer 조정 확인·신뢰된 별도 Manifest 해시·새 경로를 요구합니다. DB 행만 복원되거나 표시 파일만 존재하는 상태를 파일 복구 성공으로 보고하지 않습니다.
+[일반 산출물 파일 복원](artifact-backup.md)은 V2 만료 상태를 포함한 파일/CLI 90개 테스트와 `test_artifact_restore_runtime.py`의 실제 DB·파일·HTTP 복원 3개를 검증합니다. 같은 필수 CI 복원 Step이 총 9개를 실행하며 8분 제한은 유지합니다. 운영 명령은 Writer 조정 확인·신뢰된 별도 Manifest 해시·새 경로를 요구합니다. DB 행만 복원되거나 표시 파일만 존재하는 상태를 파일 복구 성공으로 보고하지 않습니다.
+
+## 산출물 보존 정리 회귀
+
+[일반 산출물 보존 정리](artifact-retention.md)는 기존 `Python` CI에서 SQLite 안전 검사와 `test_artifact_retention_postgres.py`·`test_artifact_retention_runtime_postgres.py`의 실제 PostgreSQL Schema·임대·격리 경합 31개를 실행합니다. 로컬 PostgreSQL URL이 없으면 이 31개는 Skip되므로 실제 DB 검증을 별도로 수행합니다. 기존 `Web` CI는 `artifact-retention.spec.ts`의 실제 CLI 정리·양 언어 만료 UI·오래 열린 목록의 410 처리를 검증합니다. Seed Helper도 `.venv/bin/python -m ruff check apps/web/e2e/seed-retention.py`로 검사합니다. 새 Job·의존성·Timeout은 추가하지 않으며 운영 파일에 테스트용 `--apply`를 실행하지 않습니다.
 
 ## 완료 기준
 
