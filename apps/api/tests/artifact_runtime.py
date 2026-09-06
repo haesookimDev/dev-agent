@@ -16,8 +16,8 @@ from pathlib import Path
 
 import httpx
 from alembic import command
+from alembic.config import Config
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from test_migrations import migration_config
 
 from app.auth import hash_token
 from app.iam import OrganizationPolicy, apply_policy
@@ -68,7 +68,9 @@ class ArtifactRuntime:
 def artifact_runtime(directory: Path, *, port=None, web_origin="http://localhost:3000"):
     database = directory / "artifact.db"
     database_url = f"sqlite+aiosqlite:///{database}"
-    command.upgrade(migration_config(database_url), "head")
+    migration = Config(ROOT / "apps/api/alembic.ini")
+    migration.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(migration, "head")
     tokens = (secrets.token_urlsafe(32), secrets.token_urlsafe(32))
 
     async def seed():
