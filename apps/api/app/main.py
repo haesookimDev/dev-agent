@@ -1373,6 +1373,8 @@ async def download_artifact(
     artifact = await session.get(Artifact, artifact_id)
     if artifact is None or artifact.work_item_id != work_item_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
+    if artifact.expired_at is not None:
+        raise HTTPException(status.HTTP_410_GONE, "artifact retention period has expired")
     if artifact.content_type not in ALLOWED_ARTIFACT_TYPES:
         raise HTTPException(status.HTTP_410_GONE, "artifact content is unavailable")
     content = await asyncio.to_thread(
