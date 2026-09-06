@@ -29,6 +29,13 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .artifact_storage import (
+    MAX_ARTIFACT_BYTES,
+    ArtifactStorageError,
+    artifact_path,
+    read_artifact_content,
+    write_artifact_content,
+)
 from .audit import (
     ApprovalState,
     ConsoleOwnership,
@@ -290,25 +297,6 @@ def write_delivery_bundle(root: str, work_item_id: str, content: bytes) -> Path:
     temporary.write_bytes(content)
     os.replace(temporary, destination)
     return destination
-
-
-def write_artifact_content(root: str, object_key: str, content: bytes) -> Path:
-    destination = Path(root) / object_key
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(
-        f"{destination.name}.{os.getpid()}.{os.urandom(8).hex()}.tmp"
-    )
-    temporary.write_bytes(content)
-    os.replace(temporary, destination)
-    return destination
-
-
-def read_artifact_content(root: str, object_key: str) -> bytes | None:
-    artifact_root = Path(root).resolve()
-    path = (artifact_root / object_key).resolve()
-    if not path.is_relative_to(artifact_root) or not path.is_file():
-        return None
-    return path.read_bytes()
 
 
 def ensure_allowed_preview_target(target_url: str, allowed_cidrs: list[str]) -> None:
@@ -1269,6 +1257,11 @@ async def register_artifact(
 ) -> dict[str, str]:
     await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
     await get_work_item(session, work_item_id)
+    try:
+        artifact_path(work_item_id, payload.object_key)
+    except ValueError:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            "artifact key must belong to this work") from None
     artifact = Artifact(work_item_id=work_item_id, **payload.model_dump())
     session.add(artifact)
     await emit_event(
@@ -1303,7 +1296,7 @@ async def upload_artifact(
     allowed_types = {"image/png", "image/jpeg", "image/webp", "text/plain", "application/json"}
     if content_type not in allowed_types:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "unsupported artifact type")
-    maximum_size = 10 * 1024 * 1024
+    maximum_size = MAX_ARTIFACT_BYTES
     declared = request.headers.get("content-length")
     if declared and declared.isdecimal() and int(declared) > maximum_size:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "artifact exceeds 10 MiB")
@@ -1316,9 +1309,13 @@ async def upload_artifact(
     artifact_id = str(uuid.uuid4())
     suffix = Path(name).suffix.lower()[:12]
     object_key = f"{work_item_id}/artifacts/{artifact_id}{suffix}"
-    path = await asyncio.to_thread(
-        write_artifact_content, config.artifact_root, object_key, content
-    )
+    try:
+        path = await asyncio.to_thread(
+            write_artifact_content, config.artifact_root, work_item_id, object_key, content,
+        )
+    except ArtifactStorageError:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "artifact storage is unavailable") from None
     artifact = Artifact(
         id=artifact_id,
         work_item_id=work_item_id,
@@ -1373,7 +1370,7 @@ async def download_artifact(
     if artifact is None or artifact.work_item_id != work_item_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
     content = await asyncio.to_thread(
-        read_artifact_content, config.artifact_root, artifact.object_key
+        read_artifact_content, config.artifact_root, work_item_id, artifact.object_key
     )
     if content is None:
         raise HTTPException(status.HTTP_410_GONE, "artifact content is unavailable")

@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Work-scoped artifact regression
+
+[Artifact storage boundary](artifact-isolation.md) file/API/real HTTP tests run in `make test-api` and existing required `Python` CI. Both registration and downloads must enforce the exact work's `artifacts` namespace without retained-metadata or descendant-link bypasses. Restore fixtures also use valid work-scoped keys so missing-file rejection remains verified.
+
 ## Delivery-byte integrity regression
 
 [Patch integrity](delivery-integrity.md) file/approval/delivery tests and real HTTP/Git regression run in `make test-api` and existing required `Python` CI. Delivery changes must retain rejection of missing/corrupt/out-of-root files and application of approved bytes even after original-file replacement. Use fixtures matching actual files instead of bypassing invalid test hashes.

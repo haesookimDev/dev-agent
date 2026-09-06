@@ -2,6 +2,10 @@
 
 한국어 | [English](../en/development.md)
 
+## 산출물 작업 격리 회귀
+
+[산출물 저장 경계](artifact-isolation.md)의 파일·API·실제 HTTP 테스트는 `make test-api`와 기존 필수 `Python` CI에 포함됩니다. 등록과 다운로드 모두 정확한 작업의 `artifacts` 경로를 검사해야 하며, 기존 메타데이터·하위 링크로 우회하지 않습니다. 복원 Fixture도 정상 작업 경로를 사용해 누락된 실제 파일의 거부를 검증합니다.
+
 ## 전달 바이트 무결성 회귀
 
 [패치 무결성](delivery-integrity.md)의 파일·승인·전달 테스트와 실제 HTTP/Git 회귀는 `make test-api` 및 기존 필수 `Python` CI에 포함됩니다. 전달 변경 시 누락·변조·경로 이탈의 거부와 검증 뒤 원본 교체에도 승인된 바이트만 적용되는 경계를 유지합니다. 잘못된 테스트 Hash를 우회하지 말고 실제 파일과 일치하는 Fixture를 작성합니다.

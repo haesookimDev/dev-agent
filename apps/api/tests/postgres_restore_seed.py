@@ -81,7 +81,7 @@ async def seed_database(database_url):
             await insert(m.Approval, work_item_id=identity, kind="delivery", decision="approved",
                          actor="historical-approver", payload={"version": 7})
             await insert(m.Artifact, work_item_id=identity, kind="screenshot", name="screen.png",
-                         content_type="image/png", object_key=f"{identity}/screen.png",
+                         content_type="image/png", object_key=f"{identity}/artifacts/screen.png",
                          size_bytes=123)
             await insert(m.PreviewEndpoint, work_item_id=identity,
                          hostname="restore.example.invalid",
