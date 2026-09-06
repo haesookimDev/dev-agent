@@ -2,17 +2,19 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+from delivery_fixtures import PATCH_SHA256, seed_delivery_bundle
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from test_authorization import authorized as authorized
 from test_authorization import create_item, database, sign_in
 from test_integration_authorization import slack_request
 
+from app.config import get_settings
+from app.main import app
 from app.models import (
     AgentEvent,
     Approval,
     AuditRecord,
-    DeliveryBundle,
     DeliveryJob,
     Principal,
     WorkItem,
@@ -27,8 +29,7 @@ async def prepare_work(client, monkeypatch, kind="pull_request"):
         work.status = (WorkStatus.BUDGET_EXHAUSTED if kind == "budget"
                        else WorkStatus.AWAITING_APPROVAL)
         work.github_installation_id = 12
-        session.add(DeliveryBundle(work_item_id=work.id, sha256="a" * 64,
-                                  object_path="test-only.patch", size_bytes=123))
+        seed_delivery_bundle(session, work, app.dependency_overrides[get_settings]().artifact_root)
         await session.commit()
         item["status"] = work.status.value
     monkeypatch.setattr("app.main.github", SimpleNamespace(configured=True))
@@ -94,7 +95,7 @@ async def test_approval_audit_captures_identity_roles_and_bounded_before_after_d
             "work_status_before": item["status"], "work_status_after": final_status,
             "work_version_before": item["version"],
             "work_version_after": item["version"] + int(changed),
-            "delivery_queued": central, "delivery_bundle_sha256": "a" * 64 if central else None,
+            "delivery_queued": central, "delivery_bundle_sha256": PATCH_SHA256 if central else None,
         }
         snapshot = {column.name: getattr(record, column.name)
                     for column in record.__table__.columns}

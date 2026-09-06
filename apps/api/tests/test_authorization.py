@@ -45,7 +45,10 @@ async def sign_in(client, subject="admin", organization="acme", issuer="https://
 
 @pytest.fixture
 async def authorized(client):
-    app.dependency_overrides[get_settings] = oidc_settings
+    artifact_root = app.dependency_overrides[get_settings]().artifact_root
+    app.dependency_overrides[get_settings] = lambda: oidc_settings().model_copy(
+        update={"artifact_root": artifact_root},
+    )
     client.headers["Origin"] = "https://dashboard.example"
     async with database() as session:
         for org in ("acme", "other"):

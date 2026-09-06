@@ -61,7 +61,8 @@ def delivery_runtime(directory: Path, *, port=None, web_origin="http://127.0.0.1
     git("push", "origin", "main", cwd=source)
     (source / "README.md").write_text("Approved delivery\n")
     patch = git("diff", "--binary", cwd=source).encode()
-    patch_path = directory / "approved.patch"
+    patch_path = directory / "artifacts" / "approved.patch"
+    patch_path.parent.mkdir()
     patch_path.write_bytes(patch)
 
     async def seed():

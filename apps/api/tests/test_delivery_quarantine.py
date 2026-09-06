@@ -3,14 +3,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from delivery_fixtures import seed_delivery_approval
+from delivery_fixtures import PATCH_SHA256, seed_delivery_approval, seed_delivery_bundle
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from test_worker_credentials import database as database
 
 from app import delivery
 from app.config import Settings
-from app.models import AgentEvent, DeliveryBundle, DeliveryJob, WorkItem, WorkSource, WorkStatus
+from app.models import AgentEvent, DeliveryJob, WorkItem, WorkSource, WorkStatus
 from app.worker_credentials import issue_credential
 from app.worker_quarantine import quarantine_worker
 
@@ -23,12 +23,9 @@ async def pending_delivery(database, tmp_path, monkeypatch):
                     assigned_worker_id=identity.worker_id, github_installation_id=1)
     database.add(work)
     await database.flush()
-    approval = await seed_delivery_approval(database, work, "0" * 64)
-    database.add_all([
-        DeliveryJob(work_item_id=work.id, approval_audit_id=approval.id),
-        DeliveryBundle(work_item_id=work.id, object_path=str(tmp_path / "verified.patch"),
-                        sha256="0" * 64, size_bytes=0),
-    ])
+    approval = await seed_delivery_approval(database, work, PATCH_SHA256)
+    patch_path = seed_delivery_bundle(database, work, tmp_path / "artifacts")
+    database.add(DeliveryJob(work_item_id=work.id, approval_audit_id=approval.id))
     await database.commit()
     sessions = async_sessionmaker(database.bind, expire_on_commit=False)
     github = SimpleNamespace(
@@ -44,7 +41,7 @@ async def pending_delivery(database, tmp_path, monkeypatch):
     monkeypatch.setattr(delivery, "run_command", command)
     monkeypatch.setattr(delivery, "settings", Settings(artifact_root=str(tmp_path / "artifacts")))
     return SimpleNamespace(work=work, worker_id=identity.worker_id, sessions=sessions,
-                           github=github, command=command, approval=approval)
+                           github=github, command=command, approval=approval, patch_path=patch_path)
 
 
 async def quarantine(job):

@@ -9,6 +9,8 @@ from test_authorization import database, sign_in
 from test_integration_authorization import slack_request
 
 from app import delivery
+from app.config import get_settings
+from app.main import app
 from app.models import WorkItem
 from app.worker_credentials import issue_credential
 
@@ -24,6 +26,7 @@ async def test_retained_approval_identity_is_distinct_from_service_and_admin_onl
         await session.commit()
         sessions = async_sessionmaker(session.bind, expire_on_commit=False)
     monkeypatch.setattr(delivery, "SessionLocal", sessions)
+    monkeypatch.setattr(delivery, "settings", app.dependency_overrides[get_settings]())
     monkeypatch.setattr("app.main.deliver_work", delivery.deliver_work)
     create_pr = AsyncMock(return_value="https://github.com/acme/service/pull/9")
     monkeypatch.setattr(delivery, "github", SimpleNamespace(
