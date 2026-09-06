@@ -67,7 +67,15 @@ async def run_async_migrations() -> None:
     )
 
     async with connectable.connect() as connection:
-        await connection.run_sync(run_migrations)
+        if connection.dialect.name == "sqlite":
+            # sqlite3/aiosqlite legacy transaction mode does not begin on DDL.
+            # Own one real transaction for the entire revision chain, including
+            # its version updates, so a later safety gate rolls everything back.
+            async with connection.begin():
+                await connection.exec_driver_sql("BEGIN IMMEDIATE")
+                await connection.run_sync(run_migrations)
+        else:
+            await connection.run_sync(run_migrations)
 
     await connectable.dispose()
 

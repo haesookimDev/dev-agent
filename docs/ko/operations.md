@@ -31,6 +31,8 @@ make migrate-api
 
 Migration은 PostgreSQL Transaction Advisory Lock을 획득하므로 여러 배포가 동시에 실행돼도 한 번에 하나만 Schema를 변경합니다. 실패한 Migration은 API Rollout을 중단하며 원인을 해결한 뒤 같은 명령을 다시 실행할 수 있습니다. `/healthz`는 Process 생존 여부를, `/readyz`는 Database 연결과 Alembic Head 일치 여부를 확인합니다.
 
+SQLite 개발 DB의 Online Migration은 `BEGIN IMMEDIATE`로 전체 Revision 체인을 하나의 Transaction에 묶습니다. 뒤쪽 Revision의 안전 검사가 실패해도 앞쪽 DDL·행 변경·Revision 번호까지 함께 Rollback합니다. Migration 동안 다른 Writer가 대기하거나 Lock 오류를 받을 수 있으므로 유지보수 시 API·Worker 쓰기를 먼저 중지하고 성공 후 재개합니다. 실패한 Downgrade를 강제로 Stamp하거나 감사·폐기 증거를 삭제해 우회하지 않습니다. 이 수정은 새 Revision·환경변수·API 형식을 추가하지 않으며, 이전 Migration 실행기로 되돌리면 부분 변경 문제가 재발할 수 있으므로 원인 수정 후 재실행을 우선합니다.
+
 준비 상태 검사는 Pool 대기·연결 확인·스키마 조회에 합산 2초 제한을 적용합니다. 시간 초과는 기존 `503 {"status":"not_ready","database_schema":"unreachable"}`로 반환하며 DB 주소·자격증명·예외 원문을 포함하지 않습니다. 기동 시 DB가 응답하지 않아도 이 검사가 끝난 뒤 `/healthz`로 프로세스를 확인할 수 있습니다. 일반 업무 쿼리나 Migration 전체의 제한 시간을 바꾸는 설정은 아닙니다. [장애·복구 검증과 운영상 제한](readiness-verification.md)을 참고하세요.
 
 Migration 도입 전에 `create_all`로 만든 Database는 현재 Table과 Column이 Baseline과 모두 일치할 때 첫 Upgrade에서 데이터를 유지한 채 자동으로 채택됩니다. 일부 Table만 있거나 Column이 다르면 Migration이 실패하므로 Schema를 먼저 복구해야 합니다. `DATABASE_SCHEMA_MODE=bootstrap`은 비어 있는 일회성 개발 Database에서만 사용하고 운영 환경은 기본값인 `validate`를 유지합니다.
