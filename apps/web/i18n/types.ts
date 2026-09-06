@@ -1,4 +1,5 @@
 import type { WorkStatus } from "../lib/types";
+import type { PreviewFailure } from "../lib/artifact-preview";
 
 export interface MessageCatalog {
   metadata: {
@@ -68,6 +69,22 @@ export interface MessageCatalog {
     error: string;
     networkError: string;
     permissionError: string;
+  };
+  artifacts: {
+    title: string;
+    preview: string;
+    open: string;
+    original: string;
+    close: string;
+    content: string;
+    loading: string;
+    errorTitle: string;
+    retry: string;
+    empty: string;
+    emptyFile: string;
+    image: string;
+    hint: string;
+    errors: Record<PreviewFailure, string>;
   };
   run: {
     stoppedProgress: string;

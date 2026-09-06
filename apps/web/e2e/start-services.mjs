@@ -70,6 +70,8 @@ try {
     if (attempt === 100) throw new Error("API did not become ready");
     await new Promise((done) => setTimeout(done, 50));
   }
+  // Seed with the scoped credential before the Mock worker competes for claims.
+  run(python, ["apps/web/e2e/seed-artifacts.py", tokenFile]);
   start(worker, [], {
     ...environment,
     KELPIE_CONTROL_URL: "http://127.0.0.1:18100",

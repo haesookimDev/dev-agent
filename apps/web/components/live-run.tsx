@@ -8,6 +8,7 @@ import { canSendFeedback } from "../lib/feedback";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
 import { LocalTime } from "./local-time";
+import { ArtifactEvidence } from "./artifact-evidence";
 
 interface LiveRunProps {
   initialWork: WorkItem;
@@ -241,21 +242,7 @@ export function LiveRun({
           )}
           {actionError && <p className="formError" role="alert">{actionError}</p>}
           {actionNotice && <p className="actionNotice" role="status">{actionNotice}</p>}
-          {artifacts.length > 0 && (
-            <div className="artifactList">
-              <p className="eyebrow">{messages.run.evidence}</p>
-              {artifacts.map((artifact) => (
-                <a
-                  key={artifact.id}
-                  href={`${browserApi}/api/work-items/${work.id}/artifacts/${artifact.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <span>{artifact.name}</span><small>{Math.ceil(artifact.size_bytes / 1024)} KB ↗</small>
-                </a>
-              ))}
-            </div>
-          )}
+          <ArtifactEvidence workId={work.id} artifacts={artifacts} locale={locale} messages={messages.artifacts} />
           {!feedbackAllowed && (
             <div className="feedbackClosed" role="status">
               <h3>{messages.run.feedbackClosedTitle}</h3>
