@@ -28,7 +28,7 @@ test-web:
 
 test-monitoring:
 	$(PROMTOOL) check config --lint-fatal infra/monitoring/prometheus.example.yml
-	$(PROMTOOL) test rules infra/monitoring/alerts.test.yml
+	$(PROMTOOL) test rules infra/monitoring/alerts.test.yml infra/monitoring/execution-alerts.test.yml
 
 lint:
 	$(PYTHON) -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests

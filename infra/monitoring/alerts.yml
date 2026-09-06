@@ -150,3 +150,76 @@ groups:
           summary_ko: Kelpie 작업이 10분 넘게 대기열에 남아 있습니다
           runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/runtime-monitoring.md#queue
           runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/runtime-monitoring.md#queue
+
+      # Extend observation separately: older Worker/queue alerts remain useful
+      # when just the new execution series are missing during an API rollout.
+      - record: kelpie:execution_snapshot_usable
+        expr: |
+          kelpie:runtime_snapshot_usable{job="kelpie-api"}
+          and on (job, instance) (count by (job, instance) (
+            count by (job, instance, state) (
+              (kelpie_runtime_execution_work{job="kelpie-api",state=~"provisioning|analyzing|implementing|verifying|committing|pr_created"} >= 0) < Inf
+            ) == 1
+          ) == 6)
+          and on (job, instance) (count by (job, instance) (
+            count by (job, instance, state) (
+              (kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",state=~"provisioning|analyzing|implementing|verifying|committing|pr_created"} >= 0) < Inf
+            ) == 1
+          ) == 6)
+          and on (job, instance) (count by (job, instance) (
+            count by (job, instance, state) (
+              (kelpie_runtime_delivery_jobs{job="kelpie-api",state=~"pending|retry|running|completed|failed|unknown"} >= 0) < Inf
+            ) == 1
+          ) == 6)
+          and on (job, instance) (count by (job, instance) (
+            count by (job, instance, state) (
+              (kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",state=~"pending|retry|running|completed|failed|unknown"} >= 0) < Inf
+            ) == 1
+          ) == 6)
+
+      - alert: KelpieExecutionObservationUnavailable
+        expr: |
+          kelpie:runtime_snapshot_usable{job="kelpie-api"}
+          unless on (job, instance) kelpie:execution_snapshot_usable{job="kelpie-api"}
+        for: 2m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: Kelpie execution or delivery observations are invalid or incomplete
+          summary_ko: Kelpie 실행 단계 또는 전달 관측 지표가 유효하지 않거나 누락됐습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/execution-monitoring.md#observation
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/execution-monitoring.md#observation
+
+      - alert: KelpieExecutionPhaseStalled
+        expr: |
+          (
+            kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",state=~"provisioning|committing|pr_created"} > 600
+            or kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",state=~"analyzing|implementing|verifying"} > 1800
+          )
+          and on (job, instance, state) (kelpie_runtime_execution_work{job="kelpie-api"} > 0)
+          and on (job, instance) kelpie:execution_snapshot_usable{job="kelpie-api"}
+        for: 2m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: A Kelpie execution phase has exceeded its metadata update-age threshold
+          summary_ko: Kelpie 실행 단계의 마지막 메타데이터 갱신 이후 시간이 기준을 넘었습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/execution-monitoring.md#execution
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/execution-monitoring.md#execution
+
+      - alert: KelpieDeliveryJobStalled
+        expr: |
+          (kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",state=~"pending|retry|running|unknown"} > 600)
+          and on (job, instance, state) (kelpie_runtime_delivery_jobs{job="kelpie-api"} > 0)
+          and on (job, instance) kelpie:execution_snapshot_usable{job="kelpie-api"}
+        for: 2m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: A Kelpie delivery job has remained unfinished without a metadata update for ten minutes
+          summary_ko: Kelpie 미완료 전달 작업이 메타데이터 갱신 없이 10분 넘게 남아 있습니다
+          runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/execution-monitoring.md#delivery
+          runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/execution-monitoring.md#delivery
