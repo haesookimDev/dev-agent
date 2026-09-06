@@ -72,6 +72,7 @@ try {
   }
   // Seed with the scoped credential before the Mock worker competes for claims.
   run(python, ["apps/web/e2e/seed-artifacts.py", tokenFile]);
+  run(python, ["apps/web/e2e/seed-retention.py", tokenFile]);
   start(worker, [], {
     ...environment,
     KELPIE_CONTROL_URL: "http://127.0.0.1:18100",
