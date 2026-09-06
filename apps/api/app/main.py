@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import parse_qs, urlsplit
 
+from anyio import CancelScope
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -27,6 +28,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .artifact_content import ALLOWED_ARTIFACT_TYPES, artifact_content_matches
@@ -148,6 +150,7 @@ from .worker_quarantine import ensure_worker_not_quarantined
 
 logger = logging.getLogger(__name__)
 DELIVERY_RECOVERY_RETRY_SECONDS = 5
+STREAM_READ_SECONDS = 2
 
 
 async def recover_startup_deliveries() -> None:
@@ -610,19 +613,30 @@ async def stream_events(
         nonlocal cursor
         idle_ticks = 0
         while True:
-            async with SessionLocal() as event_session:
-                try:
-                    stream_actor = await current_actor(request, config, event_session)
-                    await authorized_work(event_session, stream_actor, work_item_id)
-                except HTTPException:
-                    return
-                statement = (
-                    select(AgentEvent)
-                    .where(AgentEvent.work_item_id == work_item_id, AgentEvent.id > cursor)
-                    .order_by(AgentEvent.id)
-                    .limit(100)
-                )
-                events = list((await event_session.scalars(statement)).all())
+            try:
+                # AnyIO disconnects cancel repeatedly at every await; let a bounded read
+                # and its connection cleanup finish before honoring that cancellation.
+                with CancelScope(shield=True):
+                    async with asyncio.timeout(STREAM_READ_SECONDS):
+                        async with SessionLocal() as event_session:
+                            stream_actor = await current_actor(request, config, event_session)
+                            await authorized_work(event_session, stream_actor, work_item_id)
+                            statement = (
+                                select(AgentEvent)
+                                .where(AgentEvent.work_item_id == work_item_id,
+                                       AgentEvent.id > cursor)
+                                .order_by(AgentEvent.id)
+                                .limit(100)
+                            )
+                            events = list((await event_session.scalars(statement)).all())
+            except HTTPException:
+                return
+            except (TimeoutError, SQLAlchemyError):
+                # Do not expose SQL, bound parameters or connection details in stream errors.
+                logger.warning("event stream read failed; closing stream")
+                return
+            # Never yield while a shield is active, or publish a batch after disconnect.
+            await asyncio.sleep(0)
             if events:
                 idle_ticks = 0
                 for event in events:
