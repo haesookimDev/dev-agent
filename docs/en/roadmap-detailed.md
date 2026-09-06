@@ -53,6 +53,8 @@ Done when a single Worker can be revoked without rotating every Worker and no se
 
 ### OBS-001 · Observability and correlation — M
 
+Fixed [SSE disconnect database-cleanup errors](stream-cleanup.md) found in actual CI logs and added SQLite/PostgreSQL/real HTTP/Chromium regression coverage (2026-09-06). Read timeouts emit sanitized warnings and close the stream; authentication/authorization revalidation remains. This does not complete the full observation scope below.
+
 Status: baseline correlation IDs/traces/metrics/structured logs, bounded DB readiness, startup recovery metrics, and [baseline alerts](monitoring-alerts.md) are implemented. [Continuous Worker heartbeat, active lease expiry, queued-work observation, and unavailable-observation alerts](runtime-monitoring.md) were added (2026-09-06). External dependency readiness, stalled running-work/DeliveryJob coverage, and an integrated operations dashboard remain.
 
 Scope:

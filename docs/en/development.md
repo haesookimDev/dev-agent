@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Stream shutdown regression
+
+[SSE connection cleanup](stream-cleanup.md) adds `python -m pytest -q apps/api/tests/test_stream_cleanup.py -k postgres` to existing required `Python` CI alongside SQLite, actual HTTP and Chromium coverage. Locally, a dedicated `KELPIE_TEST_POSTGRES_URL` is required; without it six cases skip. Verify actual disconnects during queries, returned connections, reconnection and shutdown logs. Passing test counts do not excuse connection-termination errors or unchecked-in connection warnings. Lint the browser helper with `.venv/bin/python -m ruff check apps/web/e2e/stream-runtime.py`. Existing CI jobs and eight-minute limits remain.
+
 ## Artifact filename regression
 
 [Filename/header boundaries](artifact-filenames.md) run in existing `make test-api`/`Python` CI, covering international names, controls and safe fallback for retained names. The `Web` content case also asserts filenames chosen by actual Chromium downloads and original bytes. Do not replace this with only header-string checks or forced download names. Existing content, authorization and page-error checks remain; no CI job is added.

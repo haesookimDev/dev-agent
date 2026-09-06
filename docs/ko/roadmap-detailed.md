@@ -53,6 +53,8 @@
 
 ### OBS-001 · Observability 및 Correlation — M
 
+실제 CI 로그에서 확인한 [SSE 종료 시 DB 연결 정리 오류](stream-cleanup.md)를 수정하고 SQLite·PostgreSQL·실제 HTTP·Chromium 회귀를 추가했습니다(2026-09-06). 조회 Timeout은 민감정보 없는 Warning과 스트림 종료로 처리하며, 인증·권한 재검사는 유지합니다. 이것만으로 아래 관측 범위 전체가 완료된 것은 아닙니다.
+
 상태: 기본 Correlation ID·Trace·Metric·구조화 Log, DB 준비 검사 제한, 시작 시 전달 복구 지표와 [기본 장애 알림](monitoring-alerts.md)을 구현했습니다. [Worker Heartbeat·활성 Lease 만료·Queued 작업의 지속 관측과 관측 실패 알림](runtime-monitoring.md)을 추가했습니다(2026-09-06). 외부 의존성 Readiness, 실행·DeliveryJob 전체의 정체 감시와 통합 운영 Dashboard는 남아 있습니다.
 
 범위:
