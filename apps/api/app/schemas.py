@@ -176,6 +176,7 @@ class ArtifactView(BaseModel):
     content_type: str
     size_bytes: int
     created_at: datetime
+    expired_at: datetime | None = None
 
 
 class PreviewCreate(BaseModel):

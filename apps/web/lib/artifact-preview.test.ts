@@ -5,6 +5,29 @@ const open = (signal = new AbortController().signal) => loadArtifactPreview("wor
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("bounded artifact previews", () => {
+  it.each([
+    ['{"detail":"artifact retention period has expired"}', "expired"],
+    ['{"detail":"artifact content is unavailable"}', "unavailable"],
+    ['{"detail":"private diagnostic"}', "unavailable"],
+    ['null', "unavailable"], ['not JSON', "unavailable"],
+  ])("interprets only the fixed retention reason in a bounded 410 JSON response", async (body, reason) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(body, {
+      status: 410, headers: { "content-type": "application/json" },
+    }));
+    await expect(open()).rejects.toEqual(new ArtifactPreviewError(reason as "expired" | "unavailable"));
+  });
+
+  it("cancels oversized 410 bodies without treating their diagnostics as expiration", async () => {
+    const cancelled = vi.fn();
+    const body = new ReadableStream({ start(c) { c.enqueue(new Uint8Array(1025)); }, cancel: cancelled });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(body, {
+      status: 410, headers: { "content-type": "application/json", "content-length": "1" },
+    }));
+    await expect(open()).rejects.toEqual(new ArtifactPreviewError("unavailable"));
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(body.locked).toBe(false);
+  });
+
   it.each(["text/plain", "application/json", "Text/Plain; charset=utf-8"])("reads %s as literal UTF-8 text", async (type) => {
     const text = '<script>privateMarkup()</script> 한글 ✅';
     const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(text, { headers: { "content-type": type } }));

@@ -142,7 +142,7 @@ def test_postgres_upgrade_retains_historical_audit_and_legacy_delivery(monkeypat
         assert after_job["approval_audit_id"] is None
         assert revision == HEAD_REVISION
         with pytest.raises(RuntimeError, match="destroy audit records"):
-            command.downgrade(config, "-1")
+            command.downgrade(config, "20260906_0007")
         assert asyncio.run(snapshots()) == (after_audit, after_job, HEAD_REVISION)
     finally:
         # Only this UUID schema is ephemeral; no shared or retained audit is deleted.

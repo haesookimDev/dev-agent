@@ -57,4 +57,5 @@ export interface Artifact {
   content_type: string;
   size_bytes: number;
   created_at: string;
+  expired_at?: string | null;
 }

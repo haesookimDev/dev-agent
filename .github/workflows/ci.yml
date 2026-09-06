@@ -67,6 +67,13 @@ jobs:
           KELPIE_TEST_POSTGRES_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
         run: python -m pytest -q apps/api/tests/test_audit_postgres.py
 
+      - name: Verify artifact retention state under PostgreSQL
+        env:
+          KELPIE_TEST_POSTGRES_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
+        run: >-
+          python -m pytest -q apps/api/tests/test_artifact_retention_postgres.py
+          apps/api/tests/test_artifact_retention_runtime_postgres.py
+
       - name: Verify cancellation and Claim races under PostgreSQL
         env:
           KELPIE_TEST_POSTGRES_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci

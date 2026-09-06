@@ -34,4 +34,20 @@ describe.each(["ko", "en"] as const)("%s artifact evidence", (locale) => {
     expect(artifactSize(-1, locale)).toBe("—");
     expect(artifactSize(NaN, locale)).toBe("—");
   });
+  it("retains expired metadata without misleading preview or original controls", () => {
+    const messages = getMessages(locale).artifacts;
+    const html = renderToStaticMarkup(createElement(ArtifactEvidence, { workId: "work", locale, messages,
+      artifacts: [{ id: "expired", work_item_id: "work", kind: "evidence", name: "retained <file>.txt",
+        content_type: "text/plain", size_bytes: 34, created_at: "2026-08-01T00:00:00Z",
+        expired_at: "2026-09-06T00:00:00Z" }],
+    }));
+    expect(html).toContain(messages.expired);
+    expect(html).toContain(messages.errors.expired);
+    expect(html).toContain("retained &lt;file&gt;.txt");
+    expect(html).toContain("34 B");
+    expect(html).toContain('data-expired="true"');
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain('href=');
+    expect(html).not.toContain("<dialog");
+  });
 });

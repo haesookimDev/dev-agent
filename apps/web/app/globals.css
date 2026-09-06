@@ -164,6 +164,10 @@ form button { width: 100%; justify-content: space-between; margin-top: 1px; }
 .artifactListHeading > span { padding: 2px 7px; border-radius: 5px; background: var(--blue-soft); color: #355eca; font-size: 11px; }
 .artifactList ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .artifactRow { border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; background: #fbfcff; }
+.artifactRow[data-expired] { background: #f5f7fa; border-style: dashed; }
+.artifactExpired { display: grid; gap: 6px; padding: 12px; }
+.artifactExpiredBadge { justify-self: start; border: 1px solid #c6cdd8; border-radius: 5px; padding: 3px 6px; color: #46566d; background: #e8edf3; font-size: 10px; font-weight: 700; }
+.artifactExpiredHint { margin: 2px 0 0; color: #52637c; font-size: 11px; line-height: 1.6; }
 .previewTrigger { width: 100%; text-align: left; padding: 12px; color: var(--ink); background: transparent; border: 0; border-radius: 8px; display: grid; gap: 5px; }
 .previewTrigger:hover { background: var(--blue-soft); }
 .artifactName { font-size: 12px; font-weight: 650; }

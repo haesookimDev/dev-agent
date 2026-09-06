@@ -4,7 +4,7 @@
 
 ## Scope and recovery point
 
-This offline OPS-001 control-host command binds ordinary files in local `ARTIFACT_ROOT` to a matching database dump. Use it with [database backup/restore](postgres-restore.md): `pg_dump` does not contain external files. API/database schemas, environment defaults, organization permissions and download policies are unchanged. Delivery bundles, VM disks, previews, external object stores, scheduled backups, PITR and janitors are not included.
+This offline OPS-001 control-host command binds ordinary files in local `ARTIFACT_ROOT` to a matching database dump. Use it with [database backup/restore](postgres-restore.md): `pg_dump` does not contain external files. The backup command itself does not change API/database schemas, environment defaults, organization permissions or download policies. Backup V2 retains revision 0010 expiration state from [ordinary-file retention](artifact-retention.md). Delivery bundles, VM disks, previews, external object stores, scheduled backups, PITR and janitors are not included.
 
 - Run the deployed API version on an authorized control host. Secret management must safely supply `DATABASE_URL` for the intended database. The CLI needs schema inspection and Artifact SELECT privileges only. It never starts the API, migrates/writes the DB, stops/restarts services or switches their paths.
 - Operators must stop/coordinate ingress and DB/file writers, then create the DB dump and file snapshot at the same recovery point. `--writers-stopped` acknowledges this coordination; it is not a stop command, lock or proof. Before/after metadata and dump-hash comparisons cannot detect every concurrent write.
@@ -55,15 +55,23 @@ A failed new directory may retain partial files; nothing is automatically delete
 
 ## Format and limits
 
-- Version 1 `manifest.json` contains `version`, `database_sha256`, `artifacts`. Entries contain `artifact_id`, `work_item_id`, `object_key`, `kind`, `name`, `content_type`, `size_bytes`, `sha256`. Remaining DB fields such as creation times are retained by the database dump.
+- New snapshots create Version 2 `manifest.json`. Top-level fields remain `version`, `database_sha256`, `artifacts`. Entries retain `artifact_id`, `work_item_id`, `object_key`, `kind`, `name`, `content_type`, `size_bytes`, `sha256` and add `expired_at`, `purged_at`, `retention_days`, `retention_sha256`. Remaining DB fields are retained by the database dump.
 - Deduplicated bytes live at `blobs/<SHA-256>`; no archive paths are extracted. Duplicate artifact IDs, different DB metadata, inconsistent aliases, invalid JSON/duplicate fields, unknown versions/fields and missing/tampered files fail verification.
 - Limits are 10,000 metadata entries, 10 MiB per file and a 16 MiB manifest. Oversized/invalid rows fail the whole operation instead of being silently omitted. Empty files and separate metadata aliases for one key are retained. Storage is uncompressed; provide separate capacity for source, backup and restored copies.
 - Work-scoped paths, no-follow descendant/final-file opens, regular-file/size checks and read-change detection are enforced. Operators must control root/parent paths. This is not a sandbox protecting roots from malicious processes under the same OS account.
 - New directories use 0700 and files 0600, with exclusive creation, file/directory synchronization and no-overwrite final manifest publication. The filesystem must support these operations; power-loss durability and remote-store atomicity are not guaranteed. Reverify after failures.
 
+## Expiration evidence and version compatibility
+
+Live files have four NULL retention fields. An expiration request without completed purging rejects the whole backup before a new destination is created. Completed expiration retains UTC ISO timestamps, retention days and the historical file hash, but uses `sha256: null` and never copies or restores a blob. Restore retains only empty parent directories so file absence can be reverified and the restored root backed up again. Reappearing files, missing parents or intervening symlinks fail verification. Aliases with inconsistent expiration state, sizes, policy or hashes are rejected rather than silently selected.
+
+Existing Version 1 snapshots remain readable, verifiable and restorable only when every matching database row is still live and its original metadata matches exactly. Strict version-specific field sets prevent smuggling retention fields into Version 1 or omitting them from Version 2. Older CLIs cannot read Version 2; upgrade and verify recovery tooling together. Never hand-edit version numbers or remove expiration evidence to downgrade the format.
+
+This contract preserves expiration evidence in the connected recovery database. An older database dump has no knowledge of later expiration or access revocation, so an old backup alone cannot establish current-policy compliance. Before restarting the API, retain the operational gate comparing separately protected current audit/expiration inventory and policy, and complete required cleanup. This command does not automatically enforce retention on older backup copies or external stores.
+
 ## Regression, CI and actual use
 
-`make test-api` includes 50 file-boundary and 11 CLI tests. The eight real restore tests below also run when `KELPIE_TEST_POSTGRES_URL` and `KELPIE_TEST_POSTGRES_CONTAINER` point to the same dedicated test server. Missing settings skip PostgreSQL coverage and are not success evidence.
+`make test-api` includes the existing 50 file-boundary and 11 CLI tests plus 29 V1/V2, expiration and rebackup cases in `test_artifact_backup_retention.py`. The eight real restore tests below also run when `KELPIE_TEST_POSTGRES_URL` and `KELPIE_TEST_POSTGRES_CONTAINER` point to the same dedicated test server. Missing settings skip PostgreSQL coverage and are not success evidence.
 
 ```sh
 .venv/bin/python -m pytest -q apps/api/tests/test_postgres_restore.py \

@@ -51,6 +51,8 @@ Before rolling back RBAC, stop API ingress, webhooks, and workers and back up th
 
 [The backup/restore runbook and actual PostgreSQL regression](postgres-restore.md) verify retained rows, permissions, audits, sequences, and atomic rollback in a new DB. Review automatic delivery resumption, external file/role/revocation reconciliation, and cutover gates. This does not establish scheduled production backups or completed object-store/VM recovery.
 
+For ordinary artifacts, follow the [retention CLI, expiration UI and backup V2 procedure](artifact-retention.md). Dry run is the default; use `--apply` only after every API instance is upgraded for revision 0010 and the retention policy is approved. Running work, quarantines and unreleased leases remain protected. VM disks, audits, Delivery Bundles and older backups are not deleted.
+
 ## Startup delivery recovery
 
 An API started with an unready database [resumes pending deliveries](delivery-recovery.md) after connectivity/schema recovery. This recovery supports one API process only: fully stop the previous API before starting its replacement. Do not use a 200 from `/readyz` as a delivery-completion signal.

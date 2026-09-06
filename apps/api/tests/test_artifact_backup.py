@@ -152,7 +152,7 @@ def test_snapshot_integrity_is_checked_before_restore_creates_anything(source, t
 
 
 @pytest.mark.parametrize("mutate", [
-    lambda m: {**m, "version": 2}, lambda m: {**m, "version": True},
+    lambda m: {**m, "version": 3}, lambda m: {**m, "version": True},
     lambda m: {**m, "extra": "ignored?"}, lambda m: {**m, "artifacts": {}},
     lambda m: {**m, "artifacts": m["artifacts"] * 2},
     lambda m: {**m, "artifacts": [{**m["artifacts"][0], "sha256": "../outside"}]},

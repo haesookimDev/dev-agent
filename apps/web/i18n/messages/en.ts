@@ -73,6 +73,7 @@ export const en = {
   artifacts: {
     title: "Evidence", preview: "Artifact preview", open: "Preview", original: "Open original",
     close: "Close", content: "File content", loading: "Reading the file…", errorTitle: "Preview unavailable",
+    expired: "Retention expired", expiredHint: "File metadata and work history remain available.",
     retry: "Try again", empty: "Evidence will appear here when the agent uploads it.",
     emptyFile: "This text file is empty.", image: "Evidence image",
     hint: "Text is displayed without executing markup. Close to return to your work; open the original to view or save it separately.",
@@ -81,6 +82,7 @@ export const en = {
       permission: "You no longer have access. Check your organization or repository permissions before trying again.",
       missing: "This file is not accessible at this address. Close the preview and refresh the evidence list.",
       unavailable: "The file is missing or cannot be served safely. Ask for the evidence to be restored or uploaded again, then retry.",
+      expired: "The retention period has expired. This file is no longer available.",
       tooLarge: "This file exceeds the 10 MiB preview limit. Ask for a smaller evidence file.",
       unsupported: "This format cannot be previewed. Supported formats are UTF-8 text, JSON, PNG, JPEG and WebP.",
       invalid: "The file could not be decoded. Ask for valid UTF-8 text or a supported image, then retry.",

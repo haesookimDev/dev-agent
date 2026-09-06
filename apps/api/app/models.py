@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from .artifact_retention_schema import ARTIFACT_RETENTION_V1
 from .audit_schema import AUDIT_ACTOR_ROLES_V2, register_audit_guards
 
 
@@ -328,6 +329,9 @@ class Approval(Base):
 
 class Artifact(Base):
     __tablename__ = "artifacts"
+    __table_args__ = (
+        CheckConstraint(ARTIFACT_RETENTION_V1, name="artifact_retention_state"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     work_item_id: Mapped[str] = mapped_column(ForeignKey("work_items.id"), index=True)
@@ -337,6 +341,10 @@ class Artifact(Base):
     object_key: Mapped[str] = mapped_column(String(1024))
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retention_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class PreviewEndpoint(Base):
