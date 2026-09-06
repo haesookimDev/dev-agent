@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Artifact preview regression
+
+[Artifact preview](artifact-preview.md) runs in `make test-web` and existing `Web` CI, checking bounded reads, types, cancellation, actual uploads, modal focus, retry and original downloads. Run `npm run test:e2e --prefix apps/web -- artifact-preview.spec.ts` for focused coverage and `.venv/bin/python -m ruff check apps/web/e2e/seed-artifacts.py` for the seed helper. Distinguish read-only evidence access from forbidden mutations in closed work. Do not describe injected failures as real authorization/recovery acceptance; also inspect the production build with a scoped API.
+
 ## Artifact cache regression
 
 [Artifact HTTP cache protection](artifact-cache.md) runs in existing `make test-api`/`Python` and `Web` CI. Verify `no-store`/`Vary: Origin` on lists, files and handled errors, actual HTTP headers, and Chromium navigation → restoration → same-URL fetch and access changes with its default cache. Do not substitute cache disabling, URL nonces or mocks. Lint the browser helper with `.venv/bin/python -m ruff check apps/web/e2e/artifact-cache-runtime.py`. No CI job or timeout is added.
