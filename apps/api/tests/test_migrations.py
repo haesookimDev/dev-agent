@@ -9,7 +9,7 @@ from alembic.config import Config
 from app.models import Base, WebhookDelivery
 
 API_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "20260906_0009"
+HEAD_REVISION = "20260906_0010"
 
 
 def migration_config(database_url: str) -> Config:

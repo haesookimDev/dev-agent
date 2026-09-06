@@ -84,7 +84,7 @@ def test_migration_refuses_to_destroy_retained_audit_records(tmp_path):
     with engine.begin() as connection:
         connection.execute(sa.insert(AuditRecord).values(**audit_values()))
     with pytest.raises(RuntimeError, match="destroy audit records"):
-        command.downgrade(config, "-1")
+        command.downgrade(config, "20260906_0007")
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == (
             HEAD_REVISION
