@@ -8,13 +8,22 @@ from typing import BinaryIO
 
 
 @contextmanager
-def local_directory(root: Path, components: tuple[str, ...]) -> Iterator[int]:
+def local_directory(
+    root: Path, components: tuple[str, ...], *, create: bool = False,
+) -> Iterator[int]:
     with ExitStack() as descriptors:
         # ARTIFACT_ROOT is operator-controlled; its alias may be intentional (e.g. /tmp).
         # Descendants are never resolved and reopened through a mutable original path.
+        if create:
+            root.mkdir(parents=True, exist_ok=True, mode=0o700)
         directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
         descriptors.callback(os.close, directory)
         for component in components:
+            if create:
+                try:
+                    os.mkdir(component, mode=0o700, dir_fd=directory)
+                except FileExistsError:
+                    pass  # The following no-follow directory open validates the existing entry.
             directory = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                                 dir_fd=directory)
             descriptors.callback(os.close, directory)
