@@ -77,6 +77,11 @@ jobs:
           KELPIE_TEST_POSTGRES_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
         run: python -m pytest -q apps/api/tests/test_runtime_health.py
 
+      - name: Verify stream disconnect cleanup under PostgreSQL
+        env:
+          KELPIE_TEST_POSTGRES_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
+        run: python -m pytest -q apps/api/tests/test_stream_cleanup.py -k postgres
+
       - name: Verify PostgreSQL backup and clean restore
         env:
           KELPIE_TEST_POSTGRES_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
