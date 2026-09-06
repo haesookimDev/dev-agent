@@ -10,7 +10,7 @@ Artifact metadata belonging to a work item does not prove ownership of its file.
 - Writes exclusively create a 0600 temporary file relative to the same parent descriptor, then atomically replace the destination. New descendant directories use 0700. Failure removes only that temporary file and preserves existing content. A final destination symlink is replaced itself, without writing its target. [Python descriptor/atomic replacement API](https://docs.python.org/3/library/os.html#os.replace)
 - Reads accept only regular files and bound actual size to 10MiB. FIFOs, directories, links, missing files and changes to size/modification metadata during reading are rejected. Existing upload requirements for nonempty content, 10MiB and supported types remain.
 
-This assumes a trusted operator root and API/database ownership. It does not fully isolate malicious processes running as the same OS identity or root. Ordinary artifact hashes, agreement with metadata `size_bytes`, encryption, immutable Slack retransmission files and physical object-store restoration are outside this change. MIME/filename presentation and HTTP cache policy are separate follow-up work.
+This assumes a trusted operator root and API/database ownership. It does not fully isolate malicious processes running as the same OS identity or root. Ordinary artifact hashes, agreement with metadata `size_bytes`, encryption, immutable Slack retransmission files and physical object-store restoration are outside this change. The subsequent [content policy](artifact-content.md) covers MIME and executable-document rejection; filename presentation and HTTP caching remain separate follow-ups.
 
 ## API compatibility
 
