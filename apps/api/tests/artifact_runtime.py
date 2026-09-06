@@ -65,7 +65,8 @@ class ArtifactRuntime:
 
 
 @contextmanager
-def artifact_runtime(directory: Path, *, port=None, web_origin="http://localhost:3000"):
+def artifact_runtime(directory: Path, *, port=None, web_origin="http://localhost:3000",
+                     app_target="app.main:app", verify_log=None):
     database = directory / "artifact.db"
     database_url = f"sqlite+aiosqlite:///{database}"
     migration = Config(ROOT / "apps/api/alembic.ini")
@@ -106,7 +107,8 @@ def artifact_runtime(directory: Path, *, port=None, web_origin="http://localhost
     cookie_name = f"artifact_drill_{uuid.uuid4().hex}"
     root = directory / "objects"
     environment = {
-        "PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(ROOT / "apps/api"),
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": os.pathsep.join(str(ROOT / part) for part in ("apps/api", "apps/api/tests")),
         "DATABASE_URL": database_url, "DATABASE_SCHEMA_MODE": "validate", "AUTH_MODE": "oidc",
         "WORKER_AUTH_MODE": "scoped", "OIDC_ISSUER_URL": ISSUER,
         "OIDC_CLIENT_ID": "artifact-drill", "OIDC_REDIRECT_URI": f"{ISSUER}/auth/callback",
@@ -119,7 +121,7 @@ def artifact_runtime(directory: Path, *, port=None, web_origin="http://localhost
     try:
         with os.fdopen(descriptor, "wb") as log:
             process = subprocess.Popen(
-                [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
+                [sys.executable, "-m", "uvicorn", app_target, "--host", "127.0.0.1",
                  "--port", str(port), "--no-access-log", "--no-proxy-headers"],
                 cwd=directory, env=environment, stdout=log, stderr=subprocess.STDOUT,
             )
@@ -178,4 +180,8 @@ def artifact_runtime(directory: Path, *, port=None, web_origin="http://localhost
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=3)
-        log_path.unlink()
+        try:
+            if verify_log is not None:
+                verify_log(log_path.read_text())
+        finally:
+            log_path.unlink()
