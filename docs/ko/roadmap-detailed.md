@@ -66,7 +66,7 @@
 
 ### OPS-001 · 보존 및 복구 Worker — M
 
-상태: [미배정 대기 작업의 관리자 취소와 감사](work-cancellation.md), [PostgreSQL 백업·새 DB 복원 절차와 데이터·권한·감사 검증](postgres-restore.md)을 구현했습니다. 실행 중 VM 종료·정리를 보장하는 취소, 재시도, 강제 임대 해제, 보존 정책·Janitor, Object Store 복구와 실제 운영 복구 검증은 남아 있습니다.
+상태: [미배정 대기 작업의 관리자 취소와 감사](work-cancellation.md), [PostgreSQL 백업·새 DB 복원 절차와 데이터·권한·감사 검증](postgres-restore.md), [전달 Patch의 실제 바이트 검증과 고정 사본 적용](delivery-integrity.md)을 구현했습니다. 실행 중 VM 종료·정리를 보장하는 취소, 재시도, 강제 임대 해제, 보존 정책·Janitor, 일반 Artifact와 Object Store 복구 및 실제 운영 복구 검증은 남아 있습니다.
 
 범위:
 

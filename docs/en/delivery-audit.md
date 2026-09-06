@@ -10,7 +10,7 @@ The executor is the `delivery:github` service, not a human session. Service reco
 
 At attempt start, inside the write guards before token issuance, push and PR creation, and during finalization, delivery checks approval organization, repository, work, correlation ID, approved PR decision, Approver-or-higher role, scheduling flag, approved work version and bundle metadata hash. Missing or mismatched authority blocks external writes. This remains delegation from the recorded approval, not a new policy retroactively applying later membership changes. Worker quarantine still fences subsequent writes.
 
-The hash identifies **approved bundle metadata**. This change does not rehash the patch file or attest the remote Git tree. External PR creation and the database commit are not a distributed transaction; failure does not prove absence of external side effects.
+The hash identifies **approved bundle metadata**. Follow-up [byte verification](delivery-integrity.md) rehashes files on approval/download and before token issuance, then applies a fixed copy in Git. Remote Git trees are still not attested. External PR creation and the database commit are not a distributed transaction; failure does not prove absence of external side effects.
 
 | `action` | Meaning |
 | --- | --- |

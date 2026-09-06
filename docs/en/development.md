@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Delivery-byte integrity regression
+
+[Patch integrity](delivery-integrity.md) file/approval/delivery tests and real HTTP/Git regression run in `make test-api` and existing required `Python` CI. Delivery changes must retain rejection of missing/corrupt/out-of-root files and application of approved bytes even after original-file replacement. Use fixtures matching actual files instead of bypassing invalid test hashes.
+
 ## PostgreSQL restore regression
 
 [Backup/restore verification](postgres-restore.md) runs `test_postgres_restore.py` and `test_postgres_restore_runtime.py` with dedicated `KELPIE_TEST_POSTGRES_URL` and `KELPIE_TEST_POSTGRES_CONTAINER` settings pointing to the same server. Existing `Python` CI reuses its PostgreSQL 17 container's tools. Locally, missing variables skip six tests; passing default tests alone does not complete restore verification. Cleanup removes only test-created UUID databases/roles, never existing databases or audits.

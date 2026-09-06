@@ -2,6 +2,10 @@
 
 한국어 | [English](../en/development.md)
 
+## 전달 바이트 무결성 회귀
+
+[패치 무결성](delivery-integrity.md)의 파일·승인·전달 테스트와 실제 HTTP/Git 회귀는 `make test-api` 및 기존 필수 `Python` CI에 포함됩니다. 전달 변경 시 누락·변조·경로 이탈의 거부와 검증 뒤 원본 교체에도 승인된 바이트만 적용되는 경계를 유지합니다. 잘못된 테스트 Hash를 우회하지 말고 실제 파일과 일치하는 Fixture를 작성합니다.
+
 ## PostgreSQL 복원 회귀
 
 [백업·복원 검증](postgres-restore.md)은 전용 `KELPIE_TEST_POSTGRES_URL`과 같은 서버의 `KELPIE_TEST_POSTGRES_CONTAINER`를 설정한 뒤 `test_postgres_restore.py`·`test_postgres_restore_runtime.py`를 실행합니다. 기존 `Python` CI가 PostgreSQL 17 Container의 도구를 재사용합니다. 로컬에서 환경변수가 없으면 6개가 Skip되므로 기본 테스트 성공만으로 복원 검증을 완료하지 않습니다. 테스트가 만든 UUID DB·Role만 정리하며 기존 DB나 감사를 삭제하지 않습니다.

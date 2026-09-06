@@ -10,7 +10,7 @@ IAM-001의 중앙 GitHub 전달 감사입니다. 웹·Slack PR 승인을 예약�
 
 전달 시작, Token 발급·Push·PR 생성 직전의 잠금 구간, 완료 트랜잭션에서 승인 출처의 조직·저장소·작업·Correlation ID, PR 승인 결정, Approver 이상 Role, 예약 여부, 승인 후 작업 버전과 Bundle 메타데이터 Hash를 확인합니다. 누락·불일치는 외부 쓰기 전에 차단합니다. 당시 승인에 대한 위임이므로 이후 Membership 변경을 소급 적용하는 새 정책은 아닙니다. Worker 격리의 후속 쓰기 차단은 유지됩니다.
 
-Hash는 **승인된 Bundle 메타데이터의 식별자**입니다. 이 변경은 Patch 파일을 다시 Hash하거나 Git 원격 Tree를 증명하는 Artifact Attestation을 추가하지 않습니다. 외부 PR 생성과 DB 커밋은 분산 트랜잭션이 아니며, 실패가 외부 쓰기 부재를 뜻하지도 않습니다.
+Hash는 **승인된 Bundle 메타데이터의 식별자**입니다. 후속 [실제 바이트 검증](delivery-integrity.md)은 승인·다운로드와 Token 발급 전 파일을 다시 Hash하고 고정 사본을 Git에 적용합니다. Git 원격 Tree의 Artifact Attestation은 추가하지 않습니다. 외부 PR 생성과 DB 커밋은 분산 트랜잭션이 아니며, 실패가 외부 쓰기 부재를 뜻하지도 않습니다.
 
 | `action` | 의미 |
 | --- | --- |
