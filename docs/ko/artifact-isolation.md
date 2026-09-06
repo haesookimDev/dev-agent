@@ -10,7 +10,7 @@
 - 쓰기는 같은 부모 Descriptor에 0600 임시 파일을 배타적으로 생성하고 원자적으로 교체합니다. 새 하위 디렉터리는 0700입니다. 실패 시 해당 임시 파일만 정리하고 기존 파일은 보존합니다. 최종 파일이 링크이면 대상 파일을 따라 쓰지 않고 링크 자체를 교체합니다. [Python Descriptor·원자적 교체 API](https://docs.python.org/3/library/os.html#os.replace)
 - 읽기는 일반 파일만 허용하고 실제 크기를 최대 10MiB로 제한합니다. FIFO·디렉터리·링크·누락·읽는 중 크기/수정 정보 변경은 거부합니다. 기존 업로드의 비어 있지 않은 콘텐츠·10MiB·형식 검증은 유지합니다.
 
-이 경계는 신뢰된 운영 Root와 API/DB 소유권을 전제로 합니다. 같은 OS 계정 또는 Root 권한의 악성 프로세스까지 완전히 격리하지 않습니다. 일반 Artifact의 Hash, 메타데이터 `size_bytes` 일치, 암호화, Slack 재전송 파일의 불변성, Object Store 물리 복원은 이번 범위가 아닙니다. MIME/파일명 표시와 HTTP 캐시 정책은 별도 후속 작업입니다.
+이 경계는 신뢰된 운영 Root와 API/DB 소유권을 전제로 합니다. 같은 OS 계정 또는 Root 권한의 악성 프로세스까지 완전히 격리하지 않습니다. 일반 Artifact의 Hash, 메타데이터 `size_bytes` 일치, 암호화, Slack 재전송 파일의 불변성, Object Store 물리 복원은 이번 범위가 아닙니다. MIME과 실행 문서 차단은 후속 [콘텐츠 정책](artifact-content.md)에서 다루며 파일명 표시와 HTTP 캐시는 별도 후속 작업입니다.
 
 ## API 호환성
 

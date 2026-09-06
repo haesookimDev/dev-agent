@@ -2,6 +2,10 @@
 
 한국어 | [English](../en/development.md)
 
+## 산출물 콘텐츠 회귀
+
+[콘텐츠 실행 경계](artifact-content.md)는 `make test-api`와 기존 `Python` CI에서 등록·다운로드 형식·실제 바이트·보안 Header를 검사합니다. 기존 `Web` CI의 `artifact-content.spec.ts`는 실제 HTTP 서비스에서 텍스트 비실행, 이미지 로드, JSON과 기존 HTML 거부를 검증합니다. 임시 Scoped 인증 Header가 남는 Trace만 이 사례에서 제외하며 화면 오류 검사·실패 스크린샷·공통 자원 해제 검증은 유지합니다. 검증용 Python 서비스도 `.venv/bin/python -m ruff check apps/web/e2e/artifact-runtime.py`로 검사합니다. 새 Job·의존성은 추가하지 않습니다.
+
 ## 산출물 작업 격리 회귀
 
 [산출물 저장 경계](artifact-isolation.md)의 파일·API·실제 HTTP 테스트는 `make test-api`와 기존 필수 `Python` CI에 포함됩니다. 등록과 다운로드 모두 정확한 작업의 `artifacts` 경로를 검사해야 하며, 기존 메타데이터·하위 링크로 우회하지 않습니다. 복원 Fixture도 정상 작업 경로를 사용해 누락된 실제 파일의 거부를 검증합니다.

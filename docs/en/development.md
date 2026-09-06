@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Artifact content regression
+
+[The content execution boundary](artifact-content.md) checks registration/download formats, actual bytes and security headers in `make test-api` and existing `Python` CI. Existing `Web` CI runs `artifact-content.spec.ts` against real HTTP services to verify inert text, loaded images, JSON and rejection of retained HTML. Only this case excludes traces containing temporary scoped-auth headers; page-error assertions, failure screenshots and shared resource-release checks remain. Also lint its Python service with `.venv/bin/python -m ruff check apps/web/e2e/artifact-runtime.py`. No job or dependency is added.
+
 ## Work-scoped artifact regression
 
 [Artifact storage boundary](artifact-isolation.md) file/API/real HTTP tests run in `make test-api` and existing required `Python` CI. Both registration and downloads must enforce the exact work's `artifacts` namespace without retained-metadata or descendant-link bypasses. Restore fixtures also use valid work-scoped keys so missing-file rejection remains verified.
