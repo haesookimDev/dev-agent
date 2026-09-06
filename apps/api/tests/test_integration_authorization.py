@@ -71,6 +71,7 @@ async def slack_request(client, text, team="T-acme", user="U1"):
     secret = secrets.token_urlsafe(32)
     config = oidc_settings().model_copy(update={
         "slack_signing_secret": secret, "slack_approver_user_ids": [user],
+        "artifact_root": app.dependency_overrides[get_settings]().artifact_root,
     })
     app.dependency_overrides[get_settings] = lambda: config
     body = urlencode({"text": text, "team_id": team, "user_id": user}).encode()

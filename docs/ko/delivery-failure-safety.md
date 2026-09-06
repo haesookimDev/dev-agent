@@ -27,8 +27,12 @@ Git 명령의 출력·인자·파일 경로와 외부 서비스 예외에는 토
 | `upstream_error` | 그 외 HTTP Client 오류 |
 | `filesystem_error` | 그 외 OS/파일시스템 오류 |
 | `internal_error` | 분류되지 않은 오류 |
+| `bundle_unavailable` | 전달 Bundle 누락 또는 안전하게 읽을 수 없는 파일·경로 |
+| `bundle_integrity_failed` | 전달 Bundle 크기·Hash 불일치 또는 읽기 도중 변경 |
 
-단계는 `configuration`, `token`, `metadata`, `existing_pull_request`, `existing_branch`, `workspace`, `clone`, `checkout`, `apply`, `commit`, `push`, `pull_request`, `finalize` 중 진행 중이던 작업입니다. 임시 폴더 정리 오류는 마지막 Git 단계에 포함됩니다. Trace에는 `kelpie.delivery.stage`, `kelpie.delivery.error_code`, 안전한 오류 상태와 대체 예외를 기록하고 원본 예외의 연결된 원인·Stack Trace는 내보내지 않습니다. Work/Correlation ID와 기존 시도·결과 Metric은 유지합니다.
+[실제 바이트 검증](delivery-integrity.md)은 Token 발급 전 `bundle` 단계를 추가합니다. 승인 출처 검사의 `authorization` 단계와 기존 코드 `approval_unavailable`, `approval_mismatch`는 [전달 감사](delivery-audit.md)를 따릅니다.
+
+단계는 `authorization`, `configuration`, `bundle`, `token`, `metadata`, `existing_pull_request`, `existing_branch`, `workspace`, `clone`, `checkout`, `apply`, `commit`, `push`, `pull_request`, `finalize` 중 진행 중이던 작업입니다. 임시 폴더 정리 오류는 마지막 Git 단계에 포함됩니다. Trace에는 `kelpie.delivery.stage`, `kelpie.delivery.error_code`, 안전한 오류 상태와 대체 예외를 기록하고 원본 예외의 연결된 원인·Stack Trace는 내보내지 않습니다. Work/Correlation ID와 기존 시도·결과 Metric은 유지합니다.
 
 ## 운영과 호환성
 

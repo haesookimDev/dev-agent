@@ -37,7 +37,8 @@ def free_port():
 
 
 @contextmanager
-def delivery_runtime(directory: Path, *, port=None, web_origin="http://127.0.0.1:13460"):
+def delivery_runtime(directory: Path, *, port=None, web_origin="http://127.0.0.1:13460",
+                     replace_bundle_on_token=False):
     database_url = f"sqlite+aiosqlite:///{directory / 'delivery.db'}"
     command.upgrade(migration_config(database_url), "head")
     bare, source = directory / "remote.git", directory / "source"
@@ -61,7 +62,8 @@ def delivery_runtime(directory: Path, *, port=None, web_origin="http://127.0.0.1
     git("push", "origin", "main", cwd=source)
     (source / "README.md").write_text("Approved delivery\n")
     patch = git("diff", "--binary", cwd=source).encode()
-    patch_path = directory / "approved.patch"
+    patch_path = directory / "artifacts" / "approved.patch"
+    patch_path.parent.mkdir()
     patch_path.write_bytes(patch)
 
     async def seed():
@@ -102,7 +104,7 @@ def delivery_runtime(directory: Path, *, port=None, web_origin="http://127.0.0.1
                         serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
     key_path.chmod(0o600)
     token = secrets.token_urlsafe(32)
-    pulls, writes = {}, []
+    pulls, writes, token_requests = {}, [], []
 
     class SCM(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -128,6 +130,11 @@ def delivery_runtime(directory: Path, *, port=None, web_origin="http://127.0.0.1
                 encoded = self.headers.get("Authorization", "").removeprefix("Bearer ")
                 jwt.decode(encoded, key.public_key(), algorithms=["RS256"], issuer="1")
                 assert body["permissions"]["contents"] == "write"
+                token_requests.append(1)
+                if replace_bundle_on_token:
+                    patch_path.write_bytes(
+                        patch.replace(b"Approved delivery", b"Tampered delivery"),
+                    )
                 self.reply(201, {"token": token})
             elif self.authorized() and self.path == "/repos/acceptance/service/pulls":
                 head = body["head"]
@@ -197,7 +204,8 @@ def delivery_runtime(directory: Path, *, port=None, web_origin="http://127.0.0.1
                     time.sleep(0.05)
                 yield SimpleNamespace(client=client, api_url=api_url, success_id=success_id,
                                       failure_id=failure_id, writes=writes, git=git, bare=bare,
-                                      database_url=database_url)
+                                      database_url=database_url, patch_path=patch_path,
+                                      patch=patch, token_requests=token_requests)
         finally:
             if process is not None and process.poll() is None:
                 process.terminate()

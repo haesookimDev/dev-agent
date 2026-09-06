@@ -75,6 +75,7 @@ def record_delivery_audit(
             "approval_audit_id": authority.audit_id if authority else None,
             "authorization": ("denied" if error_code in {
                 "approval_unavailable", "approval_mismatch", "bundle_unavailable",
+                "bundle_integrity_failed",
             } else "verified" if authority else "unavailable"),
             "approved_bundle_sha256": authority.bundle_sha256 if authority else None,
             "approved_work_version": authority.work_version if authority else None,

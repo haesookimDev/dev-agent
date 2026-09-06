@@ -27,8 +27,12 @@ The example omits existing common fields such as IDs and timestamps. The databas
 | `upstream_error` | Other HTTP client error |
 | `filesystem_error` | Other OS/filesystem error |
 | `internal_error` | Unclassified failure |
+| `bundle_unavailable` | Missing bundle or file/path that cannot be safely read |
+| `bundle_integrity_failed` | Bundle size/hash mismatch or modification during reading |
 
-The stage is the operation in progress: `configuration`, `token`, `metadata`, `existing_pull_request`, `existing_branch`, `workspace`, `clone`, `checkout`, `apply`, `commit`, `push`, `pull_request`, or `finalize`. Temporary-directory cleanup errors are included in the last Git stage. Traces record `kelpie.delivery.stage`, `kelpie.delivery.error_code`, a safe error status, and a replacement exception, without the original chained causes or stack trace. Work/correlation IDs and existing attempt/outcome metrics are preserved.
+[Byte verification](delivery-integrity.md) adds the `bundle` stage before token issuance. The `authorization` stage and existing `approval_unavailable`/`approval_mismatch` codes follow the [delivery audit](delivery-audit.md) contract.
+
+The stage is the operation in progress: `authorization`, `configuration`, `bundle`, `token`, `metadata`, `existing_pull_request`, `existing_branch`, `workspace`, `clone`, `checkout`, `apply`, `commit`, `push`, `pull_request`, or `finalize`. Temporary-directory cleanup errors are included in the last Git stage. Traces record `kelpie.delivery.stage`, `kelpie.delivery.error_code`, a safe error status, and a replacement exception, without the original chained causes or stack trace. Work/correlation IDs and existing attempt/outcome metrics are preserved.
 
 ## Operations and compatibility
 

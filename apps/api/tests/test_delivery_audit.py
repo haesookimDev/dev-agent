@@ -2,6 +2,7 @@ import asyncio
 import uuid
 
 import pytest
+from delivery_fixtures import PATCH_SHA256
 from sqlalchemy import delete, select, text
 from test_delivery_quarantine import pending_delivery as pending_delivery
 from test_delivery_quarantine import quarantine
@@ -45,7 +46,7 @@ async def test_delivery_audits_service_execution_and_original_approval(pending_d
         assert row.correlation_id == source.correlation_id
         assert row.repository == source.repository
         assert row.details["approval_audit_id"] == source.id
-        assert row.details["approved_bundle_sha256"] == "0" * 64
+        assert row.details["approved_bundle_sha256"] == PATCH_SHA256
         assert row.details["approved_work_version"] == source.details["work_version_after"]
         assert row.details["authorization"] == "verified"
         assert row.details["attempt"] == 1

@@ -1,5 +1,6 @@
 import asyncio
 import errno
+import hashlib
 import json
 import os
 import sys
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from delivery_fixtures import seed_delivery_approval
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
@@ -173,6 +175,12 @@ async def test_real_git_patch_failure_does_not_publish_a_private_filename(
     async with job.sessions() as session:
         bundle = await session.get(DeliveryBundle, job.work.id)
         await asyncio.to_thread(Path(bundle.object_path).write_bytes, patch)
+        bundle.sha256 = hashlib.sha256(patch).hexdigest()
+        bundle.size_bytes = len(patch)
+        work = await session.get(WorkItem, job.work.id)
+        approval = await seed_delivery_approval(session, work, bundle.sha256)
+        (await session.get(DeliveryJob, job.work.id)).approval_audit_id = approval.id
+        await session.commit()
 
     async def command(*args, **kwargs):
         kwargs["environment"] = {**kwargs.get("environment", {}), **environment}
