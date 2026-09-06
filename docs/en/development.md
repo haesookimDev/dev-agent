@@ -34,6 +34,8 @@ English | [한국어](../ko/development.md)
 
 [Backup/restore verification](postgres-restore.md) runs `test_postgres_restore.py` and `test_postgres_restore_runtime.py` with dedicated `KELPIE_TEST_POSTGRES_URL` and `KELPIE_TEST_POSTGRES_CONTAINER` settings pointing to the same server. Existing `Python` CI reuses its PostgreSQL 17 container's tools. Locally, missing variables skip six tests; passing default tests alone does not complete restore verification. Cleanup removes only test-created UUID databases/roles, never existing databases or audits.
 
+[Ordinary artifact file restoration](artifact-backup.md) adds 61 file/CLI tests and two actual DB/file/HTTP tests in `test_artifact_restore_runtime.py`. The same required CI restore step runs eight tests within the unchanged eight-minute limit. Operational commands require writer coordination acknowledgement, a separately trusted manifest hash and a new path. Restored DB rows or an existing marker alone never count as successful file recovery.
+
 ## Definition of done
 
 Develop on a task branch and commit each logical unit with a Korean message after its relevant tests pass. Once automated tests and hands-on verification pass, create a PR with evidence and inspect CI and reviews for the latest commit. When the user delegates merging, the agent merges with a merge commit and fast-forwards local `main`. Keep a PR in Draft when required verification cannot run.

@@ -58,7 +58,7 @@ DB별 설정·접속 ACL을 복원하고 외부 접근을 계속 차단합니다
 1. 복원 시점의 API Version으로 Alembic Head 일치와 `alembic check`를 확인합니다. 이 검사만으로 Trigger·권한·데이터를 보장하지 않습니다. 필요하면 검증 후 별도 [Migration 절차](operations.md#database-migration)로 Upgrade합니다.
 2. 전체 Table 건수·비공개 Fingerprint, PK/FK·Column/기본값·Index, Sequence의 다음 ID, 조직·저장소·Grant, 감사 상세와 승인-DeliveryJob 연결을 비교합니다. 원본 행을 로그에 출력하지 않습니다.
 3. Owner/ACL·격리·폐기 상태를 확인합니다. 일회성 복원 사본의 Transaction에서 감사 UPDATE/DELETE/TRUNCATE/Upsert·서비스 Actor 위조의 거부와 충돌 없는 새 감사 INSERT를 검증합니다. 기존 감사는 삭제·재작성하지 않습니다.
-4. Artifact/Delivery Bundle의 실제 바이트·크기·Hash를 대응 Snapshot과 비교합니다. DB 행만 있고 Artifact 바이트가 없으면 현재 API는 `410 artifact content is unavailable`을 반환합니다. [Delivery Bundle 검증](delivery-integrity.md)은 실제 크기·Hash·경로를 확인하고 손상된 다운로드·승인·전달을 거부합니다. 일반 Artifact의 Hash 검증을 의미하지는 않습니다. Preview·VM·Lease의 실제 생존 상태도 대조합니다.
+4. Artifact/Delivery Bundle의 실제 바이트·크기·Hash를 대응 Snapshot과 비교합니다. DB 행만 있고 Artifact 바이트가 없으면 현재 API는 `410 artifact content is unavailable`을 반환합니다. 일반 파일은 [Artifact 백업·새 Root 복원·재검증](artifact-backup.md)을 수행합니다. [Delivery Bundle 검증](delivery-integrity.md)은 별도로 실제 크기·Hash·경로를 확인하고 손상된 다운로드·승인·전달을 거부합니다. Preview·VM·Lease의 실제 생존 상태도 대조합니다.
 5. Backup 이후의 회원·Grant 회수, Session 폐기, Worker 회전·격리, 승인 변경과 이미 생성된 원격 Commit/PR을 신뢰된 최신 기록과 대조합니다. 과거 Session·Token·승인이 되살아난 채 트래픽을 열지 않습니다. 불확실한 전달의 승인 연결을 추측하거나 무조건 재시도하지 않습니다.
 6. Gate 증거, 데이터 손실 구간(RPO), 실제 경과 시간(RTO), Rollback 대상과 운영 승인을 기록합니다. 이전 API가 완전히 중지됐는지 확인하고 단일 API·Worker·유입을 단계적으로 재개합니다. `/readyz` 200은 전달·파일·VM 복구 완료 신호가 아닙니다. 필요하면 격리 상태에서 `ANALYZE`를 실행합니다.
 
@@ -81,6 +81,8 @@ DB별 설정·접속 ACL을 복원하고 외부 접근을 계속 차단합니다
 - 실제 Uvicorn을 SELECT-only PostgreSQL Login으로 실행합니다. 복원한 합성 OIDC Session의 자기 조직 조회, 타 조직 404, 관리자 감사 403, 무인증 401, 파일 없는 Artifact 410을 검사합니다. 시작 시 전달 복구는 실제 실행되지만 쓰기 Lock이 거부되며 원본/복원 Fingerprint는 유지됩니다. 제품의 유지보수 Mode나 쓰기 API 공개 방법은 아닙니다.
 
 환경변수가 없으면 6개가 Skip됩니다. 필수 `Python` CI는 기존 PostgreSQL Service의 [Container ID](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#job-context)로 Skip 없이 실행합니다. 새 Job·Matrix·외부 Secret·의존성 없이 기존 8분 제한·읽기 전용 Workflow 권한을 유지합니다.
+
+[일반 파일 복원 회귀](artifact-backup.md)는 같은 Step에 `test_artifact_restore_runtime.py` 2개를 추가해 총 8개를 실행합니다. DB만 복원한 410 상태에서 실제 CLI 파일 복원 후 200과 권한 경계를 확인합니다.
 
 ## 실제 검증 기록
 
