@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Artifact cache regression
+
+[Artifact HTTP cache protection](artifact-cache.md) runs in existing `make test-api`/`Python` and `Web` CI. Verify `no-store`/`Vary: Origin` on lists, files and handled errors, actual HTTP headers, and Chromium navigation → restoration → same-URL fetch and access changes with its default cache. Do not substitute cache disabling, URL nonces or mocks. Lint the browser helper with `.venv/bin/python -m ruff check apps/web/e2e/artifact-cache-runtime.py`. No CI job or timeout is added.
+
 ## Stream shutdown regression
 
 [SSE connection cleanup](stream-cleanup.md) adds `python -m pytest -q apps/api/tests/test_stream_cleanup.py -k postgres` to existing required `Python` CI alongside SQLite, actual HTTP and Chromium coverage. Locally, a dedicated `KELPIE_TEST_POSTGRES_URL` is required; without it six cases skip. Verify actual disconnects during queries, returned connections, reconnection and shutdown logs. Passing test counts do not excuse connection-termination errors or unchecked-in connection warnings. Lint the browser helper with `.venv/bin/python -m ruff check apps/web/e2e/stream-runtime.py`. Existing CI jobs and eight-minute limits remain.

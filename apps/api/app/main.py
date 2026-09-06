@@ -31,6 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .artifact_cache import ArtifactCacheMiddleware
 from .artifact_content import ALLOWED_ARTIFACT_TYPES, artifact_content_matches
 from .artifact_names import artifact_disposition, valid_artifact_name
 from .artifact_storage import (
@@ -220,6 +221,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Request-ID", "X-Kelpie-Correlation-ID"],
 )
+app.add_middleware(ArtifactCacheMiddleware)
 app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(CorrelationMiddleware)
 
