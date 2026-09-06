@@ -34,6 +34,8 @@
 
 [백업·복원 검증](postgres-restore.md)은 전용 `KELPIE_TEST_POSTGRES_URL`과 같은 서버의 `KELPIE_TEST_POSTGRES_CONTAINER`를 설정한 뒤 `test_postgres_restore.py`·`test_postgres_restore_runtime.py`를 실행합니다. 기존 `Python` CI가 PostgreSQL 17 Container의 도구를 재사용합니다. 로컬에서 환경변수가 없으면 6개가 Skip되므로 기본 테스트 성공만으로 복원 검증을 완료하지 않습니다. 테스트가 만든 UUID DB·Role만 정리하며 기존 DB나 감사를 삭제하지 않습니다.
 
+[일반 산출물 파일 복원](artifact-backup.md)은 파일/CLI 61개 테스트와 `test_artifact_restore_runtime.py`의 실제 DB·파일·HTTP 복원 2개를 추가합니다. 같은 필수 CI 복원 Step이 총 8개를 실행하며 8분 제한은 유지합니다. 운영 명령은 Writer 조정 확인·신뢰된 별도 Manifest 해시·새 경로를 요구합니다. DB 행만 복원되거나 표시 파일만 존재하는 상태를 파일 복구 성공으로 보고하지 않습니다.
+
 ## 완료 기준
 
 개발은 작업 브랜치에서 수행하고, 논리적 단위마다 관련 테스트를 실행한 뒤 한국어 메시지로 커밋합니다. 자동 테스트와 실제 사용 검증이 통과하면 증거를 포함한 PR을 만들고 최신 커밋의 CI와 리뷰 상태를 확인합니다. 사용자가 머지를 위임한 작업은 에이전트가 Merge Commit으로 머지하고 `main`을 Fast-forward 동기화합니다. 필수 검증을 수행할 수 없으면 Draft로 유지합니다.

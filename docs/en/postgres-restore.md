@@ -58,7 +58,7 @@ Restore database settings/connect ACLs while keeping external access closed. On 
 1. Using the backup's API version, verify the Alembic head and run `alembic check`. This alone does not establish restored triggers, permissions, or data. If needed, complete verification before a separate [migration](operations.md#database-migration).
 2. Compare all table counts/private fingerprints, PK/FK, columns/defaults/indexes, next sequence IDs, organizations/repositories/grants, audit details, and approval-to-DeliveryJob links. Never print raw rows to logs.
 3. Verify owners/ACLs and quarantine/revocation state. In transactions on a disposable restored copy, check rejection of audit UPDATE/DELETE/TRUNCATE/upsert and forged service actors, plus collision-free new audit INSERTs. Never rewrite/delete retained audits.
-4. Compare actual artifact/delivery-bundle bytes, sizes, and hashes with matching snapshots. The API returns `410 artifact content is unavailable` when only metadata exists. [Delivery-bundle verification](delivery-integrity.md) checks actual sizes/hashes/paths and rejects corrupt downloads, approvals and delivery; it does not imply ordinary artifact hash verification. Reconcile actual preview targets, VMs, and leases too.
+4. Compare actual artifact/delivery-bundle bytes, sizes, and hashes with matching snapshots. The API returns `410 artifact content is unavailable` when only metadata exists. Run [ordinary artifact backup/new-root restore/reverification](artifact-backup.md) for ordinary files. [Delivery-bundle verification](delivery-integrity.md) separately checks actual sizes/hashes/paths and rejects corrupt downloads, approvals and delivery. Reconcile actual preview targets, VMs, and leases too.
 5. Reconcile post-backup membership/grant revocations, invalidated sessions, worker rotation/quarantine, changed approvals, and existing remote commits/PRs against trusted current records. Do not reopen traffic with resurrected sessions/tokens/approvals. Never guess missing approval provenance or blindly retry uncertain delivery.
 6. Record gate evidence, data-loss interval (RPO), elapsed recovery time (RTO), rollback target, and operational approval. Confirm the old API is fully stopped; gradually resume one API, workers, and intake. `/readyz` 200 does not prove delivery/file/VM recovery. Run `ANALYZE` in isolation if needed.
 
@@ -81,6 +81,8 @@ Six tests only use successfully created `kelpie_restore_<UUID>` databases and `k
 - Start actual Uvicorn with a SELECT-only PostgreSQL login. Check a restored synthetic OIDC session's own-organization reads, other-organization 404, administrator-audit 403, unauthenticated 401, and missing-artifact-bytes 410. Startup delivery recovery really runs but cannot acquire write locks; source/restored fingerprints remain unchanged. This is not a product maintenance mode or a way to expose write APIs.
 
 Without the environment variables these six tests skip. Required `Python` CI uses the existing PostgreSQL service's [container ID](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#job-context) to run without skips. No job, matrix, external secret, or dependency was added; existing eight-minute timeouts and read-only workflow permissions remain.
+
+[Ordinary file restore regression](artifact-backup.md) adds two tests from `test_artifact_restore_runtime.py` to the same step, for eight total. They verify DB-only 410 responses followed by actual CLI file restoration, 200 responses and retained access boundaries.
 
 ## Hands-on evidence
 
