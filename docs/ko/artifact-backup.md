@@ -55,15 +55,23 @@ ARTIFACT_ROOT="$restore_root" .venv/bin/python -m app.artifact_backup_admin veri
 
 ## 형식과 제한
 
-- Version 1 `manifest.json`: `version`, `database_sha256`, `artifacts`. 각 항목에는 `artifact_id`, `work_item_id`, `object_key`, `kind`, `name`, `content_type`, `size_bytes`, `sha256`이 있습니다. 생성 시간 등 나머지 DB 행 정보는 DB Dump가 보존합니다.
+- 새 Snapshot은 Version 2 `manifest.json`을 만듭니다. 최상위 필드는 `version`, `database_sha256`, `artifacts`이며 각 항목은 `artifact_id`, `work_item_id`, `object_key`, `kind`, `name`, `content_type`, `size_bytes`, `sha256`에 `expired_at`, `purged_at`, `retention_days`, `retention_sha256`를 추가합니다. 나머지 DB 행 정보는 DB Dump가 보존합니다.
 - 실제 파일은 `blobs/<SHA-256>`에 중복 제거하여 저장합니다. Archive 경로를 추출하지 않습니다. Artifact ID 중복·다른 DB 메타데이터·일관되지 않은 동일 Key·잘못된 JSON/중복 필드·알 수 없는 Version/필드·누락/변조 파일을 거부합니다.
 - 최대 10,000개 메타데이터, 파일당 10 MiB, Manifest 16 MiB이며 초과/잘못된 행을 조용히 제외하지 않고 전체 실패합니다. 빈 파일과 같은 Key의 별도 메타데이터는 보존합니다. 압축하지 않으며 원본·백업·복원 사본을 보관할 공간이 각각 필요합니다.
 - 작업별 경로 검증, 하위 디렉터리와 최종 파일의 no-follow 열기, 일반 파일·크기·읽기 중 변경 검사를 사용합니다. Root/부모 자체는 운영자가 통제해야 합니다. 같은 OS 계정의 악성 프로세스로부터 Root를 보호하는 Sandbox가 아닙니다.
 - 새 디렉터리 0700·파일 0600, 배타적 생성, 파일/디렉터리 동기화와 덮어쓰기 없는 최종 Manifest 게시를 사용합니다. 파일시스템은 해당 동작을 지원해야 하며 전원 장애 내구성·원격 저장소의 원자성을 보장하지 않습니다. 장애 뒤 반드시 다시 검증합니다.
 
+## 만료 기록과 Version 호환성
+
+활성 파일의 네 보존 필드는 NULL입니다. 만료 요청만 있고 정리 완료가 없으면 새 목적지를 만들기 전에 전체 Backup을 거부합니다. 완료된 만료 기록은 UTC ISO Timestamp, 보존 일수와 과거 파일 Hash를 그대로 보존하되 `sha256: null`로 기록하며 Blob을 복사하거나 복원하지 않습니다. 복원은 빈 상위 디렉터리만 유지하여 파일 부재를 재검사하고 다시 Backup할 수 있게 합니다. 파일이 다시 생기거나 부모 경로가 사라졌거나 Symlink가 끼어 있으면 검증 실패입니다. 동일 Object Key의 만료 상태·크기·정책·Hash가 다르면 조용히 선택하지 않고 거부합니다.
+
+기존 Version 1은 모든 대응 DB 행이 아직 활성 상태이며 기존 메타데이터가 정확히 일치할 때 읽기·검증·복원할 수 있습니다. Version별 필드 집합을 엄격히 검사하므로 보존 필드를 Version 1에 끼워 넣거나 Version 2에서 생략할 수 없습니다. 이전 CLI는 Version 2를 읽지 못하므로 복구 Tool을 함께 Upgrade하고 검증해야 합니다. Version 번호를 수동 변경하거나 만료 기록을 제거해 이전 형식으로 되돌리지 않습니다.
+
+이 계약은 연결된 복구 DB의 만료 증거를 보존합니다. 과거 DB Dump 자체에는 그 이후의 만료·권한 회수가 없으므로 과거 Backup만으로 최신 정책 준수를 증명할 수 없습니다. API 재개 전에 별도로 보호된 최신 감사·만료 내역과 정책을 대조하고 필요한 정리를 완료하는 운영 Gate를 유지합니다. 이 명령은 이전 Backup 사본이나 외부 저장소의 보존 정책을 자동으로 정리하지 않습니다.
+
 ## 회귀·CI·실제 확인
 
-`make test-api`에 파일 경계 50개와 CLI 11개 테스트를 포함합니다. 같은 테스트용 PostgreSQL 서버를 지정한 `KELPIE_TEST_POSTGRES_URL`·`KELPIE_TEST_POSTGRES_CONTAINER`가 있으면 아래 실제 복원 8개도 실행합니다. 없으면 PostgreSQL 관련 검증은 Skip되며 성공 증거가 아닙니다.
+`make test-api`에 기존 파일 경계 50개·CLI 11개와 `test_artifact_backup_retention.py`의 V1/V2·만료·재백업 회귀 29개를 포함합니다. 같은 테스트용 PostgreSQL 서버를 지정한 `KELPIE_TEST_POSTGRES_URL`·`KELPIE_TEST_POSTGRES_CONTAINER`가 있으면 아래 실제 복원 8개도 실행합니다. 없으면 PostgreSQL 관련 검증은 Skip되며 성공 증거가 아닙니다.
 
 ```sh
 .venv/bin/python -m pytest -q apps/api/tests/test_postgres_restore.py \
