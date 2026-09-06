@@ -8,6 +8,7 @@ import stat
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .artifact_storage import MAX_ARTIFACT_BYTES, artifact_path, read_artifact_content
@@ -17,6 +18,9 @@ MAX_ENTRIES = 10_000
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MANIFEST = Path("manifest.json")
 COMPLETE = Path(".kelpie-artifact-restore.json")
+RETENTION_FIELDS = {"expired_at", "purged_at", "retention_days", "retention_sha256"}
+V1_FIELDS = {"artifact_id", "work_item_id", "object_key", "kind", "name", "content_type",
+             "size_bytes", "sha256"}
 
 
 class ArtifactBackupError(RuntimeError):
@@ -42,6 +46,10 @@ class ArtifactRecord:
     name: str
     content_type: str
     size_bytes: int
+    expired_at: str | None = None
+    purged_at: str | None = None
+    retention_days: int | None = None
+    retention_sha256: str | None = None
 
 
 def digest(content: bytes) -> str:
@@ -52,10 +60,31 @@ def valid_digest(value: str) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
+def retention_state(row: ArtifactRecord) -> tuple:
+    state = tuple(getattr(row, name) for name in sorted(RETENTION_FIELDS))
+    if all(value is None for value in state):
+        return state
+    if row.expired_at is not None and row.purged_at is None:
+        raise ArtifactBackupError("pending artifact expiration must finish before backup")
+    timestamps = []
+    for value in (row.expired_at, row.purged_at):
+        if not isinstance(value, str):
+            raise ArtifactBackupError("invalid artifact expiration timestamp")
+        timestamp = datetime.fromisoformat(value)
+        if timestamp.tzinfo is None or value != timestamp.astimezone(UTC).isoformat():
+            raise ArtifactBackupError("artifact expiration timestamp must be canonical UTC")
+        timestamps.append(timestamp)
+    if (timestamps[1] < timestamps[0] or type(row.retention_days) is not int
+            or not 1 <= row.retention_days <= 36500 or not valid_digest(row.retention_sha256)):
+        raise ArtifactBackupError("invalid artifact expiration evidence")
+    return state
+
+
 def records(rows: list[ArtifactRecord]) -> list[ArtifactRecord]:
     if len(rows) > MAX_ENTRIES:
         raise ArtifactBackupError("artifact snapshot entry limit exceeded")
     seen = set()
+    aliases = {}
     for row in rows:
         for value in (row.artifact_id, row.work_item_id):
             if not isinstance(value, str) or str(uuid.UUID(value)) != value:
@@ -72,6 +101,10 @@ def records(rows: list[ArtifactRecord]) -> list[ArtifactRecord]:
         for value, maximum in ((row.kind, 64), (row.name, 255), (row.content_type, 128)):
             if not isinstance(value, str) or len(value) > maximum:
                 raise ArtifactBackupError("invalid artifact snapshot metadata")
+        state = (row.size_bytes, retention_state(row))
+        if row.object_key in aliases and aliases[row.object_key] != state:
+            raise ArtifactBackupError("inconsistent aliased expiration evidence")
+        aliases[row.object_key] = state
     return sorted(rows, key=lambda row: row.artifact_id)
 
 
@@ -132,6 +165,10 @@ def create_snapshot(root: Path, rows: list[ArtifactRecord], destination: Path,
         written = set()
         keys = {}
         for row in expected:
+            if row.expired_at is not None:
+                verify_absent(root, row.work_item_id, row.object_key)
+                entries.append({**asdict(row), "sha256": None})
+                continue
             content = read_artifact_content(str(root), row.work_item_id, row.object_key)
             if content is None or len(content) != row.size_bytes:
                 raise ArtifactBackupError("artifact bytes do not match the database snapshot")
@@ -143,7 +180,7 @@ def create_snapshot(root: Path, rows: list[ArtifactRecord], destination: Path,
                 write_new(destination, Path("blobs") / sha256, content)
                 written.add(sha256)
             entries.append({**asdict(row), "sha256": sha256})
-        manifest = encode({"version": 1, "database_sha256": database_sha256, "artifacts": entries})
+        manifest = encode({"version": 2, "database_sha256": database_sha256, "artifacts": entries})
         if len(manifest) > MAX_MANIFEST_BYTES:
             raise ArtifactBackupError("artifact snapshot manifest limit exceeded")
         # Only a complete snapshot has a manifest. Incomplete destinations remain quarantined.
@@ -174,7 +211,7 @@ def checked_manifest(
     manifest = json.loads(raw, object_pairs_hook=unique_object)
     if (not isinstance(manifest, dict)
             or set(manifest) != {"version", "database_sha256", "artifacts"}
-            or type(manifest["version"]) is not int or manifest["version"] != 1
+            or type(manifest["version"]) is not int or manifest["version"] not in {1, 2}
             or manifest["database_sha256"] != database_sha256
             or not isinstance(manifest["artifacts"], list)
             or len(manifest["artifacts"]) > MAX_ENTRIES):
@@ -183,12 +220,17 @@ def checked_manifest(
     restored = []
     keys = {}
     for entry in entries:
-        if not isinstance(entry, dict) or not valid_digest(entry.get("sha256")):
+        fields = V1_FIELDS | (RETENTION_FIELDS if manifest["version"] == 2 else set())
+        if not isinstance(entry, dict) or set(entry) != fields:
             raise ArtifactBackupError("invalid snapshot entry")
-        restored.append(ArtifactRecord(**{
+        row = ArtifactRecord(**{
             key: value for key, value in entry.items() if key != "sha256"
-        }))
-        key = restored[-1].object_key
+        })
+        if ((row.expired_at is None and not valid_digest(entry["sha256"]))
+                or (row.expired_at is not None and entry["sha256"] is not None)):
+            raise ArtifactBackupError("invalid snapshot entry content state")
+        restored.append(row)
+        key = row.object_key
         if key in keys and keys[key] != entry["sha256"]:
             raise ArtifactBackupError("inconsistent aliased snapshot entries")
         keys[key] = entry["sha256"]
@@ -210,6 +252,8 @@ def verify_snapshot(backup: Path, rows: list[ArtifactRecord], database_sha256: s
         _, entries = checked_manifest(backup, rows, database_sha256, manifest_sha256)
         verified = set()
         for entry in entries:
+            if entry["sha256"] is None:
+                continue
             if (entry["sha256"], entry["size_bytes"]) not in verified:
                 blob_content(backup, entry)
                 verified.add((entry["sha256"], entry["size_bytes"]))
@@ -224,11 +268,17 @@ def restore_snapshot(backup: Path, rows: list[ArtifactRecord], destination: Path
         new_destination(backup, destination)
         written = set()
         for entry in entries:
+            relative = artifact_path(entry["work_item_id"], entry["object_key"])
+            if entry["sha256"] is None:
+                # Retain reachable parents for subsequent backup/retention checks;
+                # absence of a storage mount must never be mistaken for a purge.
+                with local_directory(destination, relative.parts[:-1], create=True):
+                    pass
+                continue
             if entry["object_key"] in written:
                 continue
             # Read and hash again while copying: validation must not authorize a later mutation.
             content = blob_content(backup, entry)
-            relative = artifact_path(entry["work_item_id"], entry["object_key"])
             write_new(destination, relative, content)
             written.add(entry["object_key"])
         verify_contents(destination, entries)
@@ -239,10 +289,23 @@ def restore_snapshot(backup: Path, rows: list[ArtifactRecord], destination: Path
 
 def verify_contents(root: Path, entries: list[dict]) -> None:
     for entry in entries:
+        if entry["sha256"] is None:
+            verify_absent(root, entry["work_item_id"], entry["object_key"])
+            continue
         content = read_artifact_content(str(root), entry["work_item_id"], entry["object_key"])
         if (content is None or len(content) != entry["size_bytes"]
                 or digest(content) != entry["sha256"]):
             raise ArtifactBackupError("restored artifact verification failed")
+
+
+def verify_absent(root: Path, work: str, key: str) -> None:
+    relative = artifact_path(work, key)
+    with local_directory(root, relative.parts[:-1]) as directory:
+        try:
+            os.stat(relative.name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+    raise ArtifactBackupError("expired artifact content must remain absent")
 
 
 def verify_restored(root: Path, rows: list[ArtifactRecord], database_sha256: str,

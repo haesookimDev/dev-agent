@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import stat
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -43,9 +44,17 @@ async def read_records(sessions) -> list[backup.ArtifactRecord]:
                                       .limit(backup.MAX_ENTRIES + 1))).all()
         return backup.records([
             backup.ArtifactRecord(row.id, row.work_item_id, row.object_key, row.kind,
-                                  row.name, row.content_type, row.size_bytes)
+                row.name, row.content_type, row.size_bytes, timestamp(row.expired_at),
+                timestamp(row.purged_at), row.retention_days, row.retention_sha256)
             for row in rows
         ])
+
+
+def timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    # Application SQLite timestamps are stored without an offset and represent UTC.
+    return value.replace(tzinfo=value.tzinfo or UTC).astimezone(UTC).isoformat()
 
 
 def operate(arguments, root, rows, database_sha256):
