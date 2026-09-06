@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Migration atomicity regression
+
+`apps/api/tests/test_migration_atomicity.py` verifies that a safety-gate failure during a multi-revision SQLite downgrade retains the entire schema. Actual Alembic CLI/API coverage also checks all rows and schema, existing login and artifact access (200), cross-organization denial (404), and `/readyz`. It runs in existing `make test-api` and required `Python` CI without a new job, dependency or timeout. Check the migration runner with `.venv/bin/python -m ruff check apps/api/migrations/env.py` too. This verification uses only isolated synthetic data and does not authorize dangerous downgrades of production databases.
+
 ## Artifact preview regression
 
 [Artifact preview](artifact-preview.md) runs in `make test-web` and existing `Web` CI, checking bounded reads, types, cancellation, actual uploads, modal focus, retry and original downloads. Run `npm run test:e2e --prefix apps/web -- artifact-preview.spec.ts` for focused coverage and `.venv/bin/python -m ruff check apps/web/e2e/seed-artifacts.py` for the seed helper. Distinguish read-only evidence access from forbidden mutations in closed work. Do not describe injected failures as real authorization/recovery acceptance; also inspect the production build with a scoped API.

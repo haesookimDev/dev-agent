@@ -2,6 +2,10 @@
 
 한국어 | [English](../en/development.md)
 
+## Migration 원자성 회귀
+
+`apps/api/tests/test_migration_atomicity.py`는 여러 SQLite Revision을 되돌리다가 안전 검사에서 실패해도 전체 Schema가 유지되는지 검증합니다. 실제 Alembic CLI·API 검증은 모든 행·Schema 보존, 기존 로그인·산출물 조회 200, 다른 조직 접근 404와 `/readyz`를 함께 확인합니다. 기존 `make test-api`와 필수 `Python` CI에 포함하며 새 Job·의존성·Timeout은 추가하지 않습니다. Migration 실행기도 `.venv/bin/python -m ruff check apps/api/migrations/env.py`로 검사합니다. 이 검증은 격리된 합성 데이터 전용이며 운영 DB의 위험한 Downgrade를 실행할 권한을 의미하지 않습니다.
+
 ## 산출물 미리보기 회귀
 
 [산출물 미리보기](artifact-preview.md)는 `make test-web`과 기존 `Web` CI에서 제한된 읽기·형식·취소와 실제 업로드·모달 포커스·재시도·원본 다운로드를 검증합니다. `npm run test:e2e --prefix apps/web -- artifact-preview.spec.ts`로 집중 실행하며 Seed Helper는 `.venv/bin/python -m ruff check apps/web/e2e/seed-artifacts.py`로 검사합니다. 완료 작업의 읽기 전용 열람과 변경 동작 금지를 구분해 검증합니다. 오류 Fixture를 실제 권한·복구 검증으로 표현하지 말고 운영 빌드와 Scoped API의 화면도 확인하세요.
