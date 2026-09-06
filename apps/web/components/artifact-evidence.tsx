@@ -61,6 +61,8 @@ function PreviewDialog({ workId, artifact, locale, messages, onDismiss }: {
   }
 
   function retry() {
+    // The retry button disappears while loading; keep keyboard focus inside the modal.
+    dialog.current?.querySelector<HTMLElement>(".previewBody")?.focus();
     clearImage();
     setState({ phase: "loading" });
     setAttempt((value) => value + 1);

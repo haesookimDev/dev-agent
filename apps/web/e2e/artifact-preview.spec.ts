@@ -103,6 +103,7 @@ test("injected slow/error responses are cancellable and retry never shows a prev
   denied = false;
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.getByRole("dialog").locator("pre")).toHaveText('{"result":"synthetic evidence"}');
+  await expect(page.getByRole("dialog").getByRole("region", { name: "File content" })).toBeFocused();
   await page.keyboard.press("Escape");
 });
 
