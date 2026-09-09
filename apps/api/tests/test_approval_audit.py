@@ -62,6 +62,7 @@ async def test_approval_audit_captures_identity_roles_and_bounded_before_after_d
     else:
         response = await authorized.post(f"/api/work-items/{item['id']}/approvals", json={
             "kind": kind, "decision": choice, "payload": {"minutes": 45, "reason": private_text},
+            **({"expected_version": item["version"]} if kind == "budget" else {}),
         })
     assert response.status_code == 200
     central = kind == "pull_request" and choice == "approve"
@@ -133,6 +134,7 @@ async def test_audit_failure_rolls_back_approval_budget_state_events_and_deliver
         else:
             await authorized.post(f"/api/work-items/{item['id']}/approvals", json={
                 "kind": kind, "decision": "approve", "payload": {"minutes": 45},
+                **({"expected_version": item["version"]} if kind == "budget" else {}),
             })
     async with database() as session:
         for model in (Approval, AuditRecord, DeliveryJob):

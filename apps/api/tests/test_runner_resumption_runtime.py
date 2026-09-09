@@ -26,7 +26,8 @@ def test_actual_runner_waits_for_budget_and_resumes_user_decisions(tmp_path, wit
                 response = own.post(f"{work_url}/feedback", json={"message": "Keep this revision"})
                 assert response.status_code == 200
                 assert response.json()["status"] == "budget_exhausted"
-            budget = {"kind": "budget", "decision": "approve", "payload": {"minutes": 15}}
+            budget = {"kind": "budget", "decision": "approve", "payload": {"minutes": 15},
+                      "expected_version": before["version"]}
             assert own.post(f"{work_url}/approvals", json=budget).status_code == 403
             assert foreign.post(f"{work_url}/approvals", json=budget).status_code == 404
             observed = len(runner.events("fixture.commands.observed"))

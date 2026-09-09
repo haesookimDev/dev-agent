@@ -15,7 +15,7 @@ PR approval that queues central delivery records the bundle SHA-256. Mock runs, 
 
 Successful mutations, activity events, approval rows, delivery reservations and audits share one transaction. Audit INSERT failure rolls back ownership/expiry/version, time budget/state/events/delivery reservations and prevents the delivery background task from starting. Insufficient permission, another organization, stale versions/states, another console owner or an unverified bundle produce no success audit. Auditing denied attempts remains future work. Arbitrary approval payloads, reasons and tokens are not copied into audits; existing approval/activity-log retention behavior is unchanged.
 
-Synthetic request: `POST /api/work-items/{id}/approvals` with `{"kind":"budget","decision":"approve","payload":{"minutes":45}}` requires exhausted-budget state and approver permission. Success returns the existing WorkItem JSON; selected audit-read fields are:
+Synthetic request: `POST /api/work-items/{id}/approvals` with `{"kind":"budget","decision":"approve","expected_version":6,"payload":{"minutes":45}}` requires exhausted-budget state, approver permission and the reviewed version. Budget approval/rejection must send `expected_version` as described in the [version-field migration guide](budget-approval-version.md). Success returns the existing WorkItem JSON; selected audit-read fields are:
 
 ```json
 {

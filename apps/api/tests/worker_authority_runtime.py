@@ -128,7 +128,8 @@ def exercise_authority(runtime, credentials):
     exhausted = advance(runtime, 1, "budget_exhausted")
     reject_resume(runtime, 1)
     with admin_client(runtime, 1, credentials) as admin:
-        body = {"kind": "budget", "decision": "approve", "payload": {"minutes": 45}}
+        body = {"kind": "budget", "decision": "approve", "payload": {"minutes": 45},
+                "expected_version": exhausted["version"]}
         before = snapshot(runtime)
         assert foreign.post(f"{second_url}/approvals", json=body).status_code == 403
         assert own.post(f"{second_url}/approvals", json=body).status_code == 404

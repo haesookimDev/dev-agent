@@ -104,6 +104,10 @@ class FeedbackCreate(BaseModel):
 class ApprovalCreate(BaseModel):
     kind: Literal["pull_request", "budget", "console"]
     decision: Literal["approve", "reject"]
+    expected_version: int | None = Field(
+        default=None, strict=True, ge=1,
+        description="Required for budget decisions: the work version the approver reviewed.",
+    )
     payload: dict[str, Any] = Field(default_factory=dict)
 
 

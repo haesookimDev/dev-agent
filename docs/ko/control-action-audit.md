@@ -15,7 +15,7 @@ IAM-001의 두 번째 감사 Batch입니다. [피드백 감사](feedback-audit.m
 
 성공한 변경, 활동 이벤트, 승인 행, 전달 예약과 감사는 같은 트랜잭션입니다. 감사 INSERT 실패 시 소유권·만료·버전, 시간 예산·상태·이벤트·전달 예약을 함께 Rollback하고 전달 Background Task도 시작하지 않습니다. 권한 부족, 다른 조직, 오래된 버전/상태, 다른 Console 소유자, 미검증 Bundle에는 성공 감사를 남기지 않습니다. 거부 시도 자체의 감사는 후속 범위입니다. 임의 승인 Payload·사유·토큰은 감사에 복사하지 않으며 기존 승인/활동 로그의 보존 동작은 변경하지 않습니다.
 
-합성 요청: `POST /api/work-items/{id}/approvals`에 `{"kind":"budget","decision":"approve","payload":{"minutes":45}}`를 보내면 예산 소진 상태와 Approver 권한을 검사합니다. 성공 응답은 기존 WorkItem JSON이고 감사 조회의 주요 필드는 다음과 같습니다.
+합성 요청: `POST /api/work-items/{id}/approvals`에 `{"kind":"budget","decision":"approve","expected_version":6,"payload":{"minutes":45}}`를 보내면 예산 소진 상태와 Approver 권한, 사용자가 확인한 버전을 검사합니다. 예산 승인·거절은 [버전 필드 전환 안내](budget-approval-version.md)에 따라 `expected_version`을 반드시 전송해야 합니다. 성공 응답은 기존 WorkItem JSON이고 감사 조회의 주요 필드는 다음과 같습니다.
 
 ```json
 {

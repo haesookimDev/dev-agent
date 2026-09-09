@@ -750,6 +750,16 @@ async def decide_approval(
         else:
             target = WorkStatus.IMPLEMENTING
     elif payload.kind == "budget":
+        if payload.expected_version is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "expected_version is required for budget decisions",
+            )
+        if payload.expected_version != item.version:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"version mismatch: current version is {item.version}",
+            )
         if item.status != WorkStatus.BUDGET_EXHAUSTED:
             raise HTTPException(status.HTTP_409_CONFLICT, "work has not exhausted its budget")
         if payload.decision == "approve":
@@ -775,7 +785,7 @@ async def decide_approval(
             event_type="approval.decided",
             source=actor.subject,
             message=f"{payload.kind}: {payload.decision}",
-            payload=payload.model_dump(),
+            payload=payload.model_dump(exclude_none=True),
         ),
     )
     if target is not None:

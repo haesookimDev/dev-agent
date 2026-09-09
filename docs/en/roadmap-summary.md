@@ -39,3 +39,5 @@ Verified [actual `from`/`to` retention](transition-metadata.md) in common transi
 GitLab, advanced routing, and autonomous issue discovery should follow only after this security and execution baseline is proven.
 
 [Runner resumption after user decisions](runner-resumption.md) prevents feedback execution before budget approval and verifies resumption/rechecking after budget approval or PR rejection without feedback through actual processes and HTTP. Budget-approval UI on exhausted work is a hands-on follow-up. Post-observation execution races and physical VM time-budget enforcement remain.
+
+[Budget approval version checks](budget-approval-version.md) require the reviewed `expected_version` for approval/rejection and block reuse of stale confirmation after another exhaustion. Actual HTTP and PostgreSQL concurrent-request/rollback verification passed. Budget callers require a compatibility migration; the extension UI using this contract is the next separate task.
