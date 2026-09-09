@@ -39,3 +39,5 @@ SEC-001의 [Runner 전송](runner-event-redaction.md)과 [API 이벤트 수신](
 GitLab, 고급 Routing, 자율 이슈 탐색은 이 보안·실행 기준이 검증된 이후에 진행해야 합니다.
 
 [사용자 결정 이후 Runner 재개](runner-resumption.md)는 예산 승인 전 피드백 실행을 차단하고 피드백 없는 예산 승인·PR 거절 후 재검증을 실제 프로세스·HTTP로 확인했습니다. 예산 소진 페이지의 승인 UI는 실제 사용에서 확인한 후속 항목입니다. 명령 조회 이후 실행 경쟁과 실제 VM의 시간 예산 강제는 남아 있습니다.
+
+[예산 승인 버전 검사](budget-approval-version.md)는 승인·거절에 사용자가 확인한 `expected_version`을 요구하며 재소진 이후 오래된 확인의 재사용을 차단합니다. 실제 HTTP 및 PostgreSQL 동시 요청·Rollback을 검증했습니다. 예산 호출부의 호환성 전환이 필요하며 이를 사용하는 연장 UI는 다음 별도 작업입니다.
