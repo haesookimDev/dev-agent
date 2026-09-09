@@ -467,15 +467,34 @@ async def run() -> None:
         approval_cursor = 0
         while True:
             commands = await control.commands(feedback_cursor, approval_cursor)
-            if commands["feedback"]:
-                feedback_cursor = commands["feedback"][-1]["id"]
-                prompt = "Apply this user feedback completely:\n\n" + "\n".join(
-                    entry["message"] for entry in commands["feedback"]
+            if commands["approvals"]:
+                approval_cursor = commands["approvals"][-1]["id"]
+            if commands["status"] == "committing":
+                await control.event(
+                    "delivery.ready",
+                    "Human approval recorded; the delivery adapter may commit and open the PR",
+                    level="warning",
                 )
+                return
+            if commands["status"] in {"cancelled", "failed", "pr_created", "completed"}:
+                return
+            # Feedback and approval rows are history, not permission to execute.
+            # Keep pending feedback unread until the control plane authorizes resumption.
+            if commands["status"] == "implementing":
+                prompt = (
+                    "Continue implementation authorized by the control plane. Reassess the work."
+                )
+                if commands["feedback"]:
+                    feedback_cursor = commands["feedback"][-1]["id"]
+                    prompt = "Apply this user feedback completely:\n\n" + "\n".join(
+                        entry["message"] for entry in commands["feedback"]
+                    )
+                if not passed:
+                    prompt += "\n\nFix the latest independent verification failures:\n\n" + output
                 work = {"version": commands["version"]}
                 await session.run_turn(prompt)
                 work = await control.transition(
-                    "verifying", work["version"], "Verifying feedback changes"
+                    "verifying", work["version"], "Verifying authorized changes"
                 )
                 passed, output = await run_verification(repository, control)
                 repair_attempts = 0
@@ -485,17 +504,17 @@ async def run() -> None:
                         work = await control.transition(
                             "budget_exhausted",
                             work["version"],
-                            "Feedback repair attempts exhausted",
+                            "Authorized repair attempts exhausted",
                         )
                         break
                     work = await control.transition(
                         "implementing",
                         work["version"],
-                        f"Feedback verification failed; repair attempt {repair_attempts}",
+                        f"Verification failed; authorized repair attempt {repair_attempts}",
                     )
                     await session.run_turn("Fix these verification failures:\n\n" + output)
                     work = await control.transition(
-                        "verifying", work["version"], "Rechecking feedback repair"
+                        "verifying", work["version"], "Rechecking authorized repair"
                     )
                     passed, output = await run_verification(repository, control)
                 if passed:
@@ -506,20 +525,9 @@ async def run() -> None:
                     work = await control.transition(
                         "awaiting_approval",
                         work["version"],
-                        "Feedback verification completed",
+                        "Authorized revision verification completed",
                     )
                 continue
-            if commands["approvals"]:
-                approval_cursor = commands["approvals"][-1]["id"]
-            if commands["status"] == "committing":
-                await control.event(
-                    "delivery.ready",
-                    "Human approval recorded; the delivery adapter may commit and open the PR",
-                    level="warning",
-                )
-                return
-            if commands["status"] in {"cancelled", "failed", "completed"}:
-                return
             await asyncio.sleep(3)
     except Exception as error:
         try:
