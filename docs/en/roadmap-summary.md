@@ -37,3 +37,5 @@ Verified SEC-001's lease/explicit credential-field redaction at [Runner egress](
 Verified [actual `from`/`to` retention](transition-metadata.md) in common transition history and [denial of user-owned state transitions through Worker leases](worker-transition-authority.md). The latter separates user feedback/budget/PR approvals from approved Mock completion while central delivery retains existing control-plane authority. Arbitrary-event provenance and physical execution/time-budget enforcement in an untrusted VM remain.
 
 GitLab, advanced routing, and autonomous issue discovery should follow only after this security and execution baseline is proven.
+
+[Runner resumption after user decisions](runner-resumption.md) prevents feedback execution before budget approval and verifies resumption/rechecking after budget approval or PR rejection without feedback through actual processes and HTTP. Budget-approval UI on exhausted work is a hands-on follow-up. Post-observation execution races and physical VM time-budget enforcement remain.
