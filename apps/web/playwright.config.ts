@@ -1,4 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// Inherited by the owned service and test workers, never discovered from a live deployment.
+process.env.KELPIE_E2E_BUDGET_METADATA ??= join(tmpdir(), `kelpie-budget-${randomUUID()}.json`);
 
 export default defineConfig({
   testDir: "./e2e",

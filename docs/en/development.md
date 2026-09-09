@@ -79,6 +79,8 @@ Coverage includes creation, live events, feedback, re-verification, approval and
 
 [Unassigned queued cancellation](work-cancellation.md) additionally covers confirmation, Esc/focus, duplicate submission, permission denial, version conflicts, lost success responses, and live SSE changes. Work cancelled without execution history must have no lease and emits no release event. Existing release assertions for executed work remain unchanged.
 
+[Time-budget extension UI](budget-approval-ui.md) pins the reviewed version and verifies actual API approval, repeated exhaustion, conflicts and response loss. `budget.spec.ts` prepares work with a temporary scoped Worker and releases its lease before shared verification. Do not report development authentication or the 403 response fixture as actual OIDC/VM verification. Normal confirmation screenshots are included in existing CI evidence.
+
 Playwright is a development dependency for real browser/service contracts that unit tests cannot exercise. No runtime dependency is added. The English managed block in `apps/web/AGENTS.md` preserves the installed Next.js generator's original text and requires consulting version-matched local documentation first.
 
 ## CI and merging

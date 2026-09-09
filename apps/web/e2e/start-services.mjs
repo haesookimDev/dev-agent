@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const temporary = mkdtempSync(join(tmpdir(), "kelpie-browser-test-"));
 const python = process.env.KELPIE_E2E_PYTHON || join(root, ".venv/bin/python");
 const tokenFile = join(temporary, "worker-token");
+const budgetTokenFile = join(temporary, "budget-token");
+const budgetMetadata = process.env.KELPIE_E2E_BUDGET_METADATA;
+let ownsBudgetMetadata = false;
 const environment = {
   ...process.env,
   DATABASE_URL: `sqlite+aiosqlite:///${join(temporary, "test.db")}`,
@@ -39,6 +42,7 @@ async function stop(code = 0) {
   })));
   // This exact directory was freshly created by mkdtemp for this invocation.
   rmSync(temporary, { recursive: true, force: true });
+  if (ownsBudgetMetadata) unlinkSync(budgetMetadata);
   process.exit(code);
 }
 
@@ -62,6 +66,13 @@ try {
   run(python, ["-m", "alembic", "-c", "apps/api/alembic.ini", "upgrade", "head"]);
   run(python, ["-m", "app.worker_admin", "issue", "--worker-name", "browser-test-worker",
     "--reason", "isolated browser acceptance test", "--output", tokenFile]);
+  run(python, ["-m", "app.worker_admin", "issue", "--worker-name", "browser-budget-worker",
+    "--reason", "isolated budget browser acceptance", "--output", budgetTokenFile]);
+  if (!budgetMetadata) throw new Error("Budget metadata path must be provided by Playwright");
+  const privateMetadata = join(temporary, "budget-metadata.json");
+  writeFileSync(privateMetadata, JSON.stringify({ api: "http://127.0.0.1:18100", token_file: budgetTokenFile }), { mode: 0o600, flag: "wx" });
+  writeFileSync(budgetMetadata, JSON.stringify({ metadata: privateMetadata }), { mode: 0o600, flag: "wx" });
+  ownsBudgetMetadata = true;
   const worker = join(temporary, "mock-worker");
   run("go", ["-C", "apps/worker", "build", "-o", worker, "./cmd/kelpie-worker"]);
   start(python, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "18100", "--no-access-log"], environment);

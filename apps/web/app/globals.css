@@ -140,6 +140,23 @@ form button { width: 100%; justify-content: space-between; margin-top: 1px; }
 .event h3 { font-size: 12px; font-weight: 550; white-space: pre-wrap; overflow-wrap: anywhere; margin: 7px 0 4px; }
 .event p { color: #8392a7; font-size: 9px; overflow-wrap: anywhere; }
 .controlPanel { padding: 24px; }
+.budgetWork { margin-top: 20px; padding: 16px; border: 1px solid #e5c78f; border-radius: 8px; background: #fff8ea; }
+.budgetWork h3 { font-size: 13px; color: #79500d; }
+.budgetWork p { margin: 9px 0 14px; font-size: 12px; line-height: 1.7; color: #695329; }
+.budgetWork button { width: 100%; min-height: 44px; white-space: normal; }
+.budgetDialog { width: min(480px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow-y: auto; padding: 26px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: white; box-shadow: 0 24px 80px #15223840; }
+.budgetDialog::backdrop { background: #15223880; }
+.budgetDialog h2 { font-size: 21px; }
+.budgetDialog > p { margin-top: 16px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.budgetTarget { padding: 12px; background: var(--paper); border-radius: 6px; font-weight: 600; }
+.budgetDialog form { margin-top: 20px; gap: 8px; }
+.budgetDialog input { width: 100%; margin-top: 8px; }
+.budgetRange { margin-top: 8px; color: var(--muted); font-size: 12px; }
+.budgetSummary { margin: 12px 0; padding: 12px; border-radius: 8px; background: var(--paper); }
+.budgetSummary div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 6px 0; font-size: 12px; }
+.budgetSummary dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+.budgetActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 12px; }
+.budgetActions button { min-height: 44px; flex: 1; justify-content: center; white-space: normal; }
 .feedbackClosed { margin-top: 22px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: #f6f8fc; }
 .feedbackClosed h3 { margin: 0 0 8px; font-size: 13px; }
 .feedbackClosed p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
