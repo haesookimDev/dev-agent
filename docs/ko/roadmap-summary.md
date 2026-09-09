@@ -37,3 +37,5 @@ SEC-001의 [Runner 전송](runner-event-redaction.md)과 [API 이벤트 수신](
 공통 상태 전환이 생성하는 이력의 [실제 `from`·`to` 보존](transition-metadata.md)과 [Worker 임대의 사용자 승인 상태 전환 차단](worker-transition-authority.md)을 검증했습니다. 후자는 사용자 피드백·예산/PR 승인과 승인된 Mock 완료를 구분하며 중앙 전달은 기존 Control Plane 권한을 유지합니다. 임의 이벤트의 출처 증명과 신뢰할 수 없는 VM의 실제 실행·시간 예산 강제는 남아 있습니다.
 
 GitLab, 고급 Routing, 자율 이슈 탐색은 이 보안·실행 기준이 검증된 이후에 진행해야 합니다.
+
+[사용자 결정 이후 Runner 재개](runner-resumption.md)는 예산 승인 전 피드백 실행을 차단하고 피드백 없는 예산 승인·PR 거절 후 재검증을 실제 프로세스·HTTP로 확인했습니다. 예산 소진 페이지의 승인 UI는 실제 사용에서 확인한 후속 항목입니다. 명령 조회 이후 실행 경쟁과 실제 VM의 시간 예산 강제는 남아 있습니다.
