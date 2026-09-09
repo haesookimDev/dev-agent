@@ -15,6 +15,12 @@ const (
 	controlTransport
 	controlDecode
 	controlStatus
+	vmCommandStart
+	vmCommandExit
+	vmBaseImage
+	vmRunDirectory
+	vmAssignment
+	vmSeedData
 )
 
 // Only fixed classifications and numeric codes cross the diagnostic boundary.
@@ -37,6 +43,18 @@ func (e diagnosticError) Error() string {
 		return "control response decoding failed"
 	case controlStatus:
 		return fmt.Sprintf("control plane returned HTTP %d %s", e.code, http.StatusText(e.code))
+	case vmCommandStart:
+		return "VM command could not start"
+	case vmCommandExit:
+		return fmt.Sprintf("VM command failed (exit %d)", e.code)
+	case vmBaseImage:
+		return "VM base image unavailable"
+	case vmRunDirectory:
+		return "VM run directory unavailable"
+	case vmAssignment:
+		return "VM assignment encoding failed"
+	case vmSeedData:
+		return "VM seed data could not be written"
 	default:
 		return "worker execution failed"
 	}
@@ -50,4 +68,17 @@ func privateFailure(err error, kind diagnosticKind) error {
 		return context.DeadlineExceeded
 	}
 	return diagnosticError{kind: kind}
+}
+
+// Executors may return arbitrary errors. Never render those in a log or event,
+// even if a future executor forgets to classify its own failure at the source.
+func safeDiagnostic(err error) string {
+	var diagnostic diagnosticError
+	if errors.As(err, &diagnostic) {
+		return diagnostic.Error()
+	}
+	if errors.Is(err, errCredentialUnavailable) {
+		return errCredentialUnavailable.Error()
+	}
+	return privateFailure(err, 0).Error()
 }

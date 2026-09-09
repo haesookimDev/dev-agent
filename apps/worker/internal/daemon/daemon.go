@@ -49,12 +49,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-heartbeat.C:
 			if err := d.heartbeat(ctx, worker.ID); err != nil {
-				d.logger.Warn("heartbeat failed", "error", err)
+				d.logger.Warn("heartbeat failed", "error", safeDiagnostic(err))
 			}
 		case <-poll.C:
 			claim, err := d.claim(ctx, worker.ID)
 			if err != nil {
-				d.logger.Warn("claim failed", "error", err)
+				d.logger.Warn("claim failed", "error", safeDiagnostic(err))
 				continue
 			}
 			if claim == nil {
@@ -72,18 +72,17 @@ func (d *Daemon) execute(ctx context.Context, claim Claim) {
 		"starting work",
 		"work_id", claim.WorkItem.ID,
 		"correlation_id", claim.WorkItem.CorrelationID,
-		"title", claim.WorkItem.Title,
 	)
 	if err := d.executor.Execute(ctx, client, claim); err != nil {
 		d.logger.Error(
 			"work execution failed",
 			"work_id", claim.WorkItem.ID,
 			"correlation_id", claim.WorkItem.CorrelationID,
-			"error", err,
+			"error", safeDiagnostic(err),
 		)
 		failureContext := ContextWithCorrelationID(context.Background(), claim.WorkItem.CorrelationID)
 		_ = client.Event(failureContext, claim.WorkItem.ID, claim.LeaseToken, AgentEvent{
-			EventType: "worker.failed", Source: "worker", Level: "error", Message: err.Error(), Payload: map[string]any{},
+			EventType: "worker.failed", Source: "worker", Level: "error", Message: safeDiagnostic(err), Payload: map[string]any{},
 		})
 		current, readErr := client.ReadRun(failureContext, claim.WorkItem.ID, claim.LeaseToken)
 		if readErr != nil {
@@ -99,7 +98,7 @@ func (d *Daemon) execute(ctx context.Context, claim Claim) {
 			}
 		}
 		if err := client.Release(failureContext, claim.WorkItem.ID, claim.LeaseToken); err != nil {
-			d.logger.Warn("resource release failed; reservation retained", "work_id", claim.WorkItem.ID, "error", err)
+			d.logger.Warn("resource release failed; reservation retained", "work_id", claim.WorkItem.ID, "error", safeDiagnostic(err))
 		}
 	}
 }
