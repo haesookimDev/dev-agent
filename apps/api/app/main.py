@@ -967,6 +967,7 @@ async def worker_transition(
         payload.status,
         expected_version=payload.expected_version,
         actor=f"worker:{lease.worker_id}",
+        worker_id=lease.worker_id,
         message=redact_worker_telemetry(payload.message, lease=lease_token),
         payload=redact_worker_telemetry(payload.payload, lease=lease_token),
     )

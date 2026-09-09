@@ -22,6 +22,7 @@ from .observability import observe_claim, observe_transition
 from .schemas import ClaimRequest, EventCreate, WorkItemCreate
 from .state_machine import InvalidTransition, ensure_transition
 from .worker_credentials import lock_worker
+from .worker_transitions import authorize_worker_transition
 
 
 def ensure_feedback_allowed(item: WorkItem) -> None:
@@ -100,6 +101,7 @@ async def transition_work_item(
     *,
     expected_version: int,
     actor: str,
+    worker_id: str | None = None,
     message: str = "",
     payload: dict | None = None,
 ) -> WorkItem:
@@ -112,6 +114,8 @@ async def transition_work_item(
         ensure_transition(item.status, target)
     except InvalidTransition as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    if worker_id is not None:
+        await authorize_worker_transition(session, item, target, worker_id)
     previous = item.status
     transitioned_at = utcnow()
     previous_updated_at = item.updated_at
