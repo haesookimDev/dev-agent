@@ -38,6 +38,18 @@ for (const locale of ["en", "ko"] as const) {
       await page.goBack();
       await expect(page).toHaveURL(new RegExp(`/${locale}$`));
       await expect(page.locator("html")).toHaveCSS("scroll-behavior", reducedMotion === "reduce" ? "auto" : "smooth");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.locator(".pageHeading").getByRole("link", { name: locale === "en" ? "New work" : "새 작업", exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/${locale}#create-work$`));
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+      const skip = page.getByRole("link", { name: locale === "en" ? "Skip to content" : "본문으로 건너뛰기", exact: true });
+      await skip.focus();
+      await expect(skip).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(new RegExp(`/${locale}#main-content$`));
+      await expect(page.locator("#main-content")).toBeFocused();
+      await expect(page.locator("html")).toHaveCSS("scroll-behavior", reducedMotion === "reduce" ? "auto" : "smooth");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       expect(warnings).toEqual([]);
     });
   }
