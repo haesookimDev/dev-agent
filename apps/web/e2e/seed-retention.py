@@ -14,7 +14,7 @@ from app.models import Artifact, WorkItem, utcnow
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
-def seed(token_file):
+def seed(token_file, *, scheduled=False):
     headers = {"Authorization": f"Bearer {Path(token_file).read_text().strip()}"}
     with httpx.Client(base_url="http://127.0.0.1:18100", trust_env=False, timeout=10) as client:
         response = client.post("/api/workers/register", headers=headers, json={
@@ -23,7 +23,8 @@ def seed(token_file):
         assert response.status_code == 200, "synthetic retention worker registration failed"
         worker = response.json()["id"]
         response = client.post("/api/work-items", json={
-            "title": "Artifact retention acceptance", "repository": "demo/artifact-retention",
+            "title": "Artifact retention acceptance",
+            "repository": "demo/scheduled-retention" if scheduled else "demo/artifact-retention",
             "requirement": "Inspect expired evidence without starting a VM."})
         assert response.status_code == 201, "synthetic retention work creation failed"
         work = response.json()["id"]
@@ -58,14 +59,21 @@ def seed(token_file):
             finally:
                 await engine.dispose()
         asyncio.run(age_owned_evidence())
-        result = subprocess.run([sys.executable, "-m", "app.artifact_retention_admin",
-            "--retain-days", "30", "--work-id", work, "--apply"],
+        module = "app.artifact_retention_worker" if scheduled else "app.artifact_retention_admin"
+        mode = ["--mode", "apply", "--once"] if scheduled else ["--apply"]
+        result = subprocess.run([sys.executable, "-m", module,
+            "--retain-days", "30", "--work-id", work, *mode],
             capture_output=True, timeout=15, check=False)
         assert result.returncode == 0, "synthetic retention CLI failed (output withheld)"
-        assert json.loads(result.stdout)["counts"]["purged"] == 1
+        output = json.loads(result.stdout)
+        if scheduled:
+            assert output["checkpoint_saved"] and output["checkpoint_version"] == 2
+            output = output["batch"]
+        assert output["counts"]["purged"] == 1
         assert client.get(url).json() == {"detail": "artifact retention period has expired"}
         assert client.get(url).status_code == 410
 
 
 if __name__ == "__main__":
     seed(sys.argv[1])
+    seed(sys.argv[1], scheduled=True)
