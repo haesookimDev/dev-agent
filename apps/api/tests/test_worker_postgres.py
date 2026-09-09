@@ -227,7 +227,10 @@ async def test_access_waiting_for_quarantine_reads_committed_denial(assigned_run
                 await asyncio.gather(accessing, return_exceptions=True)
 
 
-async def test_publication_timeout_releases_quarantine_lock(assigned_runs, monkeypatch):
+@pytest.mark.parametrize("independent_write_seconds", [0, 0.35])
+async def test_publication_timeout_releases_quarantine_lock(
+    assigned_runs, monkeypatch, independent_write_seconds,
+):
     sessions, runs = assigned_runs
     authority_ids = []
     async with sessions() as session:
@@ -240,13 +243,18 @@ async def test_publication_timeout_releases_quarantine_lock(assigned_runs, monke
         # These two test snapshots remain append-only until the dedicated test DB is removed.
         await session.commit()
     monkeypatch.setattr(delivery, "SessionLocal", sessions)
-    monkeypatch.setattr(delivery, "DELIVERY_WRITE_SECONDS", 0.3)
     started = asyncio.Event()
+    configured_write_seconds = delivery.DELIVERY_WRITE_SECONDS
 
     async def publish():
-        async with delivery.guard_delivery_write(runs[0][0].id, approval_audit_id=authority_ids[0]):
-            started.set()
-            await asyncio.Event().wait()
+        # Inject the short deadline only into the deliberately stalled publication.
+        with monkeypatch.context() as stalled:
+            stalled.setattr(delivery, "DELIVERY_WRITE_SECONDS", 0.3)
+            async with delivery.guard_delivery_write(
+                runs[0][0].id, approval_audit_id=authority_ids[0],
+            ):
+                started.set()
+                await asyncio.Event().wait()
 
     publishing = asyncio.create_task(publish())
     try:
@@ -257,12 +265,18 @@ async def test_publication_timeout_releases_quarantine_lock(assigned_runs, monke
             await isolating.commit()
         with pytest.raises(TimeoutError):
             await publishing
-        async with delivery.guard_delivery_write(runs[1][0].id, approval_audit_id=authority_ids[1]):
-            pass
+        assert delivery.DELIVERY_WRITE_SECONDS == configured_write_seconds
+        async with asyncio.timeout(2):
+            async with delivery.guard_delivery_write(
+                runs[1][0].id, approval_audit_id=authority_ids[1],
+            ):
+                # A healthy independent write may outlast the injected fault deadline.
+                await asyncio.sleep(independent_write_seconds)
         with pytest.raises(delivery.DeliveryStopped):
-            async with delivery.guard_delivery_write(runs[0][0].id,
-                                                     approval_audit_id=authority_ids[0]):
-                pytest.fail("publication after quarantine must not start")
+            async with asyncio.timeout(2):
+                async with delivery.guard_delivery_write(runs[0][0].id,
+                                                         approval_audit_id=authority_ids[0]):
+                    pytest.fail("publication after quarantine must not start")
     finally:
         publishing.cancel()
         await asyncio.gather(publishing, return_exceptions=True)
