@@ -347,6 +347,24 @@ class Artifact(Base):
     retention_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class ArtifactRetentionJob(Base):
+    __tablename__ = "artifact_retention_jobs"
+    __table_args__ = (
+        CheckConstraint("length(scope_key) = 64", name="retention_job_scope"),
+        CheckConstraint("version >= 1", name="retention_job_version"),
+        CheckConstraint("cursor IS NULL OR length(cursor) = 36", name="retention_job_cursor"),
+    )
+
+    # An opaque digest binds progress to storage, work scope, policy and dry-run/apply mode.
+    # No file path, database credential or artifact content is retained here.
+    scope_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    cursor: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    sweep_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
 class PreviewEndpoint(Base):
     __tablename__ = "preview_endpoints"
 

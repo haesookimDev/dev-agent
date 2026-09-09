@@ -32,6 +32,8 @@
 
 P0 OPS-001에는 [PostgreSQL 백업·새 DB 복원의 데이터·권한·감사 검증](postgres-restore.md)과 [일반 산출물의 활성 작업 보호 정리 CLI·만료 UI·백업 V2](artifact-retention.md)도 추가했습니다. Object Store 복구, 다른 데이터 종류의 보존 정책·예약 Janitor와 실제 운영 복구 검증은 남아 있습니다.
 
+[일반 산출물 예약 Worker](scheduled-retention.md)는 제한된 페이지 진행·재시작 복구·동시 갱신 보호와 명시적 Linux 서비스 템플릿을 추가합니다(2026-09-09). API/파일의 실제 만료와 보호된 작업의 유지, PostgreSQL 경합, 양 언어 브라우저 회귀를 검증합니다. 서비스는 운영에 자동 설치하지 않으며 다른 데이터 종류와 전체 OPS-001 완료를 뜻하지 않습니다.
+
 SEC-001의 [Runner 전송](runner-event-redaction.md)과 [API 이벤트 수신](api-event-redaction.md) 경계의 임대·명시적 자격증명 필드 가림을 실제 명령·직접 HTTP·SSE·DB·브라우저로 검증했습니다(2026-09-09). 범용 Secret Scan, 모든 API·Artifact·Crash Dump·cloud-init 전체 검증은 여전히 남아 있습니다.
 
 공통 상태 전환이 생성하는 이력의 [실제 `from`·`to` 보존](transition-metadata.md)과 [Worker 임대의 사용자 승인 상태 전환 차단](worker-transition-authority.md)을 검증했습니다. 후자는 사용자 피드백·예산/PR 승인과 승인된 Mock 완료를 구분하며 중앙 전달은 기존 Control Plane 권한을 유지합니다. 임의 이벤트의 출처 증명과 신뢰할 수 없는 VM의 실제 실행·시간 예산 강제는 남아 있습니다.

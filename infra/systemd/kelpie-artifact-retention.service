@@ -1,0 +1,33 @@
+[Unit]
+Description=Kelpie ordinary artifact retention (explicit reviewed policy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kelpie-api
+Group=kelpie-api
+WorkingDirectory=/opt/kelpie/api
+EnvironmentFile=/etc/kelpie/api.env
+Environment=ARTIFACT_RETENTION_MODE=dry-run
+Environment=ARTIFACT_RETENTION_LIMIT=100
+Environment=ARTIFACT_RETENTION_INTERVAL_SECONDS=300
+EnvironmentFile=/etc/kelpie/artifact-retention.env
+ExecStart=/opt/kelpie/api/.venv/bin/python -m app.artifact_retention_worker --retain-days ${ARTIFACT_RETENTION_DAYS} --mode ${ARTIFACT_RETENTION_MODE} --limit ${ARTIFACT_RETENTION_LIMIT} --interval-seconds ${ARTIFACT_RETENTION_INTERVAL_SECONDS}
+Restart=no
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/kelpie/artifacts
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

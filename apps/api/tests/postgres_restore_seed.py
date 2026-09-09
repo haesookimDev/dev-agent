@@ -80,9 +80,14 @@ async def seed_database(database_url):
             await insert(m.Feedback, work_item_id=identity, actor="restore-viewer", message="검증")
             await insert(m.Approval, work_item_id=identity, kind="delivery", decision="approved",
                          actor="historical-approver", payload={"version": 7})
-            await insert(m.Artifact, work_item_id=identity, kind="screenshot", name="screen.png",
+            artifact = str(uuid.uuid4())
+            await insert(m.Artifact, id=artifact, work_item_id=identity,
+                         kind="screenshot", name="screen.png",
                          content_type="image/png", object_key=f"{identity}/artifacts/screen.png",
                          size_bytes=123)
+            await insert(m.ArtifactRetentionJob,
+                         scope_key=hashlib.sha256(b"synthetic-restore-job").hexdigest(),
+                         cursor=artifact, version=4, sweep_completed_at=m.utcnow())
             await insert(m.PreviewEndpoint, work_item_id=identity,
                          hostname="restore.example.invalid",
                          target_url="http://192.0.2.1:3000", expires_at=expires)

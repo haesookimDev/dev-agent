@@ -6,10 +6,10 @@
 
 Only ordinary local files under the control host's `ARTIFACT_ROOT/<work UUID>/artifacts/...` are selected. VM disks, Delivery Bundles, Events, Preview, Console, audit records, external object stores and older backups are not deleted. This does not prove physical VM termination/isolation or complete OPS-001.
 
-This is a bounded control-host CLI for an operator-approved retention policy and storage root. It adds no timer, cleanup API endpoint or default retention period. It uses existing `DATABASE_URL` and `ARTIFACT_ROOT`; there are no new environment variables or dependencies. It unlinks files: do not apply it to production without an approved retention policy.
+This is a bounded manual control-host CLI for an operator-approved retention policy and storage root. The follow-up [scheduled Worker](scheduled-retention.md) persists progress in the database and runs as a separate process. Neither adds a cleanup API endpoint or default retention period. The manual CLI uses existing `DATABASE_URL` and `ARTIFACT_ROOT` without new environment variables or dependencies. It unlinks files: do not apply it to production without an approved retention policy.
 
 1. Establish a coordinated DB/file recovery point using the [backup procedure](artifact-backup.md).
-2. Apply migration `20260906_0010` and **upgrade every API instance and the retention/backup CLIs together**. Do not start retention while old API readers that cannot interpret expiration intent are running.
+2. Apply the current migration head `20260909_0011` and **upgrade every API instance and the retention/backup CLIs together**. Revision 0010 added expiration evidence; 0011 adds scheduled progress. Do not start retention while old API readers that cannot interpret expiration intent are running.
 3. Confirm the exact storage root is mounted and writers follow the control-plane lease-validation boundary. This is not a sandbox against malicious file replacement by the same OS account.
 4. Start with a dry run for a verified `--work-id`. The following UUID is an example, not a production target.
 
@@ -52,7 +52,7 @@ Both locales retain an expiration badge, metadata and explanation without file-o
 
 For rollback, stop retention and use a forward fix that preserves the expiration read gate, revision 0010 and audits. The 0010 downgrade refuses to discard expiration evidence. Clearing expiration fields, simply deploying the old API, overwriting an existing root or blindly restoring old files is not a safe rollback.
 
-## Verification evidence
+## Original manual-retention verification evidence
 
 The verified implementation is `923425c`; the following documentation/evidence updates do not change executable code. Verification used isolated macOS local resources, PostgreSQL 17, Chromium and an Orca window.
 
