@@ -56,6 +56,109 @@ tests:
         eval_time: 2m
         exp_samples: []
 
+  - name: invalid duplicate series cannot hide behind a valid copy in any family
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x19 0'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x19 0'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="provisioning",unexpected="duplicate"}', values: '-1x4 stale'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="provisioning",unexpected="duplicate"}', values: '_ _ _ _ _ NaN _ _ _ _ stale'}
+      - {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="pending",unexpected="duplicate"}', values: '_ _ _ _ _ _ _ _ _ _ +Inf _ _ _ _ stale'}
+      - {series: 'kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="pending",unexpected="duplicate"}', values: '_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ -Inf _ _ _ _ stale'}
+    promql_expr_test:
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 4m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 4m30s
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 4m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 4m30s
+        exp_samples: []
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 7m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 7m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 7m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 7m
+        exp_samples: []
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 9m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 9m30s
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 9m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 9m30s
+        exp_samples: []
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 10m
+        exp_samples:
+          - {labels: 'kelpie:execution_snapshot_usable{job="kelpie-api",instance="api:8000"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable"}'
+        eval_time: 10m
+        exp_samples: []
+
   - name: all automatic phases wait two minutes and clear when their counts become zero
     interval: 30s
     input_series:

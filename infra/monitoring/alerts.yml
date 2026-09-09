@@ -157,24 +157,28 @@ groups:
         expr: |
           kelpie:runtime_snapshot_usable{job="kelpie-api"}
           and on (job, instance) (count by (job, instance) (
-            count by (job, instance, state) (
-              (kelpie_runtime_execution_work{job="kelpie-api",state=~"provisioning|analyzing|implementing|verifying|committing|pr_created"} >= 0) < Inf
-            ) == 1
+            (count by (job, instance, state) (
+              kelpie_runtime_execution_work{job="kelpie-api",state=~"provisioning|analyzing|implementing|verifying|committing|pr_created"}
+            ) == 1)
+            and on (job, instance, state) ((kelpie_runtime_execution_work{job="kelpie-api",state=~"provisioning|analyzing|implementing|verifying|committing|pr_created"} >= 0) < Inf)
           ) == 6)
           and on (job, instance) (count by (job, instance) (
-            count by (job, instance, state) (
-              (kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",state=~"provisioning|analyzing|implementing|verifying|committing|pr_created"} >= 0) < Inf
-            ) == 1
+            (count by (job, instance, state) (
+              kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",state=~"provisioning|analyzing|implementing|verifying|committing|pr_created"}
+            ) == 1)
+            and on (job, instance, state) ((kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",state=~"provisioning|analyzing|implementing|verifying|committing|pr_created"} >= 0) < Inf)
           ) == 6)
           and on (job, instance) (count by (job, instance) (
-            count by (job, instance, state) (
-              (kelpie_runtime_delivery_jobs{job="kelpie-api",state=~"pending|retry|running|completed|failed|unknown"} >= 0) < Inf
-            ) == 1
+            (count by (job, instance, state) (
+              kelpie_runtime_delivery_jobs{job="kelpie-api",state=~"pending|retry|running|completed|failed|unknown"}
+            ) == 1)
+            and on (job, instance, state) ((kelpie_runtime_delivery_jobs{job="kelpie-api",state=~"pending|retry|running|completed|failed|unknown"} >= 0) < Inf)
           ) == 6)
           and on (job, instance) (count by (job, instance) (
-            count by (job, instance, state) (
-              (kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",state=~"pending|retry|running|completed|failed|unknown"} >= 0) < Inf
-            ) == 1
+            (count by (job, instance, state) (
+              kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",state=~"pending|retry|running|completed|failed|unknown"}
+            ) == 1)
+            and on (job, instance, state) ((kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",state=~"pending|retry|running|completed|failed|unknown"} >= 0) < Inf)
           ) == 6)
 
       - alert: KelpieExecutionObservationUnavailable
