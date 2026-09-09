@@ -32,6 +32,8 @@ The next release should contain only P0 and the smallest P1 end-to-end path:
 
 P0 OPS-001 also includes [PostgreSQL backup/new-database restore verification for data, permissions, and audits](postgres-restore.md) and [active-work-safe ordinary-file retention CLI, expiration UI and backup V2](artifact-retention.md). Object-store recovery, other data retention policies/scheduled janitors, and actual operational recovery verification remain.
 
+The [ordinary-artifact scheduled Worker](scheduled-retention.md) adds bounded pagination, restart recovery, concurrent-checkpoint protection and an explicit Linux service template (2026-09-09). Verification covers real API/file expiration, protected work preservation, PostgreSQL races and both browser locales. The service is not automatically installed in production; other data types and full OPS-001 completion remain.
+
 Verified SEC-001's lease/explicit credential-field redaction at [Runner egress](runner-event-redaction.md) and [API event ingress](api-event-redaction.md) with actual commands/direct HTTP/SSE/database/browser use (2026-09-09). General secret scanning and comprehensive coverage of every API/artifact/crash-dump/cloud-init path remain.
 
 Verified [actual `from`/`to` retention](transition-metadata.md) in common transition history and [denial of user-owned state transitions through Worker leases](worker-transition-authority.md). The latter separates user feedback/budget/PR approvals from approved Mock completion while central delivery retains existing control-plane authority. Arbitrary-event provenance and physical execution/time-budget enforcement in an untrusted VM remain.

@@ -44,6 +44,8 @@
 
 [일반 산출물 보존 정리](artifact-retention.md)는 기존 `Python` CI에서 SQLite 안전 검사와 `test_artifact_retention_postgres.py`·`test_artifact_retention_runtime_postgres.py`의 실제 PostgreSQL Schema·임대·격리 경합 31개를 실행합니다. 로컬 PostgreSQL URL이 없으면 이 31개는 Skip되므로 실제 DB 검증을 별도로 수행합니다. 기존 `Web` CI는 `artifact-retention.spec.ts`의 실제 CLI 정리·양 언어 만료 UI·오래 열린 목록의 410 처리를 검증합니다. Seed Helper도 `.venv/bin/python -m ruff check apps/web/e2e/seed-retention.py`로 검사합니다. 새 Job·의존성·Timeout은 추가하지 않으며 운영 파일에 테스트용 `--apply`를 실행하지 않습니다.
 
+[예약 정리](scheduled-retention.md)의 `test_retention_job_postgres.py` 7개도 같은 PostgreSQL Step에서 실행합니다(합계 38개). `test_retention_worker.py`는 실제 별도 프로세스·SIGTERM·재시작을, `test_retention_service.py`는 기본 dry-run·필수 정책과 Linux systemd 구문을 검증합니다. 후자의 구문 검사는 macOS 등 비Linux 환경에서 Skip되며 Linux CI에는 `systemd-analyze`가 필수입니다. Web의 기존 수동 CLI 검증은 유지하고 예약 Worker 만료 경로 2개를 더합니다. 새 Job·서비스 Matrix·Timeout 증가는 없습니다. 예약 dry-run은 진행 위치 테이블만 변경하므로 DB까지 읽기 전용인 수동 dry-run과 구분하세요.
+
 ## 완료 기준
 
 개발은 작업 브랜치에서 수행하고, 논리적 단위마다 관련 테스트를 실행한 뒤 한국어 메시지로 커밋합니다. 자동 테스트와 실제 사용 검증이 통과하면 증거를 포함한 PR을 만들고 최신 커밋의 CI와 리뷰 상태를 확인합니다. 사용자가 머지를 위임한 작업은 에이전트가 Merge Commit으로 머지하고 `main`을 Fast-forward 동기화합니다. 필수 검증을 수행할 수 없으면 Draft로 유지합니다.
