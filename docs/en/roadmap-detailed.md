@@ -42,6 +42,8 @@ Done when cross-organization access, forged headers, expired tokens, and viewer 
 
 ### SEC-001 · Secret provider and credential rotation — M
 
+Partial progress (2026-09-09): added [Runner credential redaction before event transmission with actual storage/browser verification](runner-event-redaction.md). It covers the known plaintext lease and explicit fields; direct API writes, general secret scanning and complete artifact/crash-dump/cloud-init non-disclosure remain.
+
 Scope:
 
 - Add a secret-provider interface with file/Kubernetes/Vault implementations as deployment needs dictate.

@@ -59,4 +59,5 @@ Webhook과 Gateway는 현재 Secret 하나만 검증하므로 교체에는 소�
 - `test_secret_runtime.py`: 실제 Uvicorn/SQLite/HTTP 프로세스에서 교체 → 이전 값 401 → 새 값 성공 → 파일 누락 503 → 복구 성공을 재시작 없이 검증합니다. 생성한 테스트 토큰이 API 로그와 DB에 없는지도 검사합니다.
 - 지원하는 여섯 평문 Secret 설정은 Settings의 기본 repr/직렬화에서 제외합니다. 이것은 전체 로그·프로세스 메모리·Crash Dump의 Secret 비노출을 보장하는 기능이 아닙니다.
 - [전달 실패 진단](delivery-failure-safety.md)은 Git·외부 예외 원문 대신 고정된 단계와 오류 코드만 DB·이벤트·Trace에 기록합니다. 실제 Git 실패·승인·브라우저 확인과 운영상 제한을 해당 문서에 기록했습니다.
+- [Runner 이벤트 전송 경계](runner-event-redaction.md)는 알려진 평문 임대와 명시적 자격증명 필드를 전송 전에 가리고 실제 명령·HTTP·SSE·DB·브라우저로 검증합니다. 범용 Secret Scan이나 직접 API 전송·Artifact·Crash Dump·cloud-init 보호의 완료를 뜻하지 않습니다.
 - OIDC/Slack 네트워크 소비자 테스트는 모의 공급자를 사용합니다. [Worker 제어 영역 격리](worker-quarantine.md)는 구현했지만 실제 Host/VM/네트워크·기존 연결 차단, 실제 외부 계정, 전체 Event/Artifact/Crash Dump/cloud-init 스캔 및 운영 Secret 정책은 남아 있습니다. SEC-001 전체 완료로 표시하지 않습니다.
