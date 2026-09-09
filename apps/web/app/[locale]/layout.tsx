@@ -32,7 +32,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
   const messages = getMessages(locale);
 
   return (
-    <html lang={locale}>
+    <html lang={locale} data-scroll-behavior="smooth">
       <body>
         <a className="skipLink" href="#main-content">{messages.navigation.skipContent}</a>
         <aside className="sidebar">
