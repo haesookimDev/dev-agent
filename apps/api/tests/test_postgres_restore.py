@@ -112,6 +112,7 @@ def test_restored_reader_can_read_but_cannot_change_work_or_audit(restored):
                 "UPDATE work_items SET status = 'COMPLETED'",
                 "INSERT INTO audit_records SELECT * FROM audit_records",
                 "SELECT * FROM delivery_jobs FOR UPDATE",
+                "UPDATE artifact_retention_jobs SET version = version + 1",
             ):
                 with pytest.raises(sa.exc.ProgrammingError, match="permission denied"):
                     async with engine.begin() as connection:
