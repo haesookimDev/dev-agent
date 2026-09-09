@@ -284,7 +284,7 @@ export function LiveRun({
             <section className="budgetWork" aria-labelledby="budget-work-title">
               <h3 id="budget-work-title">{messages.run.budgetTitle}</h3>
               <p>{messages.run.budgetHint}</p>
-              <button disabled={sending} onClick={openBudget}>{messages.run.budgetOpen}</button>
+              <button className="primaryButton" disabled={sending} onClick={openBudget}>{messages.run.budgetOpen}</button>
             </section>
           )}
           {work.pull_request_url && (

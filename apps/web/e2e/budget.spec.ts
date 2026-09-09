@@ -39,6 +39,7 @@ for (const locale of ["en", "ko"] as const) {
     await page.goto(`/${locale}/work-items/${work.id}`);
     await expect(page.locator(".budgetWork")).toContainText(messages.run.budgetHint);
     const trigger = page.getByRole("button", { name: messages.run.budgetOpen, exact: true });
+    await expect(trigger).toHaveCSS("border-radius", "7px");
     await trigger.focus();
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: messages.run.budgetConfirmTitle });
@@ -66,6 +67,13 @@ for (const locale of ["en", "ko"] as const) {
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`budget-${locale}-confirmation.png`) });
+    await page.setViewportSize({ width: 320, height: 568 });
+    await confirm.scrollIntoViewIfNeeded();
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const confirmationBox = await confirm.boundingBox();
+    expect(confirmationBox).not.toBeNull();
+    expect(confirmationBox!.height).toBeGreaterThanOrEqual(44);
+    expect(confirmationBox!.y + confirmationBox!.height).toBeLessThanOrEqual(568);
     await page.evaluate(() => {
       const element = document.querySelector<HTMLDialogElement>("dialog.budgetDialog")!;
       const close = element.close.bind(element);

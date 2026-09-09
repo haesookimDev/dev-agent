@@ -20,6 +20,7 @@ describe.each(["ko", "en"] as const)("%s work progress", (locale) => {
       initialWork: { ...work, status }, initialEvents: [], initialArtifacts: [], locale, messages: getMessages(locale),
     }));
     expect(html.includes('class="budgetWork"')).toBe(status === "budget_exhausted");
+    if (status === "budget_exhausted") expect(html).toMatch(/class="budgetWork"[\s\S]*?<button class="primaryButton"/);
     expect(html).not.toContain('class="formError"');
   });
 
