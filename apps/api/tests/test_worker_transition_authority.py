@@ -108,6 +108,8 @@ async def test_real_oidc_user_action_still_authorizes_resume_or_mock_delivery(
     authorized, private_worker_headers, initial, action, body,
 ):
     _, work, headers = await prepared(authorized, private_worker_headers, initial)
+    if body.get("kind") == "budget":
+        body = body | {"expected_version": 2}
     await sign_in(authorized, "viewer")
     assert (await authorized.post(f"/api/work-items/{work}/{action}", json=body)).status_code == 403
     await sign_in(authorized, "approver" if action == "approvals" else "operator")

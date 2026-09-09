@@ -27,6 +27,7 @@ async def test_invalid_budget_extension_is_rejected_without_mutation_and_can_be_
         events = list(await session.scalars(select(AgentEvent.id)))
     response = await authorized.post(url, json={
         "kind": "budget", "decision": "approve", "payload": {"minutes": minutes},
+        "expected_version": item["version"],
     })
     assert response.status_code == 422
     assert response.json() == {"detail": "invalid budget extension"}
@@ -40,6 +41,7 @@ async def test_invalid_budget_extension_is_rejected_without_mutation_and_can_be_
         assert not list(await session.scalars(select(AuditRecord)))
     retried = await authorized.post(url, json={
         "kind": "budget", "decision": "approve", "payload": {"minutes": 45},
+        "expected_version": item["version"],
     })
     assert retried.status_code == 200
     assert retried.json()["budget_minutes"] == item["budget_minutes"] + 45
@@ -58,6 +60,7 @@ async def test_integer_budget_bounds_and_omitted_default_are_preserved(
     item = await exhausted_work(authorized)
     response = await authorized.post(f"/api/work-items/{item['id']}/approvals", json={
         "kind": "budget", "decision": "approve", "payload": payload,
+        "expected_version": item["version"],
     })
     assert response.status_code == 200
     assert response.json()["budget_minutes"] == item["budget_minutes"] + extension
@@ -75,6 +78,7 @@ async def test_rejecting_extension_does_not_require_or_apply_minutes(authorized)
     item = await exhausted_work(authorized)
     response = await authorized.post(f"/api/work-items/{item['id']}/approvals", json={
         "kind": "budget", "decision": "reject", "payload": {"minutes": None},
+        "expected_version": item["version"],
     })
     assert response.status_code == 200
     assert response.json()["budget_minutes"] == item["budget_minutes"]
@@ -96,6 +100,7 @@ async def test_invalid_minutes_do_not_bypass_authorization(
     await sign_in(authorized, subject, organization)
     response = await authorized.post(f"/api/work-items/{item['id']}/approvals", json={
         "kind": "budget", "decision": "approve", "payload": {"minutes": None},
+        "expected_version": item["version"],
     })
     assert response.status_code == expected
     async with database() as session:
@@ -107,6 +112,7 @@ async def test_budget_extension_still_requires_exhausted_state(authorized):
     item = await create_item(authorized)
     response = await authorized.post(f"/api/work-items/{item['id']}/approvals", json={
         "kind": "budget", "decision": "approve", "payload": {"minutes": 45},
+        "expected_version": item["version"],
     })
     assert response.status_code == 409
     async with database() as session:
