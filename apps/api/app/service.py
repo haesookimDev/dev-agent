@@ -127,7 +127,8 @@ async def transition_work_item(
             event_type="work.transitioned",
             source=actor,
             message=message or f"{previous.value} → {target.value}",
-            payload={"from": previous.value, "to": target.value, **(payload or {})},
+            # State facts belong to the control plane, not caller-supplied context.
+            payload={**(payload or {}), "from": previous.value, "to": target.value},
         ),
     )
     await session.flush()
