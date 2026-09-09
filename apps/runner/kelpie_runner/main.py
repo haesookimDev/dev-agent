@@ -34,6 +34,7 @@ class Assignment:
 class ControlClient:
     def __init__(self, base_url: str, work_id: str, lease: str, correlation_id: str):
         self.work_id = work_id
+        self._lease = lease
         self.client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={
@@ -46,6 +47,9 @@ class ControlClient:
     async def close(self) -> None:
         await self.client.aclose()
 
+    def redact(self, value: Any) -> Any:
+        return redact(value, lease=self._lease)
+
     async def event(
         self,
         event_type: str,
@@ -57,13 +61,13 @@ class ControlClient:
     ) -> None:
         response = await self.client.post(
             f"/api/runs/{self.work_id}/events",
-            json={
+            json=self.redact({
                 "event_type": event_type,
                 "source": source,
                 "level": level,
                 "message": message,
                 "payload": payload or {},
-            },
+            }),
         )
         response.raise_for_status()
 
@@ -73,7 +77,7 @@ class ControlClient:
             json={
                 "status": status,
                 "expected_version": version,
-                "message": message,
+                "message": self.redact(message),
                 "payload": {},
             },
         )
@@ -146,7 +150,9 @@ class CodexAppServer:
             message = await self._read()
             if message.get("id") == 2:
                 if "error" in message:
-                    raise RuntimeError(f"Codex thread/start failed: {message['error']}")
+                    raise RuntimeError(
+                        f"Codex thread/start failed: {self.control.redact(message['error'])}"
+                    )
                 self.thread_id = message["result"]["thread"]["id"]
 
     async def run_turn(self, prompt: str) -> None:
@@ -172,9 +178,9 @@ class CodexAppServer:
             if method:
                 await self.control.event(
                     "codex." + method.replace("/", "."),
-                    event_message(message),
+                    event_message(self.control.redact(message)),
                     source="codex",
-                    payload=redact(message.get("params", {})),
+                    payload=message.get("params", {}),
                 )
             if method == "turn/completed":
                 status = message.get("params", {}).get("turn", {}).get("status")
@@ -203,7 +209,9 @@ class CodexAppServer:
         if not line:
             stderr = ""
             if self.process.stderr:
-                stderr = (await self.process.stderr.read()).decode(errors="replace")[-4000:]
+                stderr = self.control.redact(
+                    (await self.process.stderr.read()).decode(errors="replace")
+                )[-4000:]
             raise RuntimeError(f"Codex App Server exited unexpectedly: {stderr}")
         return json.loads(line)
 
@@ -222,15 +230,30 @@ def event_message(message: dict) -> str:
     return "Codex event"
 
 
-def redact(value: Any) -> Any:
-    sensitive = {"token", "authorization", "apikey", "api_key", "secret", "password"}
+def redact(value: Any, *, lease: str = "") -> Any:
+    """Redact credential fields and the known lease, not arbitrary secret formats.
+
+    Only telemetry copies are changed. The lease header and process inputs retain
+    their original values; encoded/unknown credentials require separate scanning.
+    """
+    sensitive = {
+        "token", "accesstoken", "refreshtoken", "idtoken", "sessiontoken",
+        "authorization", "proxyauthorization", "cookie", "setcookie", "apikey",
+        "secret", "clientsecret", "password", "passwd", "privatekey",
+        "leasetoken", "xkelpielease", "kelpieleasetoken",
+    }
     if isinstance(value, dict):
         return {
-            key: "[REDACTED]" if key.lower() in sensitive else redact(item)
+            redact(key, lease=lease): (
+                "[REDACTED]" if key.lower().replace("_", "").replace("-", "") in sensitive
+                else redact(item, lease=lease)
+            )
             for key, item in value.items()
         }
-    if isinstance(value, list):
-        return [redact(item) for item in value]
+    if isinstance(value, (list, tuple)):
+        return [redact(item, lease=lease) for item in value]
+    if isinstance(value, str) and lease:
+        return value.replace(lease, "[REDACTED]")
     return value
 
 
@@ -280,7 +303,8 @@ async def run_verification(repository: Path, control: ControlClient) -> tuple[bo
             await process.wait()
             failures.append(f"{shlex.join(command)} timed out")
             continue
-        text = output.decode(errors="replace")[-20_000:]
+        # Sanitize before retaining the tail so slicing cannot split the lease.
+        text = control.redact(output.decode(errors="replace"))[-20_000:]
         await control.event(
             "verification.completed",
             f"{shlex.join(command)} exited {process.returncode}",

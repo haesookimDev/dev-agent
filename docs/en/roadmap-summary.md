@@ -32,4 +32,6 @@ The next release should contain only P0 and the smallest P1 end-to-end path:
 
 P0 OPS-001 also includes [PostgreSQL backup/new-database restore verification for data, permissions, and audits](postgres-restore.md) and [active-work-safe ordinary-file retention CLI, expiration UI and backup V2](artifact-retention.md). Object-store recovery, other data retention policies/scheduled janitors, and actual operational recovery verification remain.
 
+Verified SEC-001's [Runner lease/explicit credential-field redaction before event egress](runner-event-redaction.md) with actual commands/API/SSE/database/browser use (2026-09-09). General secret scanning, direct API writes and full artifact/crash-dump/cloud-init verification remain.
+
 GitLab, advanced routing, and autonomous issue discovery should follow only after this security and execution baseline is proven.

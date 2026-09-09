@@ -32,4 +32,6 @@
 
 P0 OPS-001에는 [PostgreSQL 백업·새 DB 복원의 데이터·권한·감사 검증](postgres-restore.md)과 [일반 산출물의 활성 작업 보호 정리 CLI·만료 UI·백업 V2](artifact-retention.md)도 추가했습니다. Object Store 복구, 다른 데이터 종류의 보존 정책·예약 Janitor와 실제 운영 복구 검증은 남아 있습니다.
 
+SEC-001의 [Runner 이벤트 전송 전 임대·명시적 자격증명 필드 가림](runner-event-redaction.md)을 실제 명령·API·SSE·DB·브라우저로 검증했습니다(2026-09-09). 범용 Secret Scan, 직접 API 전송, Artifact·Crash Dump·cloud-init 전체 검증은 여전히 남아 있습니다.
+
 GitLab, 고급 Routing, 자율 이슈 탐색은 이 보안·실행 기준이 검증된 이후에 진행해야 합니다.

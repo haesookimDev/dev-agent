@@ -42,6 +42,8 @@
 
 ### SEC-001 · Secret Provider 및 자격증명 교체 — M
 
+부분 진행(2026-09-09): [Runner 이벤트 전송 전 자격증명 가림과 실제 저장·브라우저 검증](runner-event-redaction.md)을 추가했습니다. 알려진 평문 임대와 명시적인 필드에 한정되며 직접 API 전송·일반 Secret Scan·Artifact·Crash Dump·cloud-init 전체 비노출은 남아 있습니다.
+
 범위:
 
 - 배포 환경에 맞춰 File, Kubernetes, Vault 구현을 선택할 수 있는 Secret Provider Interface를 추가합니다.
