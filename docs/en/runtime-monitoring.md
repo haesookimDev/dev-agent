@@ -26,7 +26,7 @@ Every name below has the `kelpie_runtime_` prefix. This is not a public API; res
 
 Worker classification takes precedence in this order: **quarantined → offline → draining → online**. A non-null `quarantined_at` is counted separately. Explicit `OFFLINE` or a heartbeat at least `WORKER_OFFLINE_SECONDS` old (existing setting, default 45 seconds) is offline. This setting classifies observations; it does not reclaim resources. Future heartbeats are not considered old until time catches up; future work creation times have age clamped to zero. Check operational clock synchronization too.
 
-The lease condition `expires_at < observation time` matches existing lease validation. Released/quarantined lease rows are excluded from both counts. Queue age is measured from **creation**, not the last transition or retry. Running work and the entire pending/running `DeliveryJob` population are not monitored here.
+The lease condition `expires_at < observation time` matches existing lease validation. Released/quarantined lease rows are excluded from both counts. Queue age is measured from **creation**, not the last transition or retry. The same snapshot now includes [execution-phase and DeliveryJob metadata-age observations](execution-monitoring.md), with separate metrics, gates and response guidance.
 
 Before the first success, Worker/Lease/queue metrics are **absent**. Only a successfully read empty database produces zero counts. After failure, previous values remain for diagnosis but `snapshot_available=0`; a stopped updater also becomes unavailable after 30 seconds. Neither old values nor startup recovery `completed=1` alone imply a healthy system.
 
@@ -71,7 +71,7 @@ Check the work list, resource requests, Worker capacity/draining/quarantine, cla
 
 ## Validation and rollback
 
-`make test-api` runs SQLite, metric freshness/failure, end-to-end timeout, shutdown, and real Uvicorn/HTTP recovery regressions. `KELPIE_TEST_POSTGRES_URL=<dedicated test database URL> .venv/bin/python -m pytest -q apps/api/tests/test_runtime_health.py` also verifies actual PostgreSQL aggregates, rolling back only a random schema inside each test transaction. Three PostgreSQL cases skip without the URL. Required `Python` CI runs this command on its existing PostgreSQL service.
+`make test-api` runs SQLite, metric freshness/failure, end-to-end timeout, shutdown, and real Uvicorn/HTTP recovery regressions. `KELPIE_TEST_POSTGRES_URL=<dedicated test database URL> .venv/bin/python -m pytest -q apps/api/tests/test_runtime_health.py` also verifies actual PostgreSQL aggregates, rolling back only a random schema inside each test transaction. Five PostgreSQL cases skip without the URL. Required `Python` CI runs this command on its existing PostgreSQL service.
 
 `make test-monitoring PROMTOOL=/path/to/promtool` evaluates existing/new rules with a synthetic clock, including boundaries, missing/stale/NaN data, partial relabeling, other targets/jobs, suppression during observation failure, and recovery. The real HTTP regression retains the original ten-second interval and takes approximately 21 seconds; no extra CI job or external credential is required.
 
@@ -95,4 +95,4 @@ Verified observation implementation `49e0e03`/lifecycle `e88357a`, rules `5045fb
 
 Expanded each rule in the Orca browser to inspect Korean/English summaries, runbooks, and pending durations; refreshed actual states and the final desktop screen were also inspected through computer-use. All inspected browser requests returned 200 with no console messages. Screenshots were not publicly uploaded because they contain local paths. Web/native UI code is unchanged; native keyboard input was not verified because OS focus was unavailable.
 
-This is evidence of synthetic Worker/lease records and actual HTTP observation boundaries, not a real Worker daemon, KVM, physical network isolation, or VM resource reclamation. No external notification receipt or production deployment occurred. The full MVP still needs external dependency readiness, stalled running-work/DeliveryJob coverage, an operations dashboard, retention/recovery, and verification on an authorized real KVM environment.
+This is evidence of synthetic Worker/lease records and actual HTTP observation boundaries, not a real Worker daemon, KVM, physical network isolation, or VM resource reclamation. No external notification receipt or production deployment occurred. The full MVP still needs external dependency readiness, progress-based latency signals, an operations dashboard, retention/recovery, and verification on an authorized real KVM environment.

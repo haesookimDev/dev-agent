@@ -100,3 +100,5 @@ GitHub Actions 구성은 [Workflow 문법](https://docs.github.com/en/actions/re
 [전달 감사](delivery-audit.md)의 실제 Git·API·루프백 SCM 회귀 테스트는 기존 `make test-api`와 필수 `Python` 검사에 포함됩니다. 외부 SCM 자격증명·추가 서비스 Job이 필요하지 않습니다. `test_audit_postgres.py`는 Background 감사 제약과 기존 행 보존 Migration도 검증합니다. 승인 출처를 감사와 함께 기록하고 외부 쓰기 직전에 재검사하는 경계를 향후 전달 변경에서도 유지합니다.
 
 [실행 관측](runtime-monitoring.md) 변경 시 SQLite뿐 아니라 `KELPIE_TEST_POSTGRES_URL`을 지정한 `test_runtime_health.py`도 실행합니다. 필수 `Python` CI는 기존 DB Service를 재사용합니다. 실제 HTTP 장애·Heartbeat·취소 회귀는 `make test-api`, 알림의 시간·누락·복구 조건은 `make test-monitoring`에 포함됩니다. 관측 값의 0·누락·실패를 혼동하거나 속도를 위해 실제 HTTP 검증을 모의 검증으로 대체하지 않습니다.
+
+[실행 단계·전달 관측](execution-monitoring.md)은 동일한 PostgreSQL 집계 검사와 `test_execution_health_http.py`의 실제 HTTP 조회 장애·복구 회귀를 사용합니다. `make test-monitoring`은 네 지표 집합의 모든 상태, 비정상 값과 중복·누락, 단계별 알림 시간과 복구를 검증합니다. 사람 대기를 정체로 보거나 메타데이터 갱신 나이를 실제 VM 진행 증거로 사용하지 않습니다. 기존 CI Job과 Timeout은 유지합니다.

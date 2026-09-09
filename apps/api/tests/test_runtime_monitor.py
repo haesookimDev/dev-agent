@@ -6,14 +6,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 from prometheus_client import CollectorRegistry
-from test_runtime_health import NOW, values
+from test_runtime_health import EMPTY_DELIVERY, EMPTY_EXECUTION, NOW, values
 
 from app import main, observability, runtime_monitor
 from app.config import Settings
 from app.db import SchemaReadiness, SchemaState
 from app.runtime_health import RuntimeHealthMetrics, RuntimeSnapshot
 
-SNAPSHOT = RuntimeSnapshot(NOW, (1, 0, 0, 0), 2, 3, 4, 500)
+SNAPSHOT = RuntimeSnapshot(NOW, (1, 0, 0, 0), 2, 3, 4, 500, EMPTY_EXECUTION, EMPTY_DELIVERY)
 
 
 @pytest.fixture
@@ -85,7 +85,8 @@ async def test_unready_error_then_recovery_retains_only_complete_safe_observatio
         assert "runtime health observation failed; retrying" in caplog.text
         assert "private-dsn" not in caplog.text
         monitor.read.side_effect = None
-        monitor.read.return_value = RuntimeSnapshot(NOW, (0, 0, 0, 0), 0, 0, 0, 0)
+        monitor.read.return_value = RuntimeSnapshot(NOW, (0, 0, 0, 0), 0, 0, 0, 0,
+                                                    EMPTY_EXECUTION, EMPTY_DELIVERY)
         await until(lambda: values(monitor.registry)["snapshot_available", ()] == 1)
         assert values(monitor.registry)["queued_work", ()] == 0
     finally:

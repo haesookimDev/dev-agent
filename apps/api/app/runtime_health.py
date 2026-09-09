@@ -10,10 +10,19 @@ from prometheus_client.core import GaugeMetricFamily
 from sqlalchemy import case, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import ResourceLease, WorkerHost, WorkerState, WorkItem, WorkStatus
+from .models import DeliveryJob, ResourceLease, WorkerHost, WorkerState, WorkItem, WorkStatus
 
 WORKER_STATES = ("online", "draining", "offline", "quarantined")
+EXECUTION_STATES = (WorkStatus.PROVISIONING, WorkStatus.ANALYZING, WorkStatus.IMPLEMENTING,
+                    WorkStatus.VERIFYING, WorkStatus.COMMITTING, WorkStatus.PR_CREATED)
+DELIVERY_STATES = ("pending", "retry", "running", "completed", "failed", "unknown")
 SNAPSHOT_MAX_AGE_SECONDS = 30
+
+
+@dataclass(frozen=True)
+class StateSnapshot:
+    count: int
+    oldest_update_age_seconds: float
 
 
 @dataclass(frozen=True)
@@ -24,6 +33,33 @@ class RuntimeSnapshot:
     expired_leases: int
     queued_work: int
     oldest_queued_seconds: float
+    execution: tuple[StateSnapshot, ...]
+    delivery: tuple[StateSnapshot, ...]
+
+
+def state_query(model, column, states, prefix):
+    columns = []
+    for index, state in enumerate(states):
+        selected = column == state
+        columns.extend((
+            func.count().filter(selected).label(f"{prefix}_count_{index}"),
+            func.min(model.updated_at).filter(selected).label(f"{prefix}_oldest_{index}"),
+        ))
+    return select(*columns).select_from(model).subquery()
+
+
+def age_seconds(now: datetime, oldest: datetime | None) -> float:
+    if oldest is None:
+        return 0
+    if oldest.tzinfo is None:
+        oldest = oldest.replace(tzinfo=UTC)  # SQLite stores UTC without a timezone.
+    return max(0, (now - oldest).total_seconds())
+
+
+def state_snapshots(row, states, prefix, now):
+    return tuple(StateSnapshot(getattr(row, f"{prefix}_count_{index}"),
+        age_seconds(now, getattr(row, f"{prefix}_oldest_{index}")))
+        for index in range(len(states)))
 
 
 async def read_runtime_snapshot(
@@ -52,18 +88,22 @@ async def read_runtime_snapshot(
     queue = select(
         func.count().label("queued_work"), func.min(WorkItem.created_at).label("oldest"),
     ).where(WorkItem.status == WorkStatus.QUEUED).subquery()
-    row = (await session.execute(select(workers, leases, queue).select_from(
-        workers.join(leases, true()).join(queue, true()),
+    execution = state_query(WorkItem, WorkItem.status, EXECUTION_STATES, "execution")
+    delivery_state = case((DeliveryJob.state.in_(DELIVERY_STATES[:-1]), DeliveryJob.state),
+                          else_="unknown")
+    delivery = state_query(DeliveryJob, delivery_state, DELIVERY_STATES, "delivery")
+    row = (await session.execute(select(workers, leases, queue, execution, delivery).select_from(
+        workers.join(leases, true()).join(queue, true()).join(execution, true())
+        .join(delivery, true()),
     ))).one()
-    oldest = row.oldest
-    if oldest is not None and oldest.tzinfo is None:
-        oldest = oldest.replace(tzinfo=UTC)  # SQLite stores UTC without a timezone.
     return RuntimeSnapshot(
         observed_at=now,
         workers=tuple(getattr(row, state) for state in WORKER_STATES),
         active_leases=row.active_leases, expired_leases=row.expired_leases,
         queued_work=row.queued_work,
-        oldest_queued_seconds=max(0, (now - oldest).total_seconds()) if oldest else 0,
+        oldest_queued_seconds=age_seconds(now, row.oldest),
+        execution=state_snapshots(row, EXECUTION_STATES, "execution", now),
+        delivery=state_snapshots(row, DELIVERY_STATES, "delivery", now),
     )
 
 
@@ -141,3 +181,17 @@ class RuntimeHealthMetrics:
             "Age since creation of the oldest currently queued work at observation time.",
             value=snapshot.oldest_queued_seconds,
         )
+        for prefix, noun, states, observations in (
+            ("execution", "work", EXECUTION_STATES, snapshot.execution),
+            ("delivery", "jobs", DELIVERY_STATES, snapshot.delivery),
+        ):
+            counts = GaugeMetricFamily(f"kelpie_runtime_{prefix}_{noun}",
+                f"Current {prefix} metadata counts by fixed state.", labels=["state"])
+            ages = GaugeMetricFamily(f"kelpie_runtime_{prefix}_oldest_update_age_seconds",
+                "Age since the oldest metadata update in each state; not proof of a stuck VM.",
+                labels=["state"])
+            for state, observation in zip(states, observations, strict=True):
+                counts.add_metric([str(state)], observation.count)
+                ages.add_metric([str(state)], observation.oldest_update_age_seconds)
+            yield counts
+            yield ages

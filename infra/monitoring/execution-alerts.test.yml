@@ -1,0 +1,1107 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 30s
+
+tests:
+  - name: complete empty snapshot is usable
+    interval: 30s
+    input_series:
+      - &up {series: 'up{job="kelpie-api",instance="api:8000"}', values: '1x20'}
+      - &available {series: 'kelpie_runtime_snapshot_available{job="kelpie-api",instance="api:8000"}', values: '1x20'}
+      - &age {series: 'kelpie_runtime_snapshot_age_seconds{job="kelpie-api",instance="api:8000"}', values: '0x20'}
+      - &worker_online {series: 'kelpie_runtime_workers{job="kelpie-api",instance="api:8000",state="online"}', values: '0x20'}
+      - &worker_draining {series: 'kelpie_runtime_workers{job="kelpie-api",instance="api:8000",state="draining"}', values: '0x20'}
+      - &worker_offline {series: 'kelpie_runtime_workers{job="kelpie-api",instance="api:8000",state="offline"}', values: '0x20'}
+      - &worker_quarantined {series: 'kelpie_runtime_workers{job="kelpie-api",instance="api:8000",state="quarantined"}', values: '0x20'}
+      - &lease_active {series: 'kelpie_runtime_leases{job="kelpie-api",instance="api:8000",state="active"}', values: '0x20'}
+      - &lease_expired {series: 'kelpie_runtime_leases{job="kelpie-api",instance="api:8000",state="expired"}', values: '0x20'}
+      - &queue {series: 'kelpie_runtime_queued_work{job="kelpie-api",instance="api:8000"}', values: '0x20'}
+      - &queue_age {series: 'kelpie_runtime_queue_oldest_age_seconds{job="kelpie-api",instance="api:8000"}', values: '0x20'}
+      - &execution_provisioning_count {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="provisioning"}', values: '0x20'}
+      - &execution_provisioning_age {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="provisioning"}', values: '0x20'}
+      - &execution_analyzing_count {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="analyzing"}', values: '0x20'}
+      - &execution_analyzing_age {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="analyzing"}', values: '0x20'}
+      - &execution_implementing_count {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="implementing"}', values: '0x20'}
+      - &execution_implementing_age {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="implementing"}', values: '0x20'}
+      - &execution_verifying_count {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="verifying"}', values: '0x20'}
+      - &execution_verifying_age {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="verifying"}', values: '0x20'}
+      - &execution_committing_count {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="committing"}', values: '0x20'}
+      - &execution_committing_age {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="committing"}', values: '0x20'}
+      - &execution_pr_created_count {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="pr_created"}', values: '0x20'}
+      - &execution_pr_created_age {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="pr_created"}', values: '0x20'}
+      - &delivery_pending_count {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="pending"}', values: '0x20'}
+      - &delivery_pending_age {series: 'kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="pending"}', values: '0x20'}
+      - &delivery_retry_count {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="retry"}', values: '0x20'}
+      - &delivery_retry_age {series: 'kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="retry"}', values: '0x20'}
+      - &delivery_running_count {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="running"}', values: '0x20'}
+      - &delivery_running_age {series: 'kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="running"}', values: '0x20'}
+      - &delivery_completed_count {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="completed"}', values: '0x20'}
+      - &delivery_completed_age {series: 'kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="completed"}', values: '0x20'}
+      - &delivery_failed_count {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="failed"}', values: '0x20'}
+      - &delivery_failed_age {series: 'kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="failed"}', values: '0x20'}
+      - &delivery_unknown_count {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="unknown"}', values: '0x20'}
+      - &delivery_unknown_age {series: 'kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="unknown"}', values: '0x20'}
+    promql_expr_test:
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'kelpie:execution_snapshot_usable{job="kelpie-api",instance="api:8000"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: invalid duplicate series cannot hide behind a valid copy in any family
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x19 0'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x19 0'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="provisioning",unexpected="duplicate"}', values: '-1x4 stale'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="provisioning",unexpected="duplicate"}', values: '_ _ _ _ _ NaN _ _ _ _ stale'}
+      - {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="pending",unexpected="duplicate"}', values: '_ _ _ _ _ _ _ _ _ _ +Inf _ _ _ _ stale'}
+      - {series: 'kelpie_runtime_delivery_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="pending",unexpected="duplicate"}', values: '_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ -Inf _ _ _ _ stale'}
+    promql_expr_test:
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 4m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 4m30s
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 4m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 4m30s
+        exp_samples: []
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 7m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 7m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 7m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 7m
+        exp_samples: []
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 9m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 9m30s
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 9m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 9m30s
+        exp_samples: []
+      - expr: 'kelpie:execution_snapshot_usable'
+        eval_time: 10m
+        exp_samples:
+          - {labels: 'kelpie:execution_snapshot_usable{job="kelpie-api",instance="api:8000"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable"}'
+        eval_time: 10m
+        exp_samples: []
+
+  - name: all automatic phases wait two minutes and clear when their counts become zero
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - {<<: *execution_provisioning_count, values: '1x5 0x14'}
+      - {<<: *execution_provisioning_age, values: '601x20'}
+      - {<<: *execution_analyzing_count, values: '1x5 0x14'}
+      - {<<: *execution_analyzing_age, values: '1801x20'}
+      - {<<: *execution_implementing_count, values: '1x5 0x14'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - {<<: *execution_verifying_count, values: '1x5 0x14'}
+      - {<<: *execution_verifying_age, values: '1801x20'}
+      - {<<: *execution_committing_count, values: '1x5 0x14'}
+      - {<<: *execution_committing_age, values: '601x20'}
+      - {<<: *execution_pr_created_count, values: '1x5 0x14'}
+      - {<<: *execution_pr_created_age, values: '601x20'}
+      - {<<: *delivery_pending_count, values: '1x5 0x14'}
+      - {<<: *delivery_pending_age, values: '601x20'}
+      - {<<: *delivery_retry_count, values: '1x5 0x14'}
+      - {<<: *delivery_retry_age, values: '601x20'}
+      - {<<: *delivery_running_count, values: '1x5 0x14'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - {<<: *delivery_unknown_count, values: '1x5 0x14'}
+      - {<<: *delivery_unknown_age, values: '601x20'}
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 1m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 1m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 1m30s
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker",state="provisioning"}', value: 1}
+          - {labels: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker",state="analyzing"}', value: 1}
+          - {labels: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker",state="implementing"}', value: 1}
+          - {labels: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker",state="verifying"}', value: 1}
+          - {labels: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker",state="committing"}', value: 1}
+          - {labels: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker",state="pr_created"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api",state="pending"}', value: 1}
+          - {labels: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api",state="retry"}', value: 1}
+          - {labels: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api",state="running"}', value: 1}
+          - {labels: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api",state="unknown"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 3m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 3m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 3m
+        exp_samples: []
+
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieExecutionPhaseStalled
+        exp_alerts:
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: worker, state: provisioning}
+            exp_annotations: &execution_annotations
+              summary: A Kelpie execution phase has exceeded its metadata update-age threshold
+              summary_ko: Kelpie 실행 단계의 마지막 메타데이터 갱신 이후 시간이 기준을 넘었습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/execution-monitoring.md#execution
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/execution-monitoring.md#execution
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: worker, state: analyzing}
+            exp_annotations: *execution_annotations
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: worker, state: implementing}
+            exp_annotations: *execution_annotations
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: worker, state: verifying}
+            exp_annotations: *execution_annotations
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: worker, state: committing}
+            exp_annotations: *execution_annotations
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: worker, state: pr_created}
+            exp_annotations: *execution_annotations
+      - eval_time: 2m
+        alertname: KelpieDeliveryJobStalled
+        exp_alerts:
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api, state: pending}
+            exp_annotations: &delivery_annotations
+              summary: A Kelpie delivery job has remained unfinished without a metadata update for ten minutes
+              summary_ko: Kelpie 미완료 전달 작업이 메타데이터 갱신 없이 10분 넘게 남아 있습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/execution-monitoring.md#delivery
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/execution-monitoring.md#delivery
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api, state: retry}
+            exp_annotations: *delivery_annotations
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api, state: running}
+            exp_annotations: *delivery_annotations
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api, state: unknown}
+            exp_annotations: *delivery_annotations
+
+  - name: exact update age thresholds do not fire
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - {<<: *execution_provisioning_count, values: '1x20'}
+      - {<<: *execution_provisioning_age, values: '600x20'}
+      - {<<: *execution_analyzing_count, values: '1x20'}
+      - {<<: *execution_analyzing_age, values: '1800x20'}
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1800x20'}
+      - {<<: *execution_verifying_count, values: '1x20'}
+      - {<<: *execution_verifying_age, values: '1800x20'}
+      - {<<: *execution_committing_count, values: '1x20'}
+      - {<<: *execution_committing_age, values: '600x20'}
+      - {<<: *execution_pr_created_count, values: '1x20'}
+      - {<<: *execution_pr_created_age, values: '600x20'}
+      - {<<: *delivery_pending_count, values: '1x20'}
+      - {<<: *delivery_pending_age, values: '600x20'}
+      - {<<: *delivery_retry_count, values: '1x20'}
+      - {<<: *delivery_retry_age, values: '600x20'}
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '600x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - {<<: *delivery_unknown_count, values: '1x20'}
+      - {<<: *delivery_unknown_age, values: '600x20'}
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 5m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 5m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 5m
+        exp_samples: []
+
+  - name: human waits and terminal delivery history never become execution stall alerts
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - *execution_implementing_count
+      - *execution_implementing_age
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - *delivery_running_count
+      - *delivery_running_age
+      - {<<: *delivery_completed_count, values: '1x20'}
+      - {<<: *delivery_completed_age, values: '100000x20'}
+      - {<<: *delivery_failed_count, values: '1x20'}
+      - {<<: *delivery_failed_age, values: '100000x20'}
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="queued"}', values: '1x20'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="queued"}', values: '100000x20'}
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="awaiting_feedback"}', values: '1x20'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="awaiting_feedback"}', values: '100000x20'}
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="awaiting_approval"}', values: '1x20'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="awaiting_approval"}', values: '100000x20'}
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="awaiting_input"}', values: '1x20'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="awaiting_input"}', values: '100000x20'}
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="budget_exhausted"}', values: '1x20'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="budget_exhausted"}', values: '100000x20'}
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="completed"}', values: '1x20'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="completed"}', values: '100000x20'}
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="failed"}', values: '1x20'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="failed"}', values: '100000x20'}
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="api:8000",state="cancelled"}', values: '1x20'}
+      - {series: 'kelpie_runtime_execution_oldest_update_age_seconds{job="kelpie-api",instance="api:8000",state="cancelled"}', values: '100000x20'}
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 5m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 5m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 5m
+        exp_samples: []
+
+  - name: missing execution_provisioning_count blocks stall alerts but retains Worker observation
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - {<<: *worker_offline, values: '1x20'}
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieWorkerHeartbeatLost",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieWorkerHeartbeatLost",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker"}', value: 1}
+
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: KelpieExecutionObservationUnavailable
+        exp_alerts:
+          - exp_labels: {job: kelpie-api, instance: 'api:8000', severity: warning, component: api}
+            exp_annotations: &execution_unavailable_annotations
+              summary: Kelpie execution or delivery observations are invalid or incomplete
+              summary_ko: Kelpie 실행 단계 또는 전달 관측 지표가 유효하지 않거나 누락됐습니다
+              runbook_url: https://github.com/haesookimDev/dev-agent/blob/main/docs/en/execution-monitoring.md#observation
+              runbook_url_ko: https://github.com/haesookimDev/dev-agent/blob/main/docs/ko/execution-monitoring.md#observation
+
+  - name: missing execution_verifying_age blocks stall alerts but retains Worker observation
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - {<<: *worker_offline, values: '1x20'}
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieWorkerHeartbeatLost",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieWorkerHeartbeatLost",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker"}', value: 1}
+
+  - name: missing delivery_unknown_count blocks stall alerts but retains Worker observation
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - {<<: *worker_offline, values: '1x20'}
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieWorkerHeartbeatLost",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieWorkerHeartbeatLost",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker"}', value: 1}
+
+  - name: missing delivery_pending_age blocks stall alerts but retains Worker observation
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - {<<: *worker_offline, values: '1x20'}
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieWorkerHeartbeatLost",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieWorkerHeartbeatLost",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="worker"}', value: 1}
+
+  - name: invalid execution_provisioning_age is not a usable observation
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - {<<: *execution_provisioning_age, values: '-1x20'}
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: invalid delivery_retry_count is not a usable observation
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - {<<: *delivery_retry_count, values: 'NaN'}
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: invalid execution_verifying_count is not a usable observation
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - {<<: *execution_verifying_count, values: '+Inf'}
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: duplicate state cannot compensate for a missing state
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+      - {series: 'kelpie_runtime_delivery_jobs{job="kelpie-api",instance="api:8000",state="retry",unexpected="duplicate"}', values: '0x20'}
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: available failure suppresses new alerts in favor of the existing outage alert
+    interval: 30s
+    input_series:
+      - *up
+      - {<<: *available, values: '0x20'}
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: age failure suppresses new alerts in favor of the existing outage alert
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - {<<: *age, values: '31x20'}
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: up failure suppresses new alerts in favor of the existing outage alert
+    interval: 30s
+    input_series:
+      - {<<: *up, values: '0x20'}
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: stale execution series makes partial observation unavailable
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_count
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - {<<: *execution_analyzing_age, values: '0x1 stale'}
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 4m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 4m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 4m
+        exp_samples: []
+
+  - name: other target cannot supply a missing execution series
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+      - {series: 'kelpie_runtime_execution_work{job="kelpie-api",instance="other:8000",state="provisioning"}', values: '0x20'}
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+
+  - name: other job cannot supply a missing execution series
+    interval: 30s
+    input_series:
+      - *up
+      - *available
+      - *age
+      - *worker_online
+      - *worker_draining
+      - *worker_offline
+      - *worker_quarantined
+      - *lease_active
+      - *lease_expired
+      - *queue
+      - *queue_age
+      - *execution_provisioning_age
+      - *execution_analyzing_count
+      - *execution_analyzing_age
+      - {<<: *execution_implementing_count, values: '1x20'}
+      - {<<: *execution_implementing_age, values: '1801x20'}
+      - *execution_verifying_count
+      - *execution_verifying_age
+      - *execution_committing_count
+      - *execution_committing_age
+      - *execution_pr_created_count
+      - *execution_pr_created_age
+      - *delivery_pending_count
+      - *delivery_pending_age
+      - *delivery_retry_count
+      - *delivery_retry_age
+      - {<<: *delivery_running_count, values: '1x20'}
+      - {<<: *delivery_running_age, values: '601x20'}
+      - *delivery_completed_count
+      - *delivery_completed_age
+      - *delivery_failed_count
+      - *delivery_failed_age
+      - *delivery_unknown_count
+      - *delivery_unknown_age
+      - {series: 'kelpie_runtime_execution_work{job="unrelated",instance="api:8000",state="provisioning"}', values: '0x20'}
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples:
+          - {labels: 'ALERTS{alertname="KelpieExecutionObservationUnavailable",alertstate="firing",job="kelpie-api",instance="api:8000",severity="warning",component="api"}', value: 1}
+      - expr: 'ALERTS{alertname="KelpieExecutionPhaseStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'ALERTS{alertname="KelpieDeliveryJobStalled",alertstate="firing"}'
+        eval_time: 2m
+        exp_samples: []
