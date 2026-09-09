@@ -176,3 +176,47 @@ async def test_mock_completion_rejects_missing_or_mismatched_approval(
         json={"status": target, "expected_version": 2})
     assert response.status_code == 403
     assert await retained() == before
+
+
+async def test_unrelated_console_approval_does_not_hide_valid_mock_delivery_authority(
+    authorized, private_worker_headers,
+):
+    _, work, headers = await prepared(
+        authorized, private_worker_headers, WorkStatus.AWAITING_APPROVAL,
+    )
+    await sign_in(authorized, "approver")
+    for kind in ("pull_request", "console"):
+        response = await authorized.post(f"/api/work-items/{work}/approvals",
+            json={"kind": kind, "decision": "approve"})
+        assert response.status_code == 200 and response.json()["status"] == "committing"
+    for target in ("pr_created", "completed"):
+        response = await authorized.post(f"/api/runs/{work}/transition", headers=headers,
+            json={"status": target, "expected_version": response.json()["version"]})
+        assert response.status_code == 200
+    async with database() as session:
+        assert len(list(await session.scalars(select(AuditRecord)))) == 2
+
+
+async def test_live_lease_does_not_authorize_a_different_assignment(client, private_worker_headers):
+    _, work, headers = await prepared(client, private_worker_headers, WorkStatus.PROVISIONING)
+    async with database() as session:
+        (await session.get(WorkItem, work)).assigned_worker_id = None
+        await session.commit()
+    before = await retained()
+    response = await client.post(f"/api/runs/{work}/transition", headers=headers,
+        json={"status": "analyzing", "expected_version": 2})
+    assert response.status_code == 403
+    assert await retained() == before
+
+
+async def test_future_platform_edge_does_not_implicitly_grant_worker_authority(
+    client, private_worker_headers, monkeypatch,
+):
+    _, work, headers = await prepared(client, private_worker_headers, WorkStatus.ANALYZING)
+    monkeypatch.setitem(ALLOWED_TRANSITIONS, WorkStatus.ANALYZING,
+                        ALLOWED_TRANSITIONS[WorkStatus.ANALYZING] | {WorkStatus.COMMITTING})
+    before = await retained()
+    response = await client.post(f"/api/runs/{work}/transition", headers=headers,
+        json={"status": "committing", "expected_version": 2})
+    assert response.status_code == 403
+    assert await retained() == before

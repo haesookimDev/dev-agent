@@ -17,11 +17,13 @@ from app.auth import hash_token
 from app.main import resolve_preview
 from app.models import (
     AgentEvent,
+    AuditRecord,
     ConsoleLease,
     DeliveryBundle,
     DeliveryJob,
     PreviewEndpoint,
     ResourceLease,
+    Role,
     WorkerCredential,
     WorkerCredentialEvent,
     WorkerHost,
@@ -30,7 +32,7 @@ from app.models import (
     WorkStatus,
     utcnow,
 )
-from app.service import validate_lease
+from app.service import transition_work_item, validate_lease
 from app.worker_credentials import authenticate_worker, issue_credential, revoke_credential
 from app.worker_quarantine import quarantine_worker
 
@@ -280,3 +282,54 @@ async def test_publication_timeout_releases_quarantine_lock(
     finally:
         publishing.cancel()
         await asyncio.gather(publishing, return_exceptions=True)
+
+
+@pytest.mark.parametrize("authority", [
+    "approved", "missing", "stale", "rejected", "central", "foreign",
+])
+async def test_postgres_worker_completion_uses_scoped_immutable_approval(assigned_runs, authority):
+    sessions, runs = assigned_runs
+    work, token = runs[0]
+    async with sessions() as session:
+        worker = await session.get(WorkerHost, work.assigned_worker_id)
+        worker.labels = {"virtualization": "mock"}
+        if authority != "central":
+            await session.execute(delete(DeliveryJob).where(DeliveryJob.work_item_id == work.id))
+        if authority != "missing":
+            session.add(AuditRecord(
+                organization_id=work.organization_id, work_item_id=work.id,
+                repository="different/repository" if authority == "foreign" else work.repository,
+                action="approval.decided", target_id="synthetic-mock-approval",
+                actor_subject="test-approver", identity_provider="https://identity.example",
+                organization_role=Role.APPROVER, effective_role=Role.APPROVER,
+                required_role=Role.APPROVER, request_id=str(uuid.uuid4()),
+                correlation_id=work.correlation_id, transport="web", details={
+                    "kind": "pull_request", "decision": "reject" if authority == "rejected"
+                    else "approve", "delivery_queued": False, "delivery_bundle_sha256": None,
+                    "work_status_before": "awaiting_approval", "work_status_after": "committing",
+                    "work_version_after": work.version + int(authority == "stale"),
+                },
+            ))
+        # This UUID work's snapshot remains append-only until the dedicated DB is removed.
+        await session.commit()
+    async with sessions() as session:
+        lease = await validate_lease(session, work.id, token, 120)
+        current = await session.get(WorkItem, work.id, with_for_update=True)
+        if authority == "approved":
+            for target in (WorkStatus.PR_CREATED, WorkStatus.COMPLETED):
+                await transition_work_item(session, current, target,
+                    expected_version=current.version,
+                    actor=f"worker:{lease.worker_id}", worker_id=lease.worker_id)
+            await session.commit()
+        else:
+            with pytest.raises(HTTPException) as rejected:
+                await transition_work_item(session, current, WorkStatus.PR_CREATED,
+                    expected_version=current.version, actor=f"worker:{lease.worker_id}",
+                    worker_id=lease.worker_id)
+            assert rejected.value.status_code == 403
+            await session.rollback()
+    async with sessions() as session:
+        current = await session.get(WorkItem, work.id)
+        assert current.status == (WorkStatus.COMPLETED if authority == "approved"
+                                  else WorkStatus.COMMITTING)
+        assert current.version == work.version + (2 if authority == "approved" else 0)
