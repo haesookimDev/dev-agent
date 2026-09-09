@@ -32,6 +32,6 @@ Runner의 `ControlClient.event`는 HTTP 요청 본문을 만들기 전에 메시
 
 ## 제한과 후속 작업
 
-이것은 Runner의 특정 전송 경계 보강이지 범용 Secret Scanner나 적대적인 VM의 유출 방지 장치가 아닙니다. 알려지지 않은 자유 문장 속 토큰, 인코딩·조각·이미지 속 비밀, 다른 예외의 사전 절단·로컬 Traceback/Crash Dump, Artifact/Delivery Bundle 바이트·cloud-init, Runner를 거치지 않은 직접 API 전송은 아직 포괄하지 않습니다. 기존에 보존된 Event를 재작성하지도 않습니다. SEC-001·실제 VM 격리·MVP 전체 완료로 표시하지 않습니다.
+이것은 Runner의 특정 전송 경계 보강이지 범용 Secret Scanner나 적대적인 VM의 유출 방지 장치가 아닙니다. 알려지지 않은 자유 문장 속 토큰, 인코딩·조각·이미지 속 비밀, 다른 예외의 사전 절단·로컬 Traceback/Crash Dump, Artifact/Delivery Bundle 바이트·cloud-init은 아직 포괄하지 않습니다. Runner를 거치지 않은 직접 전송은 별도 후속 [API 이벤트 수신 경계](api-event-redaction.md)에서 제한된 범위를 보강했습니다. 기존에 보존된 Event를 재작성하지도 않습니다. SEC-001·실제 VM 격리·MVP 전체 완료로 표시하지 않습니다.
 
 오탐은 안전한 필드의 회귀 테스트를 추가해 조정하고 가림 전체를 끄거나 인증 검사를 우회하지 않습니다. Schema Rollback은 필요 없지만 이전 Runner로 되돌리면 기존 노출 경로가 다시 생기므로 해당 경로의 증거 전송을 안전하게 중단한 승인된 환경에서만 Rollback해야 합니다. 운영 자격증명이 노출됐다고 의심되면 관련 자격증명을 폐기·교체하고 보존 증거는 승인된 사고 대응 절차로 조사합니다.

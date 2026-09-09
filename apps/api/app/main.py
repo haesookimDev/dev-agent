@@ -75,6 +75,7 @@ from .db import (
     get_session,
 )
 from .delivery import deliver_work, resume_pending_deliveries
+from .event_redaction import redact_worker_telemetry
 from .integrations.github import GitHubAppClient
 from .integrations.slack import SlackNotifier, verify_signature
 from .models import (
@@ -941,7 +942,10 @@ async def ingest_worker_event(
 ) -> AgentEvent:
     await validate_lease(session, work_item_id, lease_token, config.lease_seconds)
     await get_work_item(session, work_item_id)
-    event = await emit_event(session, work_item_id, payload)
+    safe_event = EventCreate.model_validate(
+        redact_worker_telemetry(payload.model_dump(), lease=lease_token)
+    )
+    event = await emit_event(session, work_item_id, safe_event)
     await session.commit()
     return event
 
@@ -963,8 +967,8 @@ async def worker_transition(
         payload.status,
         expected_version=payload.expected_version,
         actor=f"worker:{lease.worker_id}",
-        message=payload.message,
-        payload=payload.payload,
+        message=redact_worker_telemetry(payload.message, lease=lease_token),
+        payload=redact_worker_telemetry(payload.payload, lease=lease_token),
     )
     await session.commit()
     if item.status in {
