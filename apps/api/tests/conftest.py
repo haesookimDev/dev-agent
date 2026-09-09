@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
 
 import pytest
+from ci_partition import pytest_addoption as pytest_addoption
+from ci_partition import pytest_collection_modifyitems as pytest_collection_modifyitems
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
