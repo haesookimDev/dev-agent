@@ -40,7 +40,7 @@ for (const locale of ["en", "ko"] as const) {
     expect((await (await request.get(url)).json()).status).toBe("queued");
     expect(await (await request.get(`${url}/audit-log`)).json()).toEqual([]);
     await page.evaluate(() => {
-      const dialog = document.querySelector("dialog")!;
+      const dialog = document.querySelector<HTMLDialogElement>("dialog.cancelDialog")!;
       const close = dialog.close.bind(dialog);
       dialog.close = () => {
         close();

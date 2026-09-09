@@ -5,6 +5,7 @@ import type { Locale } from "../i18n";
 import type { MessageCatalog } from "../i18n/types";
 import { apiJSON, browserApi, BrowserAPIError, requestErrorMessage } from "../lib/browser-api";
 import { canSendFeedback } from "../lib/feedback";
+import { budgetApproval, budgetMinutes } from "../lib/budget";
 import { statusLabel, statusProgress } from "../lib/status";
 import type { AgentEvent, Artifact, WorkItem } from "../lib/types";
 import { LocalTime } from "./local-time";
@@ -32,6 +33,13 @@ export function LiveRun({
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [feedbackDraft, setFeedbackDraft] = useState("");
+  const budgetDialog = useRef<HTMLDialogElement>(null);
+  const [reviewedBudget, setReviewedBudget] = useState<{ version: number; minutes: number } | null>(null);
+  const [extraMinutes, setExtraMinutes] = useState("60");
+  const [budgetError, setBudgetError] = useState("");
+  const extensionAllowed = work.status === "budget_exhausted";
+  const extension = budgetApproval(work, reviewedBudget?.version ?? null, extraMinutes);
+  const parsedMinutes = budgetMinutes(extraMinutes);
   const cancelDialog = useRef<HTMLDialogElement>(null);
   const statusPanel = useRef<HTMLDivElement>(null);
   const [cancelVersion, setCancelVersion] = useState<number | null>(null);
@@ -154,6 +162,48 @@ export function LiveRun({
     cancelDialog.current?.showModal();
   }
 
+  function openBudget() {
+    if (sending || !extensionAllowed) return;
+    setReviewedBudget({ version: work.version, minutes: work.budget_minutes });
+    setBudgetError("");
+    setActionError("");
+    setActionNotice("");
+    budgetDialog.current?.showModal();
+  }
+
+  async function extendBudget(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (sending || !extension) return;
+    setSending(true);
+    setBudgetError("");
+    try {
+      const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}/approvals`, {
+        method: "POST", headers: { "content-type": "application/json", ...correlationHeaders },
+        body: JSON.stringify(extension), signal: AbortSignal.timeout(10_000),
+      });
+      setWork((current) => updated.version >= current.version ? updated : current);
+      setActionNotice(messages.run.budgetSaved);
+      budgetDialog.current?.close();
+      // The exhausted-work trigger disappears; restore focus before the deferred close event.
+      statusPanel.current?.focus();
+    } catch (error) {
+      setBudgetError(error instanceof BrowserAPIError && error.status === 409 ? messages.run.budgetConflict
+        : error instanceof BrowserAPIError && error.status === 422 ? messages.run.budgetInvalid
+        : requestErrorMessage(error, messages.run.budgetError, messages.run.budgetNetworkError, messages.run.budgetPermissionError));
+      try {
+        // A lost response may follow a committed extension. Never replace the reviewed version.
+        const updated = await apiJSON<WorkItem>(`${browserApi}/api/work-items/${work.id}`, {
+          headers: correlationHeaders, signal: AbortSignal.timeout(5_000),
+        });
+        setWork((current) => updated.version >= current.version ? updated : current);
+      } catch {
+        // Keep the result-unknown warning when the refresh also fails.
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function cancelWork() {
     if (sending || !cancellationAllowed || cancelVersion !== work.version) return;
     setSending(true);
@@ -230,6 +280,13 @@ export function LiveRun({
         </div>
         <aside className="controlPanel">
           <p className="eyebrow">{messages.run.humanControl}</p><h2>{messages.run.title}</h2>
+          {extensionAllowed && (
+            <section className="budgetWork" aria-labelledby="budget-work-title">
+              <h3 id="budget-work-title">{messages.run.budgetTitle}</h3>
+              <p>{messages.run.budgetHint}</p>
+              <button disabled={sending} onClick={openBudget}>{messages.run.budgetOpen}</button>
+            </section>
+          )}
           {work.pull_request_url && (
             <a className="prLink" href={work.pull_request_url} target="_blank" rel="noreferrer">
               {messages.run.openPullRequest} <span>↗</span>
@@ -278,6 +335,41 @@ export function LiveRun({
           </dl>
         </aside>
       </section>
+      <dialog className="budgetDialog" ref={budgetDialog} aria-labelledby="budget-dialog-title"
+        aria-describedby="budget-dialog-description" onCancel={(event) => { if (sending) event.preventDefault(); }}
+        onClose={() => {
+          setReviewedBudget(null);
+          if (!extensionAllowed) statusPanel.current?.focus();
+        }}>
+        <h2 id="budget-dialog-title">{messages.run.budgetConfirmTitle}</h2>
+        <p className="budgetTarget">{work.title}</p>
+        <p id="budget-dialog-description">{messages.run.budgetConfirmDescription}</p>
+        <form onSubmit={extendBudget}>
+          <label htmlFor="budget-minutes">{messages.run.budgetAdditional}</label>
+          <input id="budget-minutes" name="minutes" type="number" min="15" max="1440" step="1" required
+            value={extraMinutes} disabled={sending} aria-describedby="budget-range"
+            aria-invalid={reviewedBudget !== null && parsedMinutes === null}
+            onChange={(event) => setExtraMinutes(event.target.value)} />
+          <p id="budget-range" className="budgetRange">{messages.run.budgetRange}</p>
+          <dl className="budgetSummary" aria-live="polite">
+            <div><dt>{messages.run.budgetCurrent}</dt><dd>{reviewedBudget?.minutes ?? work.budget_minutes} {messages.run.minuteUnit}</dd></div>
+            <div><dt>{messages.run.budgetTotal}</dt><dd>{parsedMinutes === null ? "—" : (reviewedBudget?.minutes ?? work.budget_minutes) + parsedMinutes} {messages.run.minuteUnit}</dd></div>
+          </dl>
+          {reviewedBudget !== null && (budgetError || !extensionAllowed || reviewedBudget.version !== work.version || parsedMinutes === null) && (
+            <p className="formError" role="alert">{budgetError || (!extensionAllowed || reviewedBudget.version !== work.version
+              ? messages.run.budgetConflict : messages.run.budgetInvalid)}</p>
+          )}
+          {sending && <p role="status">{messages.run.budgetSaving}</p>}
+          <div className="budgetActions">
+            <button type="button" className="secondaryButton" autoFocus disabled={sending} onClick={() => budgetDialog.current?.close()}>
+              {messages.run.budgetBack}
+            </button>
+            <button type="submit" disabled={sending || !extension}>
+              {sending ? messages.run.budgetSaving : messages.run.budgetConfirm}
+            </button>
+          </div>
+        </form>
+      </dialog>
       <dialog className="cancelDialog" ref={cancelDialog} aria-labelledby="cancel-dialog-title"
         aria-describedby="cancel-dialog-description" onCancel={(event) => { if (sending) event.preventDefault(); }}
         onClose={() => {

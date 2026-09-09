@@ -15,6 +15,14 @@ const work: WorkItem = {
 };
 
 describe.each(["ko", "en"] as const)("%s work progress", (locale) => {
+  it.each(["budget_exhausted", "queued", "implementing", "awaiting_approval", "completed", "cancelled"] as const)("offers budget extension only for exhausted work: %s", (status) => {
+    const html = renderToStaticMarkup(createElement(LiveRun, {
+      initialWork: { ...work, status }, initialEvents: [], initialArtifacts: [], locale, messages: getMessages(locale),
+    }));
+    expect(html.includes('class="budgetWork"')).toBe(status === "budget_exhausted");
+    expect(html).not.toContain('class="formError"');
+  });
+
   it.each([
     ["queued", null, true], ["queued", "worker-one", false],
     ["provisioning", "worker-one", false], ["awaiting_approval", "worker-one", false],
