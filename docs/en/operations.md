@@ -135,7 +135,7 @@ OTEL_SERVICE_NAME=kelpie-api
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
 ```
 
-When the OTLP endpoint is empty, application spans are not exported, while Prometheus metrics and structured logs remain available. [Baseline alerts and runbooks](monitoring-alerts.md) cover failed/missing scrapes, delayed startup recovery, and observed delivery failures. [Continuous observation alerts](runtime-monitoring.md) monitor lost Worker heartbeats, expired active leases, and long-queued work without treating failed, stale, or missing observations as healthy. External object-store, SCM, and delivery-worker readiness, stalled running-work/DeliveryJob coverage, and an integrated operations dashboard remain follow-up OBS-001 scope.
+When the OTLP endpoint is empty, application spans are not exported, while Prometheus metrics and structured logs remain available. [Baseline alerts and runbooks](monitoring-alerts.md) cover failed/missing scrapes, delayed startup recovery, and observed delivery failures. [Continuous observation alerts](runtime-monitoring.md) monitor lost Worker heartbeats, expired active leases, and long-queued work without treating failed, stale, or missing observations as healthy. [Execution/DeliveryJob metadata-age alerts](execution-monitoring.md) also cover phase thresholds and missing/duplicate extended metrics. External object-store, SCM and delivery-worker readiness, progress-based latency signals and an integrated operations dashboard remain follow-up OBS-001 scope.
 
 ## GitHub App delivery
 

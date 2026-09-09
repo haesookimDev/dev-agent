@@ -135,7 +135,7 @@ OTEL_SERVICE_NAME=kelpie-api
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
 ```
 
-OTLP Endpoint를 비워 두면 Application Span은 외부로 전송하지 않지만 Prometheus Metric과 구조화 Log는 계속 제공됩니다. [기본 장애 알림과 대응 안내](monitoring-alerts.md)는 수집 실패·누락, 시작 시 복구 지연과 관찰된 전달 실패를 다룹니다. [지속 관측 알림](runtime-monitoring.md)은 Worker Heartbeat 손실·활성 Lease 만료·오래 대기하는 Queued 작업을 감시하며, 관측 실패·오래된 값·누락을 정상으로 보지 않습니다. 외부 Object Store·SCM·Delivery Worker Readiness, 실행/DeliveryJob 전체의 정체 감시와 통합 운영 Dashboard는 OBS-001의 후속 범위입니다.
+OTLP Endpoint를 비워 두면 Application Span은 외부로 전송하지 않지만 Prometheus Metric과 구조화 Log는 계속 제공됩니다. [기본 장애 알림과 대응 안내](monitoring-alerts.md)는 수집 실패·누락, 시작 시 복구 지연과 관찰된 전달 실패를 다룹니다. [지속 관측 알림](runtime-monitoring.md)은 Worker Heartbeat 손실·활성 Lease 만료·오래 대기하는 Queued 작업을 감시하며, 관측 실패·오래된 값·누락을 정상으로 보지 않습니다. [실행·DeliveryJob 메타데이터 경과 시간 알림](execution-monitoring.md)은 단계별 임계값과 확장 지표의 누락·중복 검사도 포함합니다. 외부 Object Store·SCM·Delivery Worker Readiness, 실제 진행 기반 지연 지표와 통합 운영 Dashboard는 OBS-001의 후속 범위입니다.
 
 ## GitHub App 전달
 

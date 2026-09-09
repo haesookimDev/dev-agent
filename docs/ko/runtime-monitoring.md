@@ -26,7 +26,7 @@ DB 부담은 API Process마다 약 10~12초 간격의 Schema 검사와 집계 �
 
 Worker 분류는 **격리 → 오프라인 → Draining → Online** 순입니다. `quarantined_at`이 있으면 별도 집계합니다. 명시적 `OFFLINE`이거나 마지막 Heartbeat가 기존 `WORKER_OFFLINE_SECONDS`(기본 45초) 이상 지났으면 오프라인입니다. 이 설정은 관측 분류에 사용되며 자원을 회수하지 않습니다. Future Heartbeat는 시각이 따라잡을 때까지 오래된 것으로 판정하지 않으며, Future 작업 생성 시각의 나이는 0으로 제한합니다. 운영 Clock 동기화도 확인하세요.
 
-Lease의 `expires_at < 관측 시각` 기준은 기존 Lease 검증과 같습니다. 해제·격리된 Lease는 두 수치 모두에서 제외합니다. Queue 나이는 마지막 상태 변경이나 재시도 이후 시간이 아니라 **생성 시각** 기준입니다. 실행 중인 작업과 `DeliveryJob` 대기·진행 상태 전체를 감시하지 않습니다.
+Lease의 `expires_at < 관측 시각` 기준은 기존 Lease 검증과 같습니다. 해제·격리된 Lease는 두 수치 모두에서 제외합니다. Queue 나이는 마지막 상태 변경이나 재시도 이후 시간이 아니라 **생성 시각** 기준입니다. 같은 Snapshot의 [실행 단계·DeliveryJob 메타데이터 경과 시간 관측](execution-monitoring.md)은 별도 지표와 Gate·대응 절차를 사용합니다.
 
 최초 성공 전에는 Worker·Lease·Queue 지표가 **없습니다**. 성공적으로 조회한 빈 DB만 해당 지표에 0을 제공합니다. 이후 실패하면 이전 수치는 진단용으로 남지만 `snapshot_available=0`이며, 갱신이 끊기면 30초 이후에도 0입니다. 이전 수치나 시작 시 전달 복구 `completed=1`만 보고 시스템이 정상이라고 판단하지 마세요.
 
@@ -71,7 +71,7 @@ API Version, Metric Relabeling, `snapshot_age_seconds`, `/readyz`, 고정 관측
 
 ## 검증 및 롤백
 
-`make test-api`는 SQLite·지표 신선도·실패·전체 Timeout·종료·실제 Uvicorn/HTTP 복구 회귀를 실행합니다. `KELPIE_TEST_POSTGRES_URL=<전용 테스트 DB URL> .venv/bin/python -m pytest -q apps/api/tests/test_runtime_health.py`는 실제 PostgreSQL 집계도 검증하며, 테스트별 트랜잭션 안의 임의 Schema만 회수합니다. URL이 없으면 PostgreSQL 세 경우는 Skip됩니다. 필수 `Python` CI가 기존 PostgreSQL Service에서 이 명령을 실행합니다.
+`make test-api`는 SQLite·지표 신선도·실패·전체 Timeout·종료·실제 Uvicorn/HTTP 복구 회귀를 실행합니다. `KELPIE_TEST_POSTGRES_URL=<전용 테스트 DB URL> .venv/bin/python -m pytest -q apps/api/tests/test_runtime_health.py`는 실제 PostgreSQL 집계도 검증하며, 테스트별 트랜잭션 안의 임의 Schema만 회수합니다. URL이 없으면 PostgreSQL 다섯 경우는 Skip됩니다. 필수 `Python` CI가 기존 PostgreSQL Service에서 이 명령을 실행합니다.
 
 `make test-monitoring PROMTOOL=/path/to/promtool`은 가상 시계로 기존·신규 규칙, 경계값, 누락·Stale·NaN, 부분 Relabeling, 다른 Target/Job, 관측 실패 시 억제와 복구를 검증합니다. 실제 HTTP 회귀는 원래 10초 주기를 유지하여 약 21초가 걸리며 별도 CI Job이나 외부 자격증명은 필요하지 않습니다.
 
@@ -95,4 +95,4 @@ API Version, Metric Relabeling, `snapshot_age_seconds`, `/readyz`, 고정 관측
 
 Orca 브라우저에서 각 규칙을 펼쳐 한국어·영어 요약과 Runbook·대기 시간을 확인하고, 새로고침한 실제 상태 및 최종 데스크톱 화면도 Computer-use로 확인했습니다. 확인한 브라우저 요청은 모두 200이고 Console 메시지는 없었습니다. 화면의 로컬 경로 때문에 스크린샷은 공개 업로드하지 않았습니다. Web·네이티브 UI 코드는 변경하지 않았으며 OS Focus를 확보할 수 없어 네이티브 키보드 입력은 검증하지 않았습니다.
 
-합성 Worker/Lease 행과 실제 HTTP 경계를 사용한 관측 증거이며 실제 Worker Daemon·KVM·물리 네트워크 격리·VM 자원 회수 증거가 아닙니다. 외부 알림 수신과 운영 배포도 수행하지 않았습니다. 전체 MVP에는 외부 의존성 Readiness, 실행/DeliveryJob 정체 감시, 운영 Dashboard, 보존·복구, 승인된 실제 KVM 환경 검증이 남아 있습니다.
+합성 Worker/Lease 행과 실제 HTTP 경계를 사용한 관측 증거이며 실제 Worker Daemon·KVM·물리 네트워크 격리·VM 자원 회수 증거가 아닙니다. 외부 알림 수신과 운영 배포도 수행하지 않았습니다. 전체 MVP에는 외부 의존성 Readiness, 실제 진행 기반 지연 지표, 운영 Dashboard, 보존·복구, 승인된 실제 KVM 환경 검증이 남아 있습니다.
