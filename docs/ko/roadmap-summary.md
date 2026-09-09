@@ -34,4 +34,6 @@ P0 OPS-001에는 [PostgreSQL 백업·새 DB 복원의 데이터·권한·감사 
 
 SEC-001의 [Runner 전송](runner-event-redaction.md)과 [API 이벤트 수신](api-event-redaction.md) 경계의 임대·명시적 자격증명 필드 가림을 실제 명령·직접 HTTP·SSE·DB·브라우저로 검증했습니다(2026-09-09). 범용 Secret Scan, 모든 API·Artifact·Crash Dump·cloud-init 전체 검증은 여전히 남아 있습니다.
 
+공통 상태 전환이 생성하는 이력의 [실제 `from`·`to` 보존](transition-metadata.md)을 검증했습니다. 임의 이벤트의 출처 증명·호출자별 전환 권한 검증과는 별개입니다.
+
 GitLab, 고급 Routing, 자율 이슈 탐색은 이 보안·실행 기준이 검증된 이후에 진행해야 합니다.
