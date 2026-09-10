@@ -110,7 +110,8 @@ def qemu_arguments(output: Path, socket_path: Path, architecture: str = "amd64")
         "virt,accel=kvm,gic-version=host" if arm else "q35,accel=kvm", "-cpu", "host",
         "-m", "4096", "-smp", "2", "-display", "none",
         "-serial", "none", "-monitor", "none", "-nic", "none",
-        "-no-reboot", "-smbios", f"type=1,product={health.PROBE_PRODUCT}",
+        # ARM systemd uses DMI to identify KVM; accel=kvm above enforces the real backend.
+        "-no-reboot", "-smbios", f"type=1,manufacturer=KVM,product={health.PROBE_PRODUCT}",
         "-drive", f"file={output / 'probe.qcow2'},format=qcow2,if=virtio,cache=none",
         "-device", "virtio-serial", "-chardev",
         f"socket,path={socket_path},server=on,wait=off,id=qga0",

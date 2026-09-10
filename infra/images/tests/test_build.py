@@ -16,6 +16,13 @@ from infra.images import build, guest, prepare
 
 
 class BuildTests(unittest.TestCase):
+    def test_template_retains_kvm_identity_with_dedicated_product_marker(self):
+        template = (build.ROOT / "infra/images/ubuntu.pkr.hcl").read_text()
+        self.assertIn('["-smbios", "type=1,manufacturer=KVM,product=KelpieGoldenImageBuild"]',
+                      template)
+        self.assertIn('accelerator      = "kvm"', template)
+        self.assertNotIn('"tcg"', template)
+
     def test_arm_template_preserves_seed_cd_with_explicit_device_overrides(self):
         template = (build.ROOT / "infra/images/ubuntu.pkr.hcl").read_text()
         # Packer 1.1.6 replaces the whole default -device list; it only restores NICs.

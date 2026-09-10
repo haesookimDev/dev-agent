@@ -53,7 +53,9 @@ source "qemu" "ubuntu" {
   shutdown_timeout             = "5m"
 
   qemuargs = concat([
-    ["-smbios", "type=1,product=KelpieGoldenImageBuild"],
+    # ARM systemd uses DMI, not x86 CPUID. Preserve KVM identity with our product marker.
+    # This is descriptive metadata; accelerator=kvm above still enforces execution.
+    ["-smbios", "type=1,manufacturer=KVM,product=KelpieGoldenImageBuild"],
     # The plugin default hostfwd binds all interfaces; override it explicitly.
     ["-netdev", "user,id=user.0,hostfwd=tcp:127.0.0.1:{{ .SSHHostPort }}-:22"],
     ["-device", "virtio-serial"],

@@ -295,8 +295,11 @@ class GuestTests(unittest.TestCase):
                     patch.object(Path, "read_text", return_value=guest.BUILD_PRODUCT), \
                     patch.object(guest.platform, "freedesktop_os_release", return_value=release), \
                     patch.object(guest.platform, "machine", return_value=machine), \
-                    patch.object(guest, "command", return_value="kvm"):
+                    patch.object(guest, "command", return_value="kvm") as command:
                 self.assertIsNone(guest.guard_guest())
+                command.return_value = "qemu"
+                with self.assertRaisesRegex(prepare.InputError, "requires a KVM guest"):
+                    guest.guard_guest()
         for machine in ("arm64", "riscv64", "AMD64", ""):
             with self.subTest(machine=machine), \
                     patch.object(guest.platform, "system", return_value="Linux"), \

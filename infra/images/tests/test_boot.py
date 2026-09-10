@@ -120,7 +120,7 @@ class BootTests(unittest.TestCase):
         args = boot.qemu_arguments(self.output, self.output / "qga.sock")
         self.assertEqual(args[args.index("-nic") + 1], "none")
         self.assertIn("q35,accel=kvm", args)
-        self.assertIn(f"type=1,product={health.PROBE_PRODUCT}", args)
+        self.assertIn(f"type=1,manufacturer=KVM,product={health.PROBE_PRODUCT}", args)
         for forbidden in ("-vnc", "-netdev", "-qmp", "-daemonize"):
             self.assertNotIn(forbidden, args)
         self.assertNotIn("tcg", " ".join(args))
@@ -148,7 +148,7 @@ class BootTests(unittest.TestCase):
         self.assertIn(f"file={self.output / 'firmware/AAVMF_VARS.fd'},"
                       "format=raw,if=pflash,unit=1", args)
         self.assertEqual(args[args.index("-nic") + 1], "none")
-        self.assertIn(f"type=1,product={health.PROBE_PRODUCT}", args)
+        self.assertIn(f"type=1,manufacturer=KVM,product={health.PROBE_PRODUCT}", args)
         for value in ("-vga", "-parallel", "-netdev", "-vnc", "-daemonize"):
             self.assertNotIn(value, args)
         self.assertNotIn("tcg", " ".join(args))
