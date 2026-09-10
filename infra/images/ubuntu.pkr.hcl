@@ -95,7 +95,7 @@ build {
     destination = "/tmp/kelpie-image/files/"
   }
   provisioner "file" {
-    sources     = [for name in ["guest.py", "prepare.py", "kelpie-runner.service"] : "${var.run_dir}/tooling/${name}"]
+    sources     = [for name in ["guest.py", "prepare.py", "health.py", "kelpie-runner.service"] : "${var.run_dir}/tooling/${name}"]
     destination = "/tmp/kelpie-image/tooling/"
   }
   provisioner "shell" {

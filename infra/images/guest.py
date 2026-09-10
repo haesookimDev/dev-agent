@@ -26,6 +26,7 @@ RUNNER_PYTHON = "/opt/kelpie/runner/bin/python"
 BROWSER_ROOT = Path("/opt/kelpie/browser")
 GUEST_PACKAGES = prepare.REQUIRED_PACKAGES | {
     "lightdm", "libnss3", "libgbm1", "libasound2t64", "fonts-liberation",
+    "x11-utils",
 }
 MAX_EXPANDED_BROWSER_BYTES = 8 * 1024**3
 
@@ -244,6 +245,10 @@ def install() -> None:
     command("systemctl", "mask", "apt-daily.service", "apt-daily-upgrade.service",
             "apt-daily.timer", "apt-daily-upgrade.timer")
     prepare.write_json(INSTALL_ROOT / "image-manifest.json", manifest)
+    health_tools = INSTALL_ROOT / "image-health"
+    health_tools.mkdir(mode=0o755)
+    for name in ("health.py", "prepare.py", "guest.py"):
+        write_file(health_tools / name, (STAGING / "tooling" / name).read_text())
     reject_credentials()
     # This is build-owned package staging, never a workspace or caller-selected path.
     shutil.rmtree(inputs)
