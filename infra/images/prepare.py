@@ -47,6 +47,11 @@ def pinned_version(value: object) -> bool:
     }
 
 
+def native_machine(architecture: object) -> str:
+    require(architecture in ("amd64", "arm64"), "unsupported image architecture")
+    return "x86_64" if architecture == "amd64" else "aarch64"
+
+
 def artifact(value: object, *, suffixes: tuple[str, ...], limit: int, wheel=False) -> dict:
     expected = {"file", "version", "sha256", "size_bytes"}
     if wheel:
@@ -71,7 +76,7 @@ def validate_manifest(value: object) -> dict:
     require(type(manifest["schema_version"]) is int
             and manifest["schema_version"] == SCHEMA_VERSION, "unsupported manifest version")
     require(pinned_version(manifest["image_version"]), "image version must be pinned")
-    require(manifest["architecture"] == "amd64", "unsupported image architecture")
+    native_machine(manifest["architecture"])
     snapshot = manifest["ubuntu_snapshot"]
     require(isinstance(snapshot, str) and re.fullmatch(r"\d{8}T\d{6}Z", snapshot) is not None,
             "invalid Ubuntu snapshot")

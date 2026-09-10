@@ -95,11 +95,26 @@ class PrepareTests(unittest.TestCase):
                 other = second / path.relative_to(self.output)
                 self.assertEqual(path.read_bytes(), other.read_bytes())
 
+    def test_arm64_manifest_uses_the_same_strict_nonrelease_input_contract(self):
+        self.manifest["architecture"] = "arm64"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIs(json.loads(result.stdout)["release_eligible"], False)
+        self.assertEqual(prepare.read_manifest(self.output / "manifest.json")["architecture"],
+                         "arm64")
+
+    def test_native_machine_has_only_explicit_supported_architectures(self):
+        self.assertEqual(prepare.native_machine("amd64"), "x86_64")
+        self.assertEqual(prepare.native_machine("arm64"), "aarch64")
+        for value in ("x86_64", "aarch64", "riscv64", "ARM64", None, [], {}, True):
+            with self.subTest(value=value), self.assertRaises(prepare.InputError):
+                prepare.native_machine(value)
+
     def test_rejects_invalid_contract_before_creating_output(self):
         mutations = [
             lambda m: m.update(schema_version=True),
             lambda m: m.update(schema_version=2),
-            lambda m: m.update(architecture="arm64"),
+            lambda m: m.update(architecture="riscv64"),
             lambda m: m.update(image_version="latest"),
             lambda m: m.update(image_version="$(touch escaped)"),
             lambda m: m.update(ubuntu_snapshot="20260230T000000Z"),
