@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -38,13 +37,13 @@ func (c *Client) call(ctx context.Context, method, path string, body any, header
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return privateFailure(err, controlEncode)
 		}
 		reader = bytes.NewReader(encoded)
 	}
 	request, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
-		return err
+		return privateFailure(err, controlRequest)
 	}
 	request.Header.Set("Content-Type", "application/json")
 	if correlationID, ok := ctx.Value(correlationContextKey{}).(string); ok && correlationID != "" {
@@ -55,12 +54,11 @@ func (c *Client) call(ctx context.Context, method, path string, body any, header
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
-		return err
+		return privateFailure(err, controlTransport)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
-		return fmt.Errorf("control plane returned %s: %s", response.Status, strings.TrimSpace(string(data)))
+		return diagnosticError{kind: controlStatus, code: response.StatusCode}
 	}
 	if result == nil || response.StatusCode == http.StatusNoContent {
 		return nil
@@ -69,7 +67,7 @@ func (c *Client) call(ctx context.Context, method, path string, body any, header
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
-		return err
+		return privateFailure(err, controlDecode)
 	}
 	return nil
 }
@@ -117,7 +115,7 @@ func (c *Client) Claim(ctx context.Context, workerID string, resources Resources
 	}
 	var claim Claim
 	if err := json.Unmarshal(raw, &claim); err != nil {
-		return nil, err
+		return nil, privateFailure(err, controlDecode)
 	}
 	return &claim, nil
 }

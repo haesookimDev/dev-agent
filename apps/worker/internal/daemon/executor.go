@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -105,11 +104,11 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 		return errors.New("unsafe work item id")
 	}
 	if _, err := os.Stat(e.config.BaseImage); err != nil {
-		return fmt.Errorf("base image unavailable: %w", err)
+		return privateFailure(err, vmBaseImage)
 	}
 	runDir := filepath.Join(e.config.WorkRoot, claim.WorkItem.ID)
 	if err := os.MkdirAll(runDir, 0700); err != nil {
-		return err
+		return privateFailure(err, vmRunDirectory)
 	}
 	overlay := filepath.Join(runDir, "root.qcow2")
 	seed := filepath.Join(runDir, "seed.iso")
@@ -119,14 +118,14 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 		return err
 	}
 	if err := os.WriteFile(meta, []byte("instance-id: kelpie-"+claim.WorkItem.ID+"\nlocal-hostname: kelpie-run\n"), 0600); err != nil {
-		return err
+		return privateFailure(err, vmSeedData)
 	}
 	assignmentWork := claim.WorkItem
 	assignmentWork.Status = "analyzing"
 	assignmentWork.Version++
 	assignment, err := json.Marshal(assignmentWork)
 	if err != nil {
-		return err
+		return privateFailure(err, vmAssignment)
 	}
 	assignmentEncoded := base64.URLEncoding.EncodeToString(assignment)
 	environment := fmt.Sprintf(
@@ -146,7 +145,7 @@ runcmd:
   - [ systemctl, start, kelpie-runner.service ]
 `, environmentEncoded)
 	if err := os.WriteFile(user, []byte(cloudConfig), 0600); err != nil {
-		return err
+		return privateFailure(err, vmSeedData)
 	}
 	if err := run(ctx, "cloud-localds", seed, user, meta); err != nil {
 		return err
@@ -196,9 +195,17 @@ runcmd:
 
 func run(ctx context.Context, name string, args ...string) error {
 	command := exec.CommandContext(ctx, name, args...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s failed: %w: %s", name, err, strings.TrimSpace(string(output)))
+	// Nil stdout/stderr go to the null device: never buffer or retain potentially
+	// sensitive command output. Exit status remains available for diagnosis.
+	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return diagnosticError{kind: vmCommandExit, code: exit.ExitCode()}
+		}
+		return privateFailure(err, vmCommandStart)
 	}
 	return nil
 }
