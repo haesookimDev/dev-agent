@@ -6,6 +6,8 @@
 
 기준 코드: `main`의 `8cd09123cb3a2031cf18331cfe2ec74d7de1919d` ([PR #53](https://github.com/haesookimDev/dev-agent/pull/53) 병합). 아래 평가는 문서뿐 아니라 현재 코드·테스트·실제 구동 기록을 대조한 시점별 기록입니다. Draft 브랜치나 계획은 완료로 세지 않습니다.
 
+현재 동기화한 `main`은 문서 PR #54까지 포함한 `1fd999f`이며 [해당 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34423510547)는 통과했습니다. 후속 `feat/golden-image-inputs`의 기능 기준 `59fda72`는 [입력 준비·무결성 검증](golden-image-inputs.md)을 추가한 Draft 작업입니다. 파일/CLI 테스트 20개와 이전 전체 회귀의 근거를 별도 기록하며, Builder·실제 Image/Boot/Desktop 검증은 아직 없습니다. 이 작업을 아래 완료 수에 포함하지 않습니다.
+
 [바로 다음 Release](roadmap-summary.md#바로-다음-release)에 명시된 7단계를 고정된 분모로 사용합니다. **검증 완료 1/7 = 14.3%**, 부분 완료 3/7, 미완료 3/7입니다. 부분 구현에는 임의 점수를 주지 않습니다. 이 수치는 릴리즈 단계의 검증 완료율이며 코드 작성량·투입 공수·남은 일정의 비율이 아닙니다. 전체 개발 공수의 정확한 완료율은 현재 근거로 산정하지 않습니다.
 
 ## 완료 기준별 현황

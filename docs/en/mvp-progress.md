@@ -6,6 +6,8 @@
 
 Code baseline: `main` at `8cd09123cb3a2031cf18331cfe2ec74d7de1919d` (merged [PR #53](https://github.com/haesookimDev/dev-agent/pull/53)). This snapshot compares documentation with current code, tests and actual runtime evidence. Draft branches and plans do not count as complete.
 
+Synchronized `main` is `1fd999f`, including documentation PR #54; [its CI](https://github.com/haesookimDev/dev-agent/actions/runs/34423510547) passed. Subsequent branch `feat/golden-image-inputs`, functional baseline `59fda72`, is Draft work adding [input preparation/integrity verification](golden-image-inputs.md). Evidence for 20 file/CLI tests and the preceding full regression run is recorded separately; builder and actual image/boot/desktop verification do not exist yet. Do not add this work to the completed count below.
+
 Use the seven numbered steps in [the next release](roadmap-summary.md) as a fixed denominator. **Verified complete: 1/7 = 14.3%**; partial: 3/7; incomplete: 3/7. Partial implementation receives no arbitrary fractional credit. This measures verified release stages, not code volume, effort spent or remaining schedule. Current evidence does not support a precise engineering-effort completion percentage.
 
 ## Status against completion criteria
