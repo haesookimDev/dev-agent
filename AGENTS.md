@@ -99,7 +99,7 @@
 - Worker: `make test-worker`
 - Gateway: `make test-gateway`
 - Web: `make test-web`
-- Golden Image 입력: `make test-images` (실제 Image Build/Boot 검증을 대체하지 않음)
+- Golden Image: `make test-images`, `make test-image-template PACKER=/path/to/packer` (후자는 구문 검사이며 실제 Image Build/Boot 검증을 대체하지 않음)
 - Monitoring 설정·알림 규칙: `make test-monitoring` (`promtool` 설치 또는 `PROMTOOL` 경로 지정)
 - 정적 검사: `make lint`
 - 여러 컴포넌트에 걸친 변경: `make test`

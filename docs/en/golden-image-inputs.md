@@ -1,28 +1,28 @@
-# Golden image input preparation — Draft foundation
+# Golden image candidate build — Draft
 
 [한국어](../ko/golden-image-inputs.md) | English · [MVP progress](mvp-progress.md) · [IMG-001](roadmap-detailed.md)
 
 ## Scope
 
-[`infra/images/prepare.py`](../../infra/images/prepare.py) is a Python-standard-library CLI that verifies declared image inputs and prepares separate copies. It does not download, install, extract, create VMs or roll out Workers. **It is not an image builder, boot test or release approval tool; IMG-001 remains incomplete.** Existing Worker base-image configuration and execution are unchanged.
+[`prepare.py`](../../infra/images/prepare.py) only verifies inputs and prepares separate copies. [`build.py`](../../infra/images/build.py) and the [Packer template](../../infra/images/ubuntu.pkr.hcl) are a candidate builder invoking [`guest.py`](../../infra/images/guest.py) installation/sealing on an approved dedicated KVM host. **Actual image build/boot/desktop verification and release gates remain incomplete, as does IMG-001.** Existing Worker base-image configuration/execution is unchanged and no automatic rollout occurs.
 
 First obtain approved Ubuntu 24.04 amd64 image bytes, an unpacked Codex executable, a Linux browser ZIP and wheels for Runner and all Python dependencies. Check expected hashes against reviewed official distribution/build evidence. Hashing an untrusted file yourself does not authenticate its publisher. The repository does not ship unverified production versions/checksums as a release lock.
 
 ## Version 1 input contract
 
-The manifest is UTF-8 JSON, at most 128 KiB. Only the following fields are allowed; duplicate JSON keys, unknown fields and floating aliases (`latest`, `current`, `main`, etc.) are rejected. Versions are declarations, not checks of actual binary versions or installability.
+The manifest is UTF-8 JSON, at most 128 KiB. Only the following fields are allowed; duplicate JSON keys, unknown fields and floating aliases (`latest`, `current`, `main`, etc.) are rejected. During input preparation, versions are declarations rather than installability checks.
 
 | Field | Required content |
 | --- | --- |
 | `schema_version`, `architecture` | Integer `1`, string `amd64` |
 | `image_version` | Reviewed fixed image-version identifier |
-| `ubuntu_snapshot` | Valid UTC date `YYYYMMDDTHHMMSSZ`; the future builder must check snapshot availability |
+| `ubuntu_snapshot` | Valid UTC date `YYYYMMDDTHHMMSSZ`; guest APT execution checks actual availability |
 | `runner_source_commit` | Lowercase 40-character Runner source Git SHA; wheel-to-source provenance remains a later gate |
 | `apt_packages` | Object mapping package names to exact version strings, at most 256 entries |
 | `base_image`, `codex`, `browser` | Each an object with `file`, `version`, `sha256`, `size_bytes` |
 | `runner_wheels` | 1–64 wheel objects with the same four fields plus `name`; `kelpie-vm-runner` is required and normalized package names must be unique |
 
-Required APT names are `build-essential`, `ca-certificates`, `dbus-x11`, `git`, `nodejs`, `npm`, `python3.12-venv`, `qemu-guest-agent`, `xfce4`, `xorg`. This minimum list does not guarantee complete desktop/browser dependencies. The future builder must verify repositories pinned to the [Ubuntu snapshot service](https://snapshot.ubuntu.com/), the full installed package set and update policy.
+Input preparation requires APT names `build-essential`, `ca-certificates`, `dbus-x11`, `git`, `nodejs`, `npm`, `python3.12-venv`, `qemu-guest-agent`, `xfce4`, `xorg`. The builder additionally requires exact versions of `lightdm`, `libnss3`, `libgbm1`, `libasound2t64`, `fonts-liberation`. This list does not guarantee complete desktop/browser dependencies; actual installation and use must be verified.
 
 `file` is a flat ASCII filename; even case aliases must be unique. Base images use `.qcow2`/`.img` (maximum 64 GiB), browsers `.zip` (2 GiB), wheels `.whl` (256 MiB each); Codex is a single unpacked executable (1 GiB). `size_bytes` is a positive integer and `sha256` is 64 lowercase hex characters. Extension checks do not validate internal formats, architecture or executable safety.
 
@@ -45,11 +45,34 @@ python3 infra/images/prepare.py \
 - Errors print classifications without private paths/raw details and exit 1. A failed copy may retain a private partial directory without a success record. Do not consume it; fix the cause and retry at a new output path. Cleaning previous partial files is a separate action requiring exact-path/ownership checks.
 - Future consumers must require a complete success record and matching manifest hash and **recheck copied-file hashes immediately before use**. Truncated records after power/disk failures, file existence or a previous success log do not authorize use.
 
+## Candidate build on a dedicated host
+
+Run this only as an approved **non-root Linux amd64 user with accessible `/dev/kvm`**. Do not substitute local Mac or ordinary GitHub runner VM execution. The host needs reviewed `qemu-system-x86_64`, `qemu-img`, `ssh-keygen`, `xorriso` and **Packer 1.16.0**. Verify the [official archive SHA-256](https://releases.hashicorp.com/packer/1.16.0/packer_1.16.0_SHA256SUMS), install separately and specify the executable path. The [QEMU plugin](https://developer.hashicorp.com/packer/integrations/hashicorp/qemu/latest/components/builder/qemu), installed by Packer into the private run directory, is pinned to **1.1.6**. No unapproved host access, environment discovery or automatic host dependency installation occurs.
+
+```sh
+image_build_workspace="$(mktemp -d /tmp/kelpie-build.XXXXXX)"
+python3 infra/images/build.py \
+  --bundle /approved/prepared-bundle \
+  --output "$image_build_workspace/run" \
+  --packer /approved/tools/packer \
+  --execute-on-dedicated-host
+```
+
+- Missing execution acknowledgement or incompatible host conditions are rejected before staging/VM creation. The flag records the operator's host approval; it does not grant authority or isolate a host. Use a dedicated test host without production services and reviewed inputs only.
+- The output parent must be owned with mode `0700`; the normalized output path must be at most 80 ASCII letters/digits/`/_.-`. Only new paths are accepted. Budget space for input copies, Packer caches and a 40 GiB guest disk simultaneously.
+- The complete input receipt and manifest hash are checked, then every input is verified/copied again. Recipe files and the Runner unit are copied and hashed. Base/output disks must be independent unencrypted qcow2 without backing/external data files, at most 40 GiB virtual size. A `.img` must also contain qcow2.
+- Each build generates a temporary SSH key without forwarding the SSH agent or ambient API/SCM/cloud environment. SSH forwarding/VNC bind `127.0.0.1`; the guest-agent socket is inside the private run directory. Build NAT supports package installation; **it does not implement production per-work network isolation**.
+- The guest checks Ubuntu 24.04 amd64, KVM and its dedicated DMI marker before installing. It checks [Ubuntu snapshot](https://snapshot.ubuntu.com/)-pinned APT versions/inventory, hash-locked offline wheels/metadata/`pip check`, Codex ELF/version and browser ZIP boundaries/version. It configures Xfce/LightDM and a Runner disabled until assignment; no browser `--no-sandbox` bypass is used.
+- Ordinary automatic APT update timers are masked. Rebuild with a new snapshot/lock, verify, then replace images; never operate this candidate without security updates. Installed inventories remain in guest `/opt/kelpie/apt-inventory.json` and `python-inventory.json`; they are not a complete SBOM.
+- Sealing is configured to lock the builder account, remove its dedicated sudo/SSH access, clear SSH host keys/cloud-init seed/machine identity, then power off. Code existence is not evidence of actual reboot or credential non-disclosure.
+- The host driver applies command timeouts, a one-hour Packer build deadline and owned-process-group termination. It deletes the temporary key pair on exit, not existing bundles/partial run directories. Physical VM/key/file recovery after host termination or power loss remains a separate gate.
+- Success records `image_built_unverified`, **`release_eligible=false`**, image/recipe hashes in `candidate.json`. Raw tool diagnostics are not exposed by the CLI. Do not reuse failed directories or automatically assign candidates as Worker base images. Investigate, clean only owned resources, and retry at a new path.
+
 ## Security and unfinished gates
 
 Never put Codex login caches, API keys or SCM/Worker credentials in shared images/input bundles. [Official Codex authentication guidance](https://learn.chatgpt.com/docs/auth) treats `auth.json` like a password. This CLI checks approved-byte identity; it is not a general secret scanner or signature verifier. Production authentication and product approval gates remain unchanged.
 
-Still unimplemented/unverified: pinned Packer/equivalent builder, package installation/wheel dependency and provenance validation, actual desktop/browser use, Codex/Runner compatibility, SBOM/vulnerability reports/signatures, sealing/reboot/credential non-disclosure, actual KVM boot/health probes and canary rollback. An approved Linux/KVM host and reviewed real inputs are required; related feature PRs remain Draft until those gates pass. Ordinary GitHub PR CI does not start expensive VM builds or access production resources.
+Remaining gates: installation/reboot/desktop/browser use and Codex/Runner compatibility with real locked inputs; wheel-to-source provenance and pinned host QEMU toolchain/reproducibility; SBOM/vulnerability reports/signatures; comprehensive credential non-disclosure; actual KVM boot/health probes and canary rollback. An approved Linux/KVM host and reviewed real inputs are required; related feature PRs remain Draft until those gates pass. Ordinary GitHub PR CI does not start expensive VM builds or access production resources.
 
 ## Verification record
 
@@ -60,3 +83,7 @@ Review found that the JSON parser also implicitly accepted UTF-16/32. The regres
 Tests cover actual separate CLI processes, successful copies/permissions, same-sized tampering and real source rewrites during copying, duplicate keys/path escapes/links/FIFOs, write failures, partial-output reuse refusal, concurrent runs and multi-chunk copying. Fixtures are explicitly synthetic bytes, not real Ubuntu/Codex/browser/wheel releases. Actual-use and final PR CI evidence also belong in the PR verification record. No Web UI or native-input behavior changes, so before/after screen verification is inapplicable; VM desktop verification remains unperformed.
 
 At `59fda72`, a dedicated Orca terminal on macOS arm64/Python 3.13.5 ran the actual CLI separately. Sequential checks confirmed four synthetic inputs copied with private modes, exclusion of undeclared files and `release_eligible=false`; a wrong hash exited 1 without a success record; reuse of the partial output was refused. An initial shell-update prompt consumed the first command, which was resent after shell readiness without changing app/shell settings. This is not evidence of a running guest GUI.
+
+Follow-up guest installation/sealing `7b24b20` and host/Packer integration `ce5a6f5` passed **46 `make test-images` tests** (about 1.7 seconds) and `make lint`. Real separate processes checked host refusal, environment filtering, failure cleanup and timeout child-process termination; simulated build commands checked ordering, each failure stage, key cleanup and no promotion. Actual Packer 1.16.0 with QEMU plugin 1.1.6 also passed **full `packer validate` with synthetic inputs**. An actual probe exposed Packer's EOF failure when `/dev/null` was used as configuration; a private `{}` JSON config fixed it. Probe inputs, temporary keys and plugins were cleaned with their dedicated temporary directory; no VM started.
+
+`make test-image-template PACKER=/path/to/packer` checks formatting and **syntax only**. Existing `Go` CI caches the official Packer archive and verifies its pinned SHA-256 every time. It installs no plugin/VM and adds no job/matrix/eight-minute timeout increase. Syntax checking does not replace full plugin configuration validation or actual build/boot. See the PR verification record for this follow-up's full regression and final-head CI.

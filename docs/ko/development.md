@@ -55,7 +55,8 @@ MVP 지속 개발에서는 [로드맵의 바로 다음 Release](roadmap-summary.
 ## 검증
 
 - `make test`: API, Runner, Worker, Gateway, Web·이미지 입력 테스트와 Web 타입 검사
-- `make test-images`: [Golden Image 입력](golden-image-inputs.md)의 파일·CLI 회귀. 실제 Image Build/Boot 검증은 별도 Gate입니다.
+- `make test-images`: [Golden Image 후보 Builder](golden-image-inputs.md)의 파일·CLI·Guest Helper 회귀. 실제 Image Build/Boot 검증은 별도 Gate입니다.
+- `make test-image-template PACKER=/path/to/packer`: Packer 1.16.0 설정의 Format·구문 검사. Plugin 설정 검증이나 실제 VM 실행이 아닙니다.
 - `make lint`: Python Ruff, Go vet, Web ESLint
 - `make test-monitoring PROMTOOL=/path/to/promtool`: Monitoring 설정과 PromQL 알림 규칙 검증. [설치·운영 안내](monitoring-alerts.md)
 - `cd apps/web && npm run build`: 운영 Web 빌드
@@ -97,6 +98,8 @@ Playwright는 단위 테스트가 다루지 못하는 실제 브라우저와 서
 GitHub Actions 구성은 [Workflow 문법](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)과 [의존성 캐시 문서](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)를 기준으로 합니다. Token은 읽기 전용으로 제한하고 외부 Action은 검증한 SHA에 고정합니다.
 
 필수 `Go` 검사에는 `make test-monitoring`도 포함됩니다. 공식 Prometheus 3.14.0 Archive를 캐시하고 매번 SHA-256을 검증한 뒤 설정·알림 테스트를 실행합니다. 가상 시계열을 사용하므로 실제 알림의 대기 시간을 CI에서 기다리지 않습니다. 기존 필수 검사 이름·8분 Timeout·애플리케이션 검증은 유지합니다.
+
+동일한 `Go` 검사에서 `make test-image-template`도 실행합니다. 공식 Packer 1.16.0 Archive를 캐시·SHA-256 검증하며 QEMU Plugin 설치나 Image Build는 하지 않습니다. 별도 Job·Timeout 확대 없이 구문 오류를 검출하고, 실제 Linux/KVM·Desktop Gate는 승인된 전용 Host에서 별도로 확인합니다.
 
 필수 `Python` 검사는 `python -m pytest -q apps/api/tests/test_cancellation_postgres.py apps/api/tests/test_budget_version_postgres.py`로 취소/Claim과 [예산 승인 버전](budget-approval-version.md)의 실제 PostgreSQL 경쟁도 검증합니다. 로컬에서는 `KELPIE_TEST_POSTGRES_URL`에 전용 테스트 DB URL을 지정하세요. 테스트마다 임의 이름의 전용 스키마를 만들고 그 스키마만 정리하며, 기존 데이터나 감사 기록을 삭제하지 않습니다. URL이 없으면 이 여덟 테스트는 Skip되므로 기본 SQLite 테스트 통과만으로 경쟁 검증을 완료 처리하지 않습니다.
 
