@@ -18,10 +18,14 @@ from infra.images.tests import test_codex_package
 
 class HealthTests(unittest.TestCase):
     def setUp(self):
+        machine = patch.object(health.platform, "machine", return_value="x86_64")
+        machine.start()
+        self.addCleanup(machine.stop)
         self.temporary = tempfile.TemporaryDirectory(prefix="kelpie-health-", dir="/tmp")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.manifest = {
+            "architecture": "amd64",
             "image_version": "synthetic.1", "apt_packages": {"synthetic-package": "1.0"},
             "runner_wheels": [{"name": "kelpie-vm-runner", "version": "1.0"}],
             "codex": {"file": "codex", "version": "0.0-fixture"},
@@ -168,6 +172,42 @@ class HealthTests(unittest.TestCase):
         self.assertTrue(paths)
         self.assertTrue(all(not path.exists() for path in paths))
 
+    def test_arm_installed_package_checks_architecture_specific_inventory_and_link(self):
+        case = test_codex_package.CodexPackageTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        destination = self.root / "opt/kelpie/codex"
+        records = codex_package.extract(case.archive(architecture="arm64"), destination,
+                                        case.version, architecture="arm64")
+        self.put("opt/kelpie/codex-inventory.json", json.dumps(records))
+        self.put("opt/kelpie/apt-inventory.json", json.dumps(self.manifest["apt_packages"]))
+        self.put("opt/kelpie/python-inventory.json", '{"kelpie-vm-runner":"1.0"}')
+        entrypoint = self.root / "usr/local/bin/codex"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.symlink_to("/opt/kelpie/codex/vendor/aarch64-unknown-linux-musl/bin/codex")
+        self.manifest.update(architecture="arm64", codex={"file": "codex.tgz",
+                                                        "version": case.version})
+
+        def command(*args, **kwargs):
+            if args[0] == "dpkg-query":
+                return "synthetic-package\t1.0"
+            if args[1] == "-c":
+                return '{"kelpie-vm-runner":"1.0"}'
+            if args[-1] == "--version":
+                return (f"codex-cli {case.version}" if args[-2].endswith("codex")
+                        else "Chrome 0.0-fixture")
+            return ""
+
+        with patch.object(health, "command", side_effect=command):
+            health.installed(self.manifest)
+            entrypoint.unlink()
+            entrypoint.symlink_to("/opt/kelpie/codex/vendor/x86_64-unknown-linux-musl/bin/codex")
+            with self.assertRaisesRegex(prepare.InputError, "entrypoint differs"):
+                health.installed(self.manifest)
+            self.manifest["architecture"] = "amd64"
+            with self.assertRaisesRegex(prepare.InputError, "invalid Codex installed inventory"):
+                health.installed(self.manifest)
+
     def test_browser_rejects_unexecuted_javascript(self):
         with patch.object(health.pwd, "getpwnam",
                           return_value=SimpleNamespace(pw_uid=1234, pw_gid=1234)), \
@@ -209,6 +249,36 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(result["checks"], dict.fromkeys(health.CHECKS, True))
         for check in checks:
             self.assertEqual(check.call_count, 1)
+
+    def test_probe_rejects_manifest_architecture_before_package_or_browser_checks(self):
+        with patch.object(health, "guard"), patch.object(health, "command"), \
+                patch.object(health.platform, "machine", return_value="aarch64"), \
+                patch.object(health.prepare, "read_manifest", return_value=self.manifest), \
+                patch.object(health, "identities") as identities, \
+                patch.object(health, "installed") as installed, \
+                patch.object(health, "browser") as browser:
+            with self.assertRaisesRegex(prepare.InputError, "architecture differs"):
+                health.probe()
+        identities.assert_not_called()
+        installed.assert_not_called()
+        browser.assert_not_called()
+
+    def test_arm_guard_preserves_root_dmi_ubuntu_and_kvm_requirements(self):
+        self.put("sys/class/dmi/id/product_name", health.PROBE_PRODUCT)
+        with patch.object(health.platform, "system", return_value="Linux"), \
+                patch.object(health.platform, "machine", return_value="aarch64"), \
+                patch.object(health.os, "geteuid", return_value=0), \
+                patch.object(health.platform, "freedesktop_os_release", return_value={
+                    "ID": "ubuntu", "VERSION_ID": "24.04"}), \
+                patch.object(health, "command", return_value="kvm") as command:
+            health.guard()
+            command.return_value = "qemu"
+            with self.assertRaisesRegex(prepare.InputError, "unsupported probe guest"):
+                health.guard()
+            command.return_value = "kvm"
+            self.put("sys/class/dmi/id/product_name", "another guest")
+            with self.assertRaisesRegex(prepare.InputError, "identity mismatch"):
+                health.guard()
 
     def test_real_cli_refuses_this_host_without_running_browser(self):
         self.assertNotEqual(os.geteuid(), 0, "run image tests as non-root")

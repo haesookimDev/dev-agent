@@ -36,7 +36,8 @@ def command(*args: str, **kwargs) -> str:
 
 def guard() -> None:
     require(platform.system() == "Linux" and os.geteuid() == 0
-            and platform.machine() == "x86_64", "probe requires a Linux amd64 guest")
+            and platform.machine() in {"x86_64", "aarch64"},
+            "probe requires a Linux amd64 or arm64 guest")
     require((ROOT / "sys/class/dmi/id/product_name").read_text().strip() == PROBE_PRODUCT,
             "probe guest identity mismatch")
     release = platform.freedesktop_os_release()
@@ -110,9 +111,11 @@ def installed(manifest: dict) -> None:
     if manifest["codex"]["file"].endswith((".tgz", ".tar.gz")):
         codex_root = ROOT / "opt/kelpie/codex"
         codex_package.verify_installed(codex_root, manifest["codex"]["version"],
-                                       read_json(ROOT / "opt/kelpie/codex-inventory.json"))
+                                       read_json(ROOT / "opt/kelpie/codex-inventory.json"),
+                                       architecture=manifest["architecture"])
         require(os.readlink(ROOT / "usr/local/bin/codex")
-                == f"/opt/kelpie/codex/{codex_package.PREFIX}bin/codex",
+                == f"/opt/kelpie/codex/{codex_package.runtime_prefix(manifest['architecture'])}"
+                   "bin/codex",
                 "Codex entrypoint differs from installed package")
     require(command("runuser", "-u", "kelpie", "--", "/usr/local/bin/codex", "--version")
             == f"codex-cli {manifest['codex']['version']}", "Codex version differs from lock")
@@ -160,6 +163,8 @@ def probe() -> dict:
     guard()  # No commands or temporary browser profile on another host/guest.
     command("cloud-init", "status", "--wait", timeout=120)
     manifest = prepare.read_manifest(ROOT / "opt/kelpie/image-manifest.json")
+    require(platform.machine() == prepare.native_machine(manifest["architecture"]),
+            "image architecture differs from probe guest")
     identity = identities(manifest)
     access_removed()
     installed(manifest)
