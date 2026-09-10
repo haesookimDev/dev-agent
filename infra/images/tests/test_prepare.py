@@ -266,6 +266,59 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(json.loads((self.output / "inputs-verified.json").read_text())
                          ["status"], "inputs_verified")
 
+    def test_real_source_rewrite_during_copy_is_rejected(self):
+        source = self.assets / self.manifest["base_image"]["file"]
+        content = source.read_bytes()
+        digest = hashlib.sha256()
+
+        class MutatingDigest:
+            def update(self, chunk):
+                digest.update(chunk)
+                source.write_bytes(b"x" * len(content))
+
+            def hexdigest(self):
+                return digest.hexdigest()
+
+        # The read bytes still match the expected hash. Only checking the digest
+        # would miss this real, same-sized source-file rewrite during copying.
+        with patch.object(prepare.hashlib, "sha256", return_value=MutatingDigest()):
+            with self.assertRaisesRegex(prepare.InputError, "artifact changed during copy"):
+                prepare.prepare(self.manifest, self.assets, self.output)
+        self.assertEqual(source.read_bytes(), b"x" * len(content))
+        self.assert_incomplete()
+
+    def test_actual_cli_refuses_to_reuse_partial_bundle(self):
+        expected = self.manifest["browser"]["sha256"]
+        self.manifest["browser"]["sha256"] = "f" * 64
+        first = self.invoke()
+        self.assertEqual(first.returncode, 1)
+        files = {path.name: path.read_bytes() for path in (self.output / "files").iterdir()}
+        self.manifest["browser"]["sha256"] = expected
+        second = self.invoke()
+        self.assertEqual(second.returncode, 1)
+        self.assertEqual(second.stdout, "")
+        self.assert_incomplete()
+        self.assertEqual(files, {
+            path.name: path.read_bytes() for path in (self.output / "files").iterdir()
+        })
+
+    def test_large_input_streams_across_multiple_chunks(self):
+        content = b"synthetic-image-chunk" * 100_000
+        base = self.manifest["base_image"]
+        (self.assets / base["file"]).write_bytes(content)
+        base.update(size_bytes=len(content), sha256=hashlib.sha256(content).hexdigest())
+        prepare.prepare(self.manifest, self.assets, self.output)
+        copied = (self.output / "files" / base["file"]).read_bytes()
+        self.assertEqual(copied, content)
+
+    def test_extra_assets_are_not_copied_or_listed(self):
+        marker = "synthetic-private-unlisted-file"
+        (self.assets / marker).write_text("not part of the approved manifest")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn(marker, result.stdout + result.stderr)
+        self.assertFalse((self.output / "files" / marker).exists())
+
 
 if __name__ == "__main__":
     unittest.main()
