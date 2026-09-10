@@ -1,4 +1,4 @@
-"""Build an unverified image candidate on an explicitly approved, dedicated KVM host."""
+"""Build and boot-check an unreleased image on an explicitly approved, dedicated KVM host."""
 
 import argparse
 import hashlib
@@ -96,7 +96,8 @@ def stage(bundle: Path, output: Path) -> dict:
     tooling = output / "tooling"
     tooling.mkdir(mode=0o700)
     recipes = [ROOT / "infra/images" / name for name in
-               ("build.py", "guest.py", "prepare.py", "health.py", "ubuntu.pkr.hcl")]
+               ("build.py", "guest.py", "prepare.py", "health.py", "boot.py", "qga.py",
+                "ubuntu.pkr.hcl")]
     recipes.append(ROOT / "infra/systemd/kelpie-runner.service")
     hashes = {}
     for source in recipes:
@@ -197,6 +198,8 @@ def build(bundle: Path, output: Path, packer: Path, *, approved=False) -> dict:
     require(packer.is_absolute() and packer.is_file() and os.access(packer, os.X_OK),
             "an operator-verified absolute Packer executable is required")
     output = output.parent.resolve(strict=True) / output.name
+    require(len(str(output / "boot-check")) <= 80,
+            "build path must leave room for the automatic boot probe")
     manifest = stage(bundle, output)
     key = output / "build_key"
     try:
@@ -237,8 +240,16 @@ def main(argv: list[str] | None = None) -> int:
         # All child-created state remains private, including Packer's temporary CD and disk.
         previous_umask = os.umask(0o077)
         try:
-            result = build(args.bundle, args.output, args.packer,
-                           approved=args.execute_on_dedicated_host)
+            # Lazy import avoids a module cycle: the probe shares the bounded host tools.
+            if __package__:
+                from . import boot
+            else:
+                import boot
+            candidate = build(args.bundle, args.output, args.packer,
+                              approved=args.execute_on_dedicated_host)
+            smoke = boot.probe(args.output, args.output / "boot-check",
+                               approved=args.execute_on_dedicated_host)
+            result = {"candidate": candidate, "boot_smoke": smoke, "release_eligible": False}
         finally:
             os.umask(previous_umask)
     except prepare.InputError as error:
