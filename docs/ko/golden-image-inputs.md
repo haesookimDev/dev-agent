@@ -4,7 +4,7 @@
 
 ## 이번 범위
 
-[`prepare.py`](../../infra/images/prepare.py)는 입력 검증·별도 사본 준비만 수행합니다. [`build.py`](../../infra/images/build.py)와 [Packer 설정](../../infra/images/ubuntu.pkr.hcl)은 승인한 전용 KVM Host에서 [`guest.py`](../../infra/images/guest.py)의 설치·봉인을 실행하는 후보 Builder입니다. **실제 Image Build/Boot/Desktop 검증과 릴리즈 Gate는 미완료이며 IMG-001도 미완료입니다.** 현재 Worker의 Base Image 설정이나 실행 경로를 바꾸거나 자동 Rollout하지 않습니다.
+[`prepare.py`](../../infra/images/prepare.py)는 입력 검증·별도 사본 준비만 수행합니다. [`build.py`](../../infra/images/build.py)와 [Packer 설정](../../infra/images/ubuntu.pkr.hcl)은 승인한 전용 KVM Host에서 [`guest.py`](../../infra/images/guest.py)의 설치·봉인 후 [`boot.py`](../../infra/images/boot.py)의 두 차례 부팅 검사를 자동 실행하는 후보 Builder입니다. **이 경로의 실제 Image Build/Boot/Desktop 검증과 릴리즈 Gate는 미완료이며 IMG-001도 미완료입니다.** 현재 Worker의 Base Image 설정이나 실행 경로를 바꾸거나 자동 Rollout하지 않습니다.
 
 승인된 Ubuntu 24.04 amd64 이미지, Codex 실행 파일, Linux 브라우저 ZIP, Runner와 전체 Python 의존성 Wheel을 먼저 확보해야 합니다. 기대 Hash는 검토한 공식 배포 자료/빌드 증거에서 확인하세요. 출처를 확인하지 않은 파일을 직접 Hash한 것만으로 신뢰할 수 있는 배포물이 되지는 않습니다. 저장소에는 실제 검증하지 않은 Version·Checksum을 릴리즈 Lock으로 넣지 않습니다.
 
@@ -22,7 +22,7 @@ Manifest는 UTF-8 JSON이며 최대 128 KiB입니다. 아래 Field만 허용하�
 | `base_image`, `codex`, `browser` | 각각 `file`, `version`, `sha256`, `size_bytes`를 가진 Object |
 | `runner_wheels` | 동일 4개 Field와 `name`을 가진 Wheel Object 목록, 1~64개. `kelpie-vm-runner` 필수, 정규화된 Package 이름 중복 금지 |
 
-입력 준비의 필수 APT 이름은 `build-essential`, `ca-certificates`, `dbus-x11`, `git`, `nodejs`, `npm`, `python3.12-venv`, `qemu-guest-agent`, `xfce4`, `xorg`입니다. Builder는 추가로 `lightdm`, `libnss3`, `libgbm1`, `libasound2t64`, `fonts-liberation`의 정확한 Version을 요구합니다. 이 목록이 완전한 Desktop/Browser 의존성 집합임을 보장하지 않으며 실제 설치·사용 검증이 필요합니다.
+입력 준비의 필수 APT 이름은 `build-essential`, `ca-certificates`, `dbus-x11`, `git`, `nodejs`, `npm`, `python3.12-venv`, `qemu-guest-agent`, `xfce4`, `xorg`입니다. Builder는 추가로 `lightdm`, `libnss3`, `libgbm1`, `libasound2t64`, `fonts-liberation`, `x11-utils`의 정확한 Version을 요구합니다. `x11-utils`의 `xdpyinfo`는 실제 X Display 응답 검사에 사용합니다. 이 목록이 완전한 Desktop/Browser 의존성 집합임을 보장하지 않으며 실제 설치·사용 검증이 필요합니다.
 
 `file`은 하위 경로 없는 ASCII 파일명이며 대소문자 Alias까지 중복을 금지합니다. Base Image 확장자는 `.qcow2`/`.img`(최대 64 GiB), Browser는 `.zip`(2 GiB), Wheel은 `.whl`(개당 256 MiB), Codex는 압축 해제된 단일 실행 파일(1 GiB)입니다. `size_bytes`는 양의 정수, `sha256`은 소문자 64자리입니다. 확장자 검사는 내부 형식·Architecture·실행 안전성 검사가 아닙니다.
 
@@ -59,14 +59,29 @@ python3 infra/images/build.py \
 ```
 
 - 실행 Flag가 없거나 Host 조건이 다르면 파일 준비·VM 생성 전에 거부합니다. Flag는 Host 승인 사실에 대한 운영자 확인이며 권한을 발급하거나 Host를 격리하는 장치가 아닙니다. 운영 서비스가 없는 전용 테스트 Host와 검토한 입력만 사용하세요.
-- 출력 부모는 소유한 `0700` 디렉터리, 정규화한 출력 전체 경로는 최대 80자의 ASCII 문자·숫자·`/_.-`여야 합니다. 새로운 경로만 허용하며 충분한 디스크 공간이 필요합니다. 입력 사본·Packer Cache·40 GiB Guest Disk가 함께 존재할 수 있습니다.
+- 출력 부모는 소유한 `0700` 디렉터리, 정규화한 출력 전체 경로는 최대 69자의 ASCII 문자·숫자·`/_.-`여야 합니다. 자동 `boot-check` 하위 경로의 Socket 길이를 빌드 전에 확보합니다. 새로운 경로만 허용하며 입력 사본·Packer Cache·40 GiB Guest Disk·검사용 후보 사본/Overlay가 함께 존재할 디스크 공간이 필요합니다.
 - 완전한 입력 성공 기록과 Manifest Hash를 확인한 뒤 모든 입력을 다시 검증·복사합니다. 실행 Recipe와 Runner Unit도 사본과 SHA-256을 기록합니다. Base/출력은 외부 Backing/Data File이나 암호화가 없는 독립 qcow2, 가상 크기 최대 40 GiB여야 합니다. `.img`도 실제 형식은 qcow2여야 합니다.
 - 빌드마다 임시 SSH Key를 생성하고 SSH Agent·주변 API/SCM/Cloud 환경을 전달하지 않습니다. SSH Forward와 VNC는 `127.0.0.1`, Guest Agent Socket은 비공개 실행 디렉터리에 제한합니다. 빌드 NAT의 외부 접근은 Package 설치용이며 **작업별 운영 네트워크 격리를 구현한 것은 아닙니다.**
 - Guest는 Ubuntu 24.04 amd64·KVM·전용 DMI 표식을 확인한 뒤 설치합니다. [Ubuntu Snapshot](https://snapshot.ubuntu.com/)에 고정한 APT Version·설치 Inventory, Hash 고정 Offline Wheel·Metadata·`pip check`, Codex ELF/Version, Browser ZIP 경계/Version을 검사합니다. Xfce/LightDM과 배정 전 비활성 Runner를 구성하며 Browser의 `--no-sandbox` 우회는 사용하지 않습니다.
 - 일반 자동 APT Update Timer를 Mask합니다. 이미지는 새 Snapshot·Lock으로 재빌드하고 검증 후 교체해야 하며 이 후보를 보안 업데이트 없이 운영하지 않습니다. 설치 Inventory는 Guest의 `/opt/kelpie/apt-inventory.json`, `python-inventory.json`에 보존합니다. 아직 완전한 SBOM은 아닙니다.
 - 봉인은 Builder 계정 잠금·전용 sudo 권한/SSH Key 제거, SSH Host Key·cloud-init Seed/Machine ID 초기화 후 전원을 끄도록 구성했습니다. 이 코드의 존재를 실제 재부팅·Secret 비노출 증거로 계산하지 않습니다.
 - Host 실행기는 명령별 Timeout과 최대 1시간의 Packer Build Timeout, 소유한 Process Group 종료를 사용합니다. 종료 시 임시 Key 쌍을 삭제하며 기존 Bundle/부분 실행 디렉터리는 삭제하지 않습니다. Host 강제 종료·전원 장애 후 실제 잔여 VM/Key/파일 정합성 복구는 별도 Gate입니다.
-- 성공 기록은 `candidate.json`의 `image_built_unverified`, **`release_eligible=false`**, Image Hash·Recipe Hash입니다. 원문 도구 진단은 CLI에 노출하지 않습니다. 실패한 디렉터리를 재사용하거나 후보를 Worker Base Image로 자동 지정하지 마세요. 원인 조사·소유 자원 정리 후 새 경로로 재실행합니다.
+- 빌드 단계 기록은 `candidate.json`의 `image_built_unverified`, **`release_eligible=false`**, Image Hash·Recipe Hash입니다. 이것만으로 CLI 전체 성공이 아니며 아래 부팅 검사가 자동으로 이어집니다. 모두 통과한 CLI 결과는 `candidate`, `boot_smoke`, `release_eligible=false`를 가진 JSON입니다. 원문 도구 진단은 노출하지 않습니다. 실패한 디렉터리를 재사용하거나 후보를 Worker Base Image로 자동 지정하지 마세요.
+
+## 자동 부팅 상태 검사
+
+`build.py` CLI는 생략 Flag 없이 `boot-check/`에서 아래 절차를 수행합니다. 실패하면 Exit 1이며 빌드 후보가 남아도 승인하지 않습니다. [`health.py`](../../infra/images/health.py)는 이미지에 설치되는 Guest 검사, [`qga.py`](../../infra/images/qga.py)는 비공개 Guest Agent 통신입니다.
+
+1. 후보·Recipe·Manifest 기록과 Hash를 다시 확인하고 후보의 독립 사본을 만든 뒤 검사용 qcow2 Overlay를 생성합니다. 원본 후보를 VM의 쓰기 Disk로 사용하지 않습니다.
+2. 새 cloud-init Seed로 **NIC·VNC·TCP 관리 Port 없는 KVM VM**을 시작합니다. 2 vCPU/4 GiB이며 TCG 대체를 허용하지 않습니다. 전용 DMI 표식과 소유한 QEMU PID/UID에 연결된 Unix Socket을 확인합니다. 이 Offline Smoke는 운영 작업 네트워크 격리 검증이 아닙니다.
+3. [QEMU Guest Agent 계약](https://www.qemu.org/docs/master/interop/qemu-ga-ref.html)에 따라 난수·구분자로 오래된 응답을 제거하고 크기·시간을 제한합니다. `guest-exec`, `guest-exec-status`, `guest-shutdown`이 허용되어야 하며 차단된 RPC를 임의로 활성화하지 않습니다.
+4. Guest는 cloud-init 완료, 봉인 기록/Manifest, 초기화된 ID, Builder 잠금/접근 제거, 알려진 자격증명 Cache 부재, 잠금 APT/Wheel/설치 Inventory, Runner Import·배정 전 비활성, Codex/Browser Version, LightDM/Xfce/X Display를 검사합니다. 전체 Secret Scan이나 인증된 Codex 작업 실행은 아닙니다.
+5. 비특권 `kelpie`의 일회성 Profile로 Chromium Headless를 실행해 `data:` 문서의 JavaScript 실행 후 DOM을 확인합니다. Sandbox 우회·외부 사이트·디버깅 Port를 사용하지 않고 Profile을 정리합니다. [DOM Smoke](https://developer.chrome.com/docs/automation-and-testing/headless-cli)는 **화면의 시각 검토·클릭/키보드·Console 입력 소유권·Computer Use Acceptance를 대체하지 않습니다.**
+6. 각 부팅/검사는 300초의 같은 Deadline, 종료는 60초 한도입니다. 종료 RPC에 성공 응답이 없다는 계약에 따라 QEMU Process의 Exit 0을 기다립니다. 실패/Timeout에는 직접 생성한 Process Group만 종료하며 성공 기록을 남기지 않습니다.
+7. 정상 전원 종료 후 같은 Overlay를 다시 시작합니다. 두 Boot ID Hash는 달라야 하고 Machine ID Hash는 같아야 합니다. 원본 ID는 기록하지 않습니다. 이는 두 번의 Cold Boot 검사이지 별도 두 VM 간 ID 격리·실행 중 Reboot·Host 장애 복구 증거가 아닙니다.
+8. 후보 사본의 Hash/크기가 변하지 않았는지 재확인한 뒤 마지막으로 `boot-smoke.json`을 씁니다. 상태는 `boot_smoke_passed_unreleased`, **`release_eligible=false`**이고 두 Guest 보고서·Image/Recipe/검사 도구 Hash를 보존합니다. 서명·SBOM·취약점·실제 GUI·Canary Gate는 별도로 남습니다.
+
+독립 재검사는 `python3 infra/images/boot.py --build-dir /approved/completed-build --output /approved/private/new-probe --execute-on-dedicated-host`를 사용합니다. 실제 승인한 경로로 바꾸고 소유한 `0700` 부모와 새 출력(정규화한 전체 경로 최대 80자)을 지정해야 합니다. 자동/독립 검사 모두 기존 부분 출력·Overlay·Seed를 지우지 않습니다. 원인 조사와 정확한 소유 자원 정리 후 새 경로로 재시도하며 Boot 결과가 없거나 잘렸으면 실패로 취급합니다.
 
 ## 보안·미완료 Gate
 
@@ -87,3 +102,5 @@ python3 infra/images/build.py \
 후속 `7b24b20`의 Guest 설치·봉인과 `ce5a6f5`의 Host/Packer 연결에서 `make test-images` **46개**(약 1.7초)와 `make lint`가 통과했습니다. 실제 별도 프로세스로 Host 실행 거부·환경 필터·실패 정리·Timeout 자식 프로세스 종료를 확인하고, 모의 빌드 명령 순서·각 단계 실패·Key 정리·승격 금지를 검증했습니다. 실제 Packer 1.16.0과 QEMU Plugin 1.1.6으로 **합성 입력의 전체 `packer validate`**도 통과했습니다. `/dev/null`을 Packer 설정으로 지정하면 EOF로 실패하는 것을 직접 발견해 비공개 `{}` JSON 설정으로 수정했습니다. 검증용 입력·임시 키·Plugin 디렉터리는 전용 임시 디렉터리와 함께 정리했으며 VM은 시작하지 않았습니다.
 
 `make test-image-template PACKER=/path/to/packer`는 Format와 **구문만** 검사합니다. 기존 `Go` CI에서 공식 Packer Archive를 캐시하고 매번 고정 SHA-256을 확인한 뒤 실행합니다. Plugin/VM 설치가 없고 새 Job·Matrix·8분 Timeout 증가는 없습니다. 전체 Plugin 설정 검증·실제 Build/Boot를 이 구문 검사로 대체하지 않습니다. 이번 후속 변경의 전체 회귀·최종 SHA CI는 PR 검증 기록을 확인하세요.
+
+후속 `c63be0e`(Guest 검사), `34a16ff`(Guest Agent 통신), `0379e48`(자동 두 차례 부팅 연결)은 `make test-images` **85개 중 84개 통과/1개 Skip**(macOS 약 2.3초), `make lint`, Packer Format/구문 및 합성 입력 전체 설정 검증을 통과했습니다. Skip은 Linux `SO_PEERCRED` PID 검사이며 Linux CI에서 실제 Unix Socket으로 실행합니다. Mac에서도 실제 Unix Socket의 동기화·분할/오래된 응답·중복 Key·크기/시간 제한을 검사했습니다. 두 Boot·Guest 상태·QEMU 종료는 모의 호출 검증이며 실제 VM을 구동하지 않았습니다. 새 Python 의존성·CI Job·VM CI는 추가하지 않았습니다.
