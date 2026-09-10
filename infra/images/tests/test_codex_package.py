@@ -14,27 +14,46 @@ from infra.images import prepare
 
 
 class CodexPackageTests(unittest.TestCase):
+    RUNTIME_FILES = {
+        "bin/codex", "bin/codex-code-mode-host", "codex-path/rg",
+        "codex-resources/bwrap", "codex-resources/zsh/bin/zsh",
+    }
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="kelpie-codex-test-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.destination = self.root / "out"
         self.version = "0.154.0"
-        elf = b"\x7fELF\x02\x01" + b"\x00" * 12 + b"\x3e\x00" + b"synthetic, never executable"
-        self.files = dict.fromkeys(package.BINARIES, elf)
-        self.files["package.json"] = json.dumps({
-            "name": "@openai/codex", "version": self.version + "-linux-x64",
-            "os": ["linux"], "cpu": ["x64"], "license": "Apache-2.0",
+        self.files = self.platform_files("amd64")
+
+    @staticmethod
+    def elf(machine):
+        return (b"\x7fELF\x02\x01" + b"\x00" * 12 + machine.to_bytes(2, "little")
+                + b"synthetic, never executable")
+
+    def platform_files(self, architecture):
+        target, npm_architecture, machine = {
+            "amd64": ("x86_64-unknown-linux-musl", "x64", 62),
+            "arm64": ("aarch64-unknown-linux-musl", "arm64", 183),
+        }[architecture]
+        prefix = package.runtime_prefix(architecture)
+        files = dict.fromkeys({prefix + name for name in self.RUNTIME_FILES}, self.elf(machine))
+        files["package.json"] = json.dumps({
+            "name": "@openai/codex", "version": f"{self.version}-linux-{npm_architecture}",
+            "os": ["linux"], "cpu": [npm_architecture], "license": "Apache-2.0",
         }).encode()
-        self.files[package.PREFIX + "codex-package.json"] = json.dumps({
-            "layoutVersion": 1, "version": self.version, "target": package.TARGET,
+        files[prefix + "codex-package.json"] = json.dumps({
+            "layoutVersion": 1, "version": self.version, "target": target,
             "variant": "codex", "entrypoint": "bin/codex",
             "resourcesDir": "codex-resources", "pathDir": "codex-path",
         }).encode()
+        return files
 
-    def archive(self, changes=None, extra=(), mode=None):
+    def archive(self, changes=None, extra=(), mode=None, architecture="amd64"):
         path = self.root / "package.tgz"
-        files = self.files | (changes or {})
+        files = self.platform_files(architecture) | (changes or {})
+        binaries = {package.runtime_prefix(architecture) + name for name in self.RUNTIME_FILES}
         with tarfile.open(path, "w:gz") as archive:
             for name, data in files.items():
                 if data is None:
@@ -42,11 +61,73 @@ class CodexPackageTests(unittest.TestCase):
                 info = tarfile.TarInfo("package/" + name)
                 info.size = len(data)
                 info.mode = (mode if mode is not None
-                             else (0o755 if name in package.BINARIES else 0o644))
+                             else (0o755 if name in binaries else 0o644))
                 archive.addfile(info, io.BytesIO(data))
             for info, data in extra:
                 archive.addfile(info, io.BytesIO(data))
         return path
+
+    def test_supported_platform_archives_use_exact_runtime_contracts(self):
+        self.assertEqual(package.TARGET, "x86_64-unknown-linux-musl")
+        self.assertEqual(package.PREFIX, "vendor/x86_64-unknown-linux-musl/")
+        self.assertEqual(package.runtime_prefix(), package.PREFIX)
+        self.assertEqual(package.runtime_prefix("arm64"),
+                         "vendor/aarch64-unknown-linux-musl/")
+        self.assertEqual(package.BINARIES,
+                         {package.PREFIX + name for name in self.RUNTIME_FILES})
+        self.assertEqual(package.METADATA,
+                         {"package.json", package.PREFIX + "codex-package.json"})
+        for architecture in ("amd64", "arm64"):
+            with self.subTest(architecture=architecture):
+                destination = self.root / f"out-{architecture}"
+                files = self.platform_files(architecture)
+                records = package.extract(
+                    self.archive(architecture=architecture), destination,
+                    self.version, architecture,
+                )
+                self.assertEqual(set(records), set(files))
+                package.verify_installed(destination, self.version, records, architecture)
+
+    def test_cross_architecture_metadata_is_rejected_before_writes(self):
+        for architecture, other in (("amd64", "arm64"), ("arm64", "amd64")):
+            prefix = package.runtime_prefix(architecture)
+            other_prefix = package.runtime_prefix(other)
+            other_files = self.platform_files(other)
+            for name, value in (
+                ("package.json", other_files["package.json"]),
+                (prefix + "codex-package.json", other_files[other_prefix + "codex-package.json"]),
+            ):
+                destination = self.root / f"cross-{architecture}-{Path(name).name}"
+                with self.subTest(architecture=architecture, name=name), \
+                        self.assertRaises(prepare.InputError):
+                    package.extract(
+                        self.archive({name: value}, architecture=architecture),
+                        destination, self.version, architecture,
+                    )
+                self.assertFalse(destination.exists())
+
+    def test_every_runtime_binary_rejects_the_other_elf_machine_before_writes(self):
+        for architecture, other_machine in (("amd64", 183), ("arm64", 62)):
+            prefix = package.runtime_prefix(architecture)
+            for index, relative_name in enumerate(sorted(self.RUNTIME_FILES)):
+                destination = self.root / f"wrong-elf-{architecture}-{index}"
+                name = prefix + relative_name
+                with self.subTest(architecture=architecture, name=name), \
+                        self.assertRaises(prepare.InputError):
+                    package.extract(
+                        self.archive({name: self.elf(other_machine)}, architecture=architecture),
+                        destination, self.version, architecture,
+                    )
+                self.assertFalse(destination.exists())
+
+    def test_unknown_architecture_is_rejected_before_filesystem_access(self):
+        with self.assertRaisesRegex(prepare.InputError, "unsupported Codex architecture"):
+            package.runtime_prefix("ppc64le")
+        with self.assertRaisesRegex(prepare.InputError, "unsupported Codex architecture"):
+            package.extract(self.root / "missing.tgz", self.destination, self.version, "ppc64le")
+        self.assertFalse(self.destination.exists())
+        with self.assertRaisesRegex(prepare.InputError, "unsupported Codex architecture"):
+            package.verify_installed(self.root / "missing", self.version, {}, "ppc64le")
 
     def test_keeps_every_runtime_resource_and_verifies_installed_inventory(self):
         records = package.extract(self.archive(mode=0o6755), self.destination, self.version)
