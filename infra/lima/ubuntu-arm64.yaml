@@ -1,0 +1,59 @@
+# Dedicated development host, not a released Worker image or a production network.
+minimumLimaVersion: 2.2.0
+vmType: vz
+arch: aarch64
+nestedVirtualization: true
+cpus: 4
+memory: 8GiB
+disk: 40GiB
+base: []
+images:
+  - location: https://cloud-images.ubuntu.com/releases/noble/release-20260826/ubuntu-24.04-server-cloudimg-arm64.img
+    arch: aarch64
+    digest: sha256:afa139bac6f2629c1e1f2f8f34215f3a9ad9779801bcb945521ba1a45016743f
+mounts: []
+additionalDisks: []
+networks: []
+portForwards:
+  - guestIP: 0.0.0.0
+    guestIPMustBeZero: false
+    guestPortRange: [1, 65535]
+    proto: any
+    ignore: true
+ssh:
+  localPort: 0
+  overVsock: true
+  loadDotSSHPubKeys: false
+  forwardAgent: false
+  forwardX11: false
+  forwardX11Trusted: false
+containerd:
+  system: false
+  user: false
+vmOpts:
+  vz:
+    rosetta:
+      enabled: false
+      binfmt: false
+user:
+  name: kelpie
+  comment: Kelpie isolated development host
+  uid: 1000
+  home: /home/kelpie
+  shell: /bin/bash
+  passwordlessSudo: true
+upgradePackages: false
+propagateProxyEnv: false
+env: {}
+copyToHost: []
+provision: []
+probes:
+  - mode: readiness
+    description: ARM64 Linux with nested KVM
+    script: |
+      #!/bin/sh
+      set -eu
+      test "$(uname -s)" = Linux
+      test "$(uname -m)" = aarch64
+      test -c /dev/kvm
+    hint: Nested KVM is required; do not replace it with TCG emulation.
