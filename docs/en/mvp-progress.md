@@ -4,7 +4,7 @@
 
 ## Baseline and percentage
 
-Code baseline: `main` at `8cd09123cb3a2031cf18331cfe2ec74d7de1919d` (merged [PR #53](https://github.com/haesookimDev/dev-agent/pull/53)). This snapshot compares documentation with current code, tests and actual runtime evidence. Draft branches and plans do not count as complete.
+Product baseline: `main` at `c231d6f0bf73d58505c160870a1919a07950f63c` (merged [PR #56](https://github.com/haesookimDev/dev-agent/pull/56)). Local development-host verification is recorded separately below, based on template `055a61e`, actual boot probe `a7413dd` and CI integration `847e0ce` on `feat/macos-kvm-lab`. This snapshot compares documentation with current code, tests and actual runtime evidence. Draft branches and plans do not count as complete.
 
 Use the seven numbered steps in [the next release](roadmap-summary.md) as a fixed denominator. **Verified complete: 1/7 = 14.3%**; partial: 3/7; incomplete: 3/7. Partial implementation receives no arbitrary fractional credit. This measures verified release stages, not code volume, effort spent or remaining schedule. Current evidence does not support a precise engineering-effort completion percentage.
 
@@ -33,9 +33,13 @@ Do not double-count this foundation toward the seven product release stages. The
 
 ## Next order and external dependencies
 
+Following the user's Mac-local development approval on 2026-09-10, **an actual alternative to the missing separate Linux machine is verified**. The [Mac KVM lab](macos-kvm-lab.md) ran M4 Pro/macOS 15.7.3 → Lima 2.2.0/Ubuntu ARM64 → real KVM Linux boot/clean poweroff (5.790 seconds), confirmed active KVM, cleaned timed-out processes and preserved existing evidence. Host verification does not complete Golden Image/work-VM acceptance, so the numerator remains 1/7. This adds ARM64 local testing; it does not waive existing amd64 product verification.
+
+Local full verification: `make test` with a dedicated PostgreSQL database passed API 1270/1 skip (systemd parser runs on Linux CI), Runner 45, Web 125, Go and Lab 18. `make lint`, identical KO/EN command blocks, shell syntax and local document links also passed. Lab checks reuse the Python job with no additional VM build or CI job. Record and verify exact final-head CI, review and merge status in the corresponding PR.
+
 1. **Prioritize the P1 execution path:** reproducible golden image → persistent VM lifecycle/isolation → enforced preview/console boundaries → actual two-work/failure-recovery acceptance. Feature PRs lacking necessary real-environment verification remain Draft.
 2. Complete remaining P0 secret/observation/retention/administrative controls in connection with that execution path. Repeated easily tested peripheral improvements do not substitute for P1 completion.
-3. An approved dedicated Linux/KVM test host and necessary test network/image/TLS access conditions have not been supplied. Mac Mock/command fixtures do not prove host acceptance. Do not discover and use ambient production hosts or credentials without approval.
+3. An approved ARM64 Linux/KVM host now exists inside the Mac. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55), Head `f96635c`, provides amd64 input-integrity, builder and guest/boot-check paths but has not passed actual Golden Image acceptance. Extend ARM64 inputs, firmware, browser and all producer/consumer contracts together, then verify real desktop boot. Per-work networking, TLS/console boundaries and concurrent two-work acceptance still remain. Do not discover or use ambient production hosts or credentials without approval.
 4. Preview work in [Draft PR #21](https://github.com/haesookimDev/dev-agent/pull/21) is not in `main`. CI on its old head does not prove integration with current migration/authorization contracts. Do not count it complete or force-merge before actual TLS/browser/console verification.
 
 ## Updating this record

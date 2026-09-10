@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Mac-local KVM development
+
+Verify actual nested KVM on a [dedicated ARM64 Lima host](macos-kvm-lab.md). `make test-lab` checks the template, failure boundaries and QMP protocol in existing `Python` CI/`make test`. Prove real Linux boot/poweroff separately with `kvm_smoke.py`; synthetic tests or Lima's `READY` are not substitutes. No new CI jobs, VM builds or longer timeouts are added. Never transfer this trusted lab administrator's privileges to product work-VM users.
+
 ## Migration atomicity regression
 
 `apps/api/tests/test_migration_atomicity.py` verifies that a safety-gate failure during a multi-revision SQLite downgrade retains the entire schema. Actual Alembic CLI/API coverage also checks all rows and schema, existing login and artifact access (200), cross-organization denial (404), and `/readyz`. It runs in existing `make test-api` and required `Python` CI without a new job, dependency or timeout. Check the migration runner with `.venv/bin/python -m ruff check apps/api/migrations/env.py` too. This verification uses only isolated synthetic data and does not authorize dangerous downgrades of production databases.
