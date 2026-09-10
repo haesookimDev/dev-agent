@@ -291,12 +291,17 @@ class PrepareTests(unittest.TestCase):
     def test_real_source_rewrite_during_copy_is_rejected(self):
         source = self.assets / self.manifest["base_image"]["file"]
         content = source.read_bytes()
+        original_stat = source.stat()
         digest = hashlib.sha256()
 
         class MutatingDigest:
             def update(self, chunk):
                 digest.update(chunk)
                 source.write_bytes(b"x" * len(content))
+                # ext4 can coalesce successive writes into one timestamp tick.
+                # Explicitly change fixture metadata to exercise the fingerprint guard.
+                os.utime(source, ns=(original_stat.st_atime_ns,
+                                     original_stat.st_mtime_ns + 1_000_000_000))
 
             def hexdigest(self):
                 return digest.hexdigest()
@@ -307,6 +312,7 @@ class PrepareTests(unittest.TestCase):
             with self.assertRaisesRegex(prepare.InputError, "artifact changed during copy"):
                 prepare.prepare(self.manifest, self.assets, self.output)
         self.assertEqual(source.read_bytes(), b"x" * len(content))
+        self.assertEqual(digest.hexdigest(), self.manifest["base_image"]["sha256"])
         self.assert_incomplete()
 
     def test_actual_cli_refuses_to_reuse_partial_bundle(self):
