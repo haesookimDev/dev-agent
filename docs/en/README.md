@@ -7,3 +7,4 @@
 - [Security invariants](security.md)
 - [Next development summary](roadmap-summary.md)
 - [Detailed development plan](roadmap-detailed.md)
+- [MVP progress and remaining completion criteria](mvp-progress.md)

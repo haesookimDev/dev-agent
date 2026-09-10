@@ -7,3 +7,4 @@
 - [보안 불변 조건](security.md)
 - [다음 개발 요약](roadmap-summary.md)
 - [다음 개발 상세 계획](roadmap-detailed.md)
+- [MVP 진행률과 남은 완료 기준](mvp-progress.md)
