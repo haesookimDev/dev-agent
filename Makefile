@@ -1,7 +1,8 @@
-.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web test-monitoring test-images lint
+.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web test-monitoring test-images test-image-template lint
 
 PYTHON ?= .venv/bin/python
 PROMTOOL ?= promtool
+PACKER ?= packer
 
 dev:
 	docker compose --profile demo up --build
@@ -28,6 +29,10 @@ test-web:
 
 test-images:
 	$(PYTHON) -m unittest discover -s infra/images/tests -v
+
+test-image-template:
+	CHECKPOINT_DISABLE=1 $(PACKER) fmt -check infra/images/ubuntu.pkr.hcl
+	CHECKPOINT_DISABLE=1 $(PACKER) validate -syntax-only infra/images/ubuntu.pkr.hcl
 
 test-monitoring:
 	$(PROMTOOL) check config --lint-fatal infra/monitoring/prometheus.example.yml
