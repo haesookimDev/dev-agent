@@ -36,6 +36,8 @@ The [ordinary-artifact scheduled Worker](scheduled-retention.md) adds bounded pa
 
 Verified SEC-001's lease/explicit credential-field redaction at [Runner egress](runner-event-redaction.md) and [API event ingress](api-event-redaction.md) with actual commands/direct HTTP/SSE/database/browser use (2026-09-09). General secret scanning and comprehensive coverage of every API/artifact/crash-dump/cloud-init path remain.
 
+[Private Worker diagnostics](worker-private-diagnostics.md) restrict HTTP details, command output and arbitrary executor errors in logs/events (2026-09-10). Actual Worker processes, API storage/release and both-language rendering were verified; this does not complete real VM acceptance or general secret scanning.
+
 Verified [actual `from`/`to` retention](transition-metadata.md) in common transition history and [denial of user-owned state transitions through Worker leases](worker-transition-authority.md). The latter separates user feedback/budget/PR approvals from approved Mock completion while central delivery retains existing control-plane authority. Arbitrary-event provenance and physical execution/time-budget enforcement in an untrusted VM remain.
 
 GitLab, advanced routing, and autonomous issue discovery should follow only after this security and execution baseline is proven.

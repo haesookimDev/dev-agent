@@ -42,6 +42,8 @@ Done when cross-organization access, forged headers, expired tokens, and viewer 
 
 ### SEC-001 · Secret provider and credential rotation — M
 
+Verified [private Worker diagnostics](worker-private-diagnostics.md) for HTTP details, command output and arbitrary executor errors with actual processes/API/browser use (2026-09-10). VM/cloud-init-owned logs and comprehensive secret scanning remain.
+
 Partial progress (2026-09-09): added credential redaction at [Runner egress](runner-event-redaction.md) and [API event ingress](api-event-redaction.md), with actual storage/browser verification. It covers the known plaintext lease and explicit fields; comprehensive coverage of every API, general secret scanning and complete artifact/crash-dump/cloud-init non-disclosure remain.
 
 Scope:

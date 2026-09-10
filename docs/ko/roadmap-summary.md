@@ -36,6 +36,8 @@ P0 OPS-001에는 [PostgreSQL 백업·새 DB 복원의 데이터·권한·감사 
 
 SEC-001의 [Runner 전송](runner-event-redaction.md)과 [API 이벤트 수신](api-event-redaction.md) 경계의 임대·명시적 자격증명 필드 가림을 실제 명령·직접 HTTP·SSE·DB·브라우저로 검증했습니다(2026-09-09). 범용 Secret Scan, 모든 API·Artifact·Crash Dump·cloud-init 전체 검증은 여전히 남아 있습니다.
 
+[Worker 오류 진단](worker-private-diagnostics.md)은 HTTP 원문·명령 출력·임의 실행 오류의 로그/이벤트 노출을 제한합니다(2026-09-10). 실제 Worker 프로세스와 API 저장·임대 해제·양 언어 표시를 검증했으며 실제 VM·범용 Secret Scan 완료는 아닙니다.
+
 공통 상태 전환이 생성하는 이력의 [실제 `from`·`to` 보존](transition-metadata.md)과 [Worker 임대의 사용자 승인 상태 전환 차단](worker-transition-authority.md)을 검증했습니다. 후자는 사용자 피드백·예산/PR 승인과 승인된 Mock 완료를 구분하며 중앙 전달은 기존 Control Plane 권한을 유지합니다. 임의 이벤트의 출처 증명과 신뢰할 수 없는 VM의 실제 실행·시간 예산 강제는 남아 있습니다.
 
 GitLab, 고급 Routing, 자율 이슈 탐색은 이 보안·실행 기준이 검증된 이후에 진행해야 합니다.
