@@ -132,7 +132,7 @@ def read_manifest(path: Path) -> dict:
         data = stream.read(MAX_MANIFEST_BYTES + 1)
     require(len(data) <= MAX_MANIFEST_BYTES, "manifest size limit exceeded")
     try:
-        value = json.loads(data, object_pairs_hook=unique_object)
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=unique_object)
     except (ValueError, UnicodeError, RecursionError):
         raise InputError("invalid manifest JSON") from None
     return validate_manifest(value)

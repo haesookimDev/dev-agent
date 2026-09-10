@@ -147,6 +147,13 @@ class PrepareTests(unittest.TestCase):
                 with self.assertRaises(prepare.InputError):
                     prepare.read_manifest(self.manifest_path)
 
+    def test_manifest_requires_utf8_without_implicit_utf16_or_utf32(self):
+        for encoding in ("utf-16", "utf-32"):
+            with self.subTest(encoding=encoding):
+                self.manifest_path.write_bytes(json.dumps(self.manifest).encode(encoding))
+                with self.assertRaisesRegex(prepare.InputError, "invalid manifest JSON"):
+                    prepare.read_manifest(self.manifest_path)
+
     def test_rejects_tampering_even_when_size_matches(self):
         self.manifest["browser"]["sha256"] = "f" * 64
         result = self.invoke()
