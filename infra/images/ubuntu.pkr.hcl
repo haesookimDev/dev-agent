@@ -59,7 +59,12 @@ source "qemu" "ubuntu" {
     ["-device", "virtio-serial"],
     ["-chardev", "socket,path=${var.run_dir}/qga.sock,server=on,wait=off,id=qga0"],
     ["-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"],
-  ], local.arm64 ? [["-device", "virtio-gpu-pci"]] : [])
+    ], local.arm64 ? [
+    ["-device", "virtio-gpu-pci"],
+    # qemuargs replaces all default -device values, including the seed CD controller.
+    ["-device", "virtio-scsi-pci,id=seed-scsi"],
+    ["-device", "scsi-cd,bus=seed-scsi.0,drive=cdrom0"],
+  ] : [])
 
   cd_label = "cidata"
   cd_content = {

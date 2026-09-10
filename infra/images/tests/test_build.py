@@ -2,6 +2,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -15,6 +16,17 @@ from infra.images import build, guest, prepare
 
 
 class BuildTests(unittest.TestCase):
+    def test_arm_template_preserves_seed_cd_with_explicit_device_overrides(self):
+        template = (build.ROOT / "infra/images/ubuntu.pkr.hcl").read_text()
+        # Packer 1.1.6 replaces the whole default -device list; it only restores NICs.
+        arm_branch = template.split("], local.arm64 ? [", 1)[1].split("] : [])", 1)[0]
+        devices = re.findall(r'\["-device", "([^"]+)"\]', arm_branch)
+        self.assertEqual(devices, [
+            "virtio-gpu-pci", "virtio-scsi-pci,id=seed-scsi",
+            "scsi-cd,bus=seed-scsi.0,drive=cdrom0",
+        ])
+        self.assertIn('cdrom_interface  = local.arm64 ? "virtio-scsi" : "virtio"', template)
+
     def setUp(self):
         machine = patch.object(build.platform, "machine", return_value="x86_64")
         machine.start()
