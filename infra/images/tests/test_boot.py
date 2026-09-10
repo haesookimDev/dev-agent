@@ -137,6 +137,84 @@ class BootTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(prepare.InputError):
                 boot.validate_report(self.report | change, self.manifest, self.digest)
 
+    def test_arm_probe_uses_private_uefi_virtio_gpu_scsi_and_only_kvm(self):
+        args = boot.qemu_arguments(self.output, self.output / "qga.sock", "arm64")
+        self.assertEqual(args[0], "qemu-system-aarch64")
+        self.assertIn("virt,accel=kvm,gic-version=host", args)
+        self.assertIn("virtio-gpu-pci", args)
+        self.assertIn("scsi-cd,drive=seed,bus=scsi0.0", args)
+        self.assertIn(f"file={self.output / 'firmware/AAVMF_CODE.no-secboot.fd'},"
+                      "format=raw,if=pflash,unit=0,readonly=on", args)
+        self.assertIn(f"file={self.output / 'firmware/AAVMF_VARS.fd'},"
+                      "format=raw,if=pflash,unit=1", args)
+        self.assertEqual(args[args.index("-nic") + 1], "none")
+        self.assertIn(f"type=1,product={health.PROBE_PRODUCT}", args)
+        for value in ("-vga", "-parallel", "-netdev", "-vnc", "-daemonize"):
+            self.assertNotIn(value, args)
+        self.assertNotIn("tcg", " ".join(args))
+        self.assertNotIn("/usr/share/AAVMF", " ".join(args))
+        with self.assertRaises(prepare.InputError):
+            boot.qemu_arguments(self.output, self.output / "qga.sock", "riscv64")
+
+    def arm_source(self):
+        manifest_path = self.source / "inputs/manifest.json"
+        manifest = build.read_json(manifest_path) | {"architecture": "arm64"}
+        manifest_path.write_text(json.dumps(manifest))
+        directory = self.source / "firmware"
+        directory.mkdir()
+        records = {}
+        for name in build.ARM_FIRMWARE:
+            path = directory / name
+            path.write_bytes(f"synthetic firmware: {name}".encode())
+            records[name] = build.measure(path)
+        recipe = build.read_json(self.source / "recipe.json")
+        recipe.update(firmware=records, manifest_sha256=build.measure(manifest_path)["sha256"])
+        (self.source / "recipe.json").write_text(json.dumps(recipe))
+        self.receipt["recipe_sha256"] = build.measure(self.source / "recipe.json")["sha256"]
+        (self.source / "candidate.json").write_text(json.dumps(self.receipt))
+        return records
+
+    def test_arm_stage_copies_verified_blank_firmware_without_reusing_builder_nvram(self):
+        records = self.arm_source()
+        with patch.object(build, "ARM_FIRMWARE", records):
+            _, manifest = boot.stage(self.source, self.output)
+        self.assertEqual(manifest["architecture"], "arm64")
+        for name, record in records.items():
+            source, target = self.source / "firmware" / name, self.output / "firmware" / name
+            self.assertEqual(build.measure(target), record)
+            self.assertNotEqual(source.stat().st_ino, target.stat().st_ino)
+        (self.output / "firmware/AAVMF_VARS.fd").write_bytes(b"first boot private state")
+        self.assertEqual(build.measure(self.source / "firmware/AAVMF_VARS.fd"),
+                         records["AAVMF_VARS.fd"])
+
+    def test_arm_stage_rejects_tampered_extra_or_unpinned_firmware_before_output(self):
+        records = self.arm_source()
+        directory = self.source / "firmware"
+        with self.assertRaisesRegex(prepare.InputError, "firmware differs from pin"):
+            boot.stage(self.source, self.output)
+        self.assertFalse(self.output.exists())
+        (directory / "unexpected").write_bytes(b"extra firmware")
+        with patch.object(build, "ARM_FIRMWARE", records), \
+                self.assertRaisesRegex(prepare.InputError, "unexpected firmware"):
+            boot.stage(self.source, self.output)
+        self.assertFalse(self.output.exists())
+        (directory / "unexpected").unlink()
+        (directory / "AAVMF_VARS.fd").write_bytes(b"changed vars")
+        with patch.object(build, "ARM_FIRMWARE", records), \
+                self.assertRaisesRegex(prepare.InputError, "firmware differs from pin"):
+            boot.stage(self.source, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_mismatched_probe_architecture_never_stages_or_runs_vm(self):
+        with patch.object(build, "guard_host"), \
+                patch.object(build.platform, "machine", return_value="aarch64"), \
+                patch.object(boot, "stage") as stage, patch.object(boot, "boot_once") as run:
+            with self.assertRaisesRegex(prepare.InputError, "native KVM host"):
+                boot.probe(self.source, self.output, approved=True)
+        stage.assert_not_called()
+        run.assert_not_called()
+        self.assertFalse(self.output.exists())
+
     def test_qga_exec_waits_for_readiness_without_resetting_deadline(self):
         agent = Mock()
         agent.call.side_effect = [self.capabilities(), {"pid": 7},

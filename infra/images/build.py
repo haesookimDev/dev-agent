@@ -23,6 +23,18 @@ PACKER_VERSION = "1.16.0"
 TOOL_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 ROOT = Path(__file__).resolve().parents[2]
 MAX_DISK_BYTES = 40 * 1024**3
+# Ubuntu 24.04 qemu-efi-aarch64 2024.02-2ubuntu0.9. Never use mutable host NVRAM.
+FIRMWARE_DIRECTORY = Path("/usr/share/AAVMF")
+ARM_FIRMWARE = {
+    "AAVMF_CODE.no-secboot.fd": {
+        "file": "AAVMF_CODE.no-secboot.fd", "size_bytes": 67108864,
+        "sha256": "4a4cb7f6d8106bb2a7dd8c763fab14b1810152136fc4304e5b728f0043e84f12",
+    },
+    "AAVMF_VARS.fd": {
+        "file": "AAVMF_VARS.fd", "size_bytes": 67108864,
+        "sha256": "b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f",
+    },
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -31,12 +43,44 @@ def require(condition: bool, message: str) -> None:
 
 def guard_host(approved: bool) -> None:
     require(approved, "explicit dedicated build host acknowledgement is required")
-    require(platform.system() == "Linux" and platform.machine() == "x86_64"
-            and os.geteuid() != 0, "builder requires a non-root Linux amd64 host")
+    machine = platform.machine()
+    require(platform.system() == "Linux" and machine in {"x86_64", "aarch64"}
+            and os.geteuid() != 0, "builder requires a non-root Linux amd64 or arm64 host")
     require(Path("/dev/kvm").is_char_device() and os.access("/dev/kvm", os.R_OK | os.W_OK),
             "builder requires accessible KVM; emulation fallback is forbidden")
-    for tool in ("qemu-system-x86_64", "qemu-img", "ssh-keygen", "xorriso"):
+    for tool in (f"qemu-system-{machine}", "qemu-img", "ssh-keygen", "xorriso"):
         require(shutil.which(tool, path=TOOL_PATH) is not None, "required host tool is missing")
+
+
+def require_native(architecture: str) -> None:
+    require(platform.machine() == prepare.native_machine(architecture),
+            "image architecture differs from native KVM host")
+
+
+def firmware_records(architecture: str) -> dict:
+    prepare.native_machine(architecture)
+    return ARM_FIRMWARE if architecture == "arm64" else {}
+
+
+def copy_firmware(records: dict, source: Path, destination: Path) -> None:
+    if not records:
+        return
+    source_fd = os.open(source, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        destination.mkdir(mode=0o700)
+        for name, item in records.items():
+            prepare.copy_verified(item, source_fd, destination / name)
+    finally:
+        os.close(source_fd)
+
+
+def verify_firmware(directory: Path, records: dict) -> None:
+    if records:
+        require(not directory.is_symlink() and directory.is_dir()
+                and {path.name for path in directory.iterdir()} == set(records),
+                "unexpected firmware directory contents")
+        for name, item in records.items():
+            require(measure(directory / name) == item, "firmware differs from pin")
 
 
 def read_json(path: Path) -> dict:
@@ -93,6 +137,8 @@ def stage(bundle: Path, output: Path) -> dict:
             "build path must be a short absolute safe path")
     output.mkdir(mode=0o700)  # Exclusive; never retry in a partial or existing run.
     receipt = prepare.prepare(manifest, bundle / "files", output / "inputs")
+    firmware = firmware_records(manifest["architecture"])
+    copy_firmware(firmware, FIRMWARE_DIRECTORY, output / "firmware")
     tooling = output / "tooling"
     tooling.mkdir(mode=0o700)
     recipes = [ROOT / "infra/images" / name for name in
@@ -112,7 +158,7 @@ def stage(bundle: Path, output: Path) -> dict:
     prepare.write_json(output / "recipe.json", {
         "schema_version": 1, "packer_version": PACKER_VERSION, "qemu_plugin_version": "1.1.6",
         "tooling_sha256": hashes, "manifest_sha256": receipt["manifest_sha256"],
-        "release_eligible": False,
+        "firmware": firmware, "release_eligible": False,
     })
     for name in ("cache", "config", "plugins", "tmp"):
         (output / name).mkdir(mode=0o700)
@@ -196,12 +242,14 @@ def inspect_disk(path: Path, output: Path) -> dict:
 
 def build(bundle: Path, output: Path, packer: Path, *, approved=False) -> dict:
     guard_host(approved)  # Before staging, subprocesses or VM creation.
+    require_native(prepare.read_manifest(bundle / "manifest.json")["architecture"])
     require(packer.is_absolute() and packer.is_file() and os.access(packer, os.X_OK),
             "an operator-verified absolute Packer executable is required")
     output = output.parent.resolve(strict=True) / output.name
     require(len(str(output / "boot-check")) <= 80,
             "build path must leave room for the automatic boot probe")
     manifest = stage(bundle, output)
+    require_native(manifest["architecture"])
     key = output / "build_key"
     try:
         version = command([str(packer), "version"], output, timeout=10, capture=True)
@@ -217,6 +265,7 @@ def build(bundle: Path, output: Path, packer: Path, *, approved=False) -> dict:
                 output, timeout=3600)
         candidate = output / "image/kelpie.qcow2"
         inspect_disk(candidate, output)
+        verify_firmware(output / "firmware", firmware_records(manifest["architecture"]))
         result = {
             "schema_version": 1, "status": "image_built_unverified", "release_eligible": False,
             "image_version": manifest["image_version"], "image": measure(candidate),

@@ -16,11 +16,13 @@ variable "run_dir" {
 locals {
   manifest = jsondecode(file("${var.run_dir}/inputs/manifest.json"))
   payloads = concat([local.manifest.codex, local.manifest.browser], local.manifest.runner_wheels)
+  arm64    = local.manifest.architecture == "arm64"
 }
 
 source "qemu" "ubuntu" {
   accelerator      = "kvm"
-  machine_type     = "q35"
+  machine_type     = local.arm64 ? "virt,gic-version=host" : "q35"
+  qemu_binary      = local.arm64 ? "qemu-system-aarch64" : "qemu-system-x86_64"
   cpu_model        = "host"
   cpus             = 2
   memory           = 4096
@@ -36,6 +38,12 @@ source "qemu" "ubuntu" {
   vm_name          = "kelpie.qcow2"
   headless         = true
   vnc_bind_address = "127.0.0.1"
+  cdrom_interface  = local.arm64 ? "virtio-scsi" : "virtio"
+
+  efi_boot          = local.arm64
+  efi_firmware_code = local.arm64 ? "${var.run_dir}/firmware/AAVMF_CODE.no-secboot.fd" : ""
+  efi_firmware_vars = local.arm64 ? "${var.run_dir}/firmware/AAVMF_VARS.fd" : ""
+  efi_drop_efivars  = local.arm64
 
   ssh_username                 = "kelpie-builder"
   ssh_private_key_file         = "${var.run_dir}/build_key"
@@ -44,14 +52,14 @@ source "qemu" "ubuntu" {
   shutdown_command             = "sudo -n python3 /tmp/kelpie-image/tooling/guest.py seal"
   shutdown_timeout             = "5m"
 
-  qemuargs = [
+  qemuargs = concat([
     ["-smbios", "type=1,product=KelpieGoldenImageBuild"],
     # The plugin default hostfwd binds all interfaces; override it explicitly.
     ["-netdev", "user,id=user.0,hostfwd=tcp:127.0.0.1:{{ .SSHHostPort }}-:22"],
     ["-device", "virtio-serial"],
     ["-chardev", "socket,path=${var.run_dir}/qga.sock,server=on,wait=off,id=qga0"],
     ["-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"],
-  ]
+  ], local.arm64 ? [["-device", "virtio-gpu-pci"]] : [])
 
   cd_label = "cidata"
   cd_content = {

@@ -55,12 +55,16 @@ def stage(source: Path, output: Path) -> tuple[dict, dict]:
     require(recipe.get("manifest_sha256") == manifest_digest
             and receipt["image_version"] == manifest["image_version"],
             "candidate manifest mismatch")
+    firmware = build.firmware_records(manifest["architecture"])
+    require(recipe.get("firmware", {}) == firmware, "candidate firmware differs from pin")
+    build.verify_firmware(source / "firmware", firmware)
     private_directory(output.parent)
     require(re.fullmatch(r"/[a-zA-Z0-9/_.-]+", str(output)) is not None
             and output.name not in {"", ".", ".."} and len(str(output)) <= 80,
             "probe path must be a short absolute safe path")
     output.mkdir(mode=0o700)
     (output / "tmp").mkdir(mode=0o700)
+    build.copy_firmware(firmware, source / "firmware", output / "firmware")
     source_fd = os.open(source / "image", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         prepare.copy_verified(image, source_fd, output / "candidate.qcow2")
@@ -98,18 +102,33 @@ def prepare_vm(output: Path) -> None:
                    str(seed / "meta-data"), str(seed / "network-config")], output, timeout=30)
 
 
-def qemu_arguments(output: Path, socket_path: Path) -> list[str]:
-    return [
-        "qemu-system-x86_64", "-machine", "q35,accel=kvm", "-cpu", "host",
-        "-m", "4096", "-smp", "2", "-display", "none", "-vga", "std",
-        "-serial", "none", "-parallel", "none", "-monitor", "none", "-nic", "none",
+def qemu_arguments(output: Path, socket_path: Path, architecture: str = "amd64") -> list[str]:
+    machine = prepare.native_machine(architecture)
+    arm = architecture == "arm64"
+    args = [
+        f"qemu-system-{machine}", "-machine",
+        "virt,accel=kvm,gic-version=host" if arm else "q35,accel=kvm", "-cpu", "host",
+        "-m", "4096", "-smp", "2", "-display", "none",
+        "-serial", "none", "-monitor", "none", "-nic", "none",
         "-no-reboot", "-smbios", f"type=1,product={health.PROBE_PRODUCT}",
         "-drive", f"file={output / 'probe.qcow2'},format=qcow2,if=virtio,cache=none",
-        "-drive", f"file={output / 'seed.iso'},format=raw,media=cdrom,readonly=on",
         "-device", "virtio-serial", "-chardev",
         f"socket,path={socket_path},server=on,wait=off,id=qga0",
         "-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0",
     ]
+    if arm:
+        args += [
+            "-device", "virtio-gpu-pci", "-device", "virtio-scsi-pci,id=scsi0",
+            "-drive", f"file={output / 'seed.iso'},format=raw,if=none,id=seed,readonly=on",
+            "-device", "scsi-cd,drive=seed,bus=scsi0.0",
+            "-drive", f"file={output / 'firmware/AAVMF_CODE.no-secboot.fd'},"
+                      "format=raw,if=pflash,unit=0,readonly=on",
+            "-drive", f"file={output / 'firmware/AAVMF_VARS.fd'},format=raw,if=pflash,unit=1",
+        ]
+    else:
+        args += ["-vga", "std", "-parallel", "none", "-drive",
+                 f"file={output / 'seed.iso'},format=raw,media=cdrom,readonly=on"]
+    return args
 
 
 def wait_agent(path: Path, process, deadline: float) -> qga.GuestAgent:
@@ -182,7 +201,7 @@ def boot_once(output: Path, number: int, manifest: dict, digest: str) -> dict:
     run = output / f"boot-{number}"
     run.mkdir(mode=0o700)
     socket_path = run / "qga.sock"
-    with subprocess.Popen(qemu_arguments(output, socket_path), cwd=output,
+    with subprocess.Popen(qemu_arguments(output, socket_path, manifest["architecture"]), cwd=output,
                           env=build.environment(output), stdin=subprocess.DEVNULL,
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                           start_new_session=True) as process:
@@ -201,8 +220,10 @@ def boot_once(output: Path, number: int, manifest: dict, digest: str) -> dict:
 
 def probe(source: Path, output: Path, *, approved=False) -> dict:
     build.guard_host(approved)
+    build.require_native(prepare.read_manifest(source / "inputs/manifest.json")["architecture"])
     output = output.parent.resolve(strict=True) / output.name
     receipt, manifest = stage(source, output)
+    build.require_native(manifest["architecture"])
     prepare_vm(output)
     digest = build.measure(output / "manifest.json")["sha256"]
     reports = [boot_once(output, index, manifest, digest) for index in range(2)]

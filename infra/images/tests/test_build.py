@@ -16,6 +16,9 @@ from infra.images import build, guest, prepare
 
 class BuildTests(unittest.TestCase):
     def setUp(self):
+        machine = patch.object(build.platform, "machine", return_value="x86_64")
+        machine.start()
+        self.addCleanup(machine.stop)
         self.temporary = tempfile.TemporaryDirectory(prefix="kelpie-builder-", dir="/tmp")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -198,6 +201,116 @@ class BuildTests(unittest.TestCase):
                 build.build(self.bundle, self.output, Path(sys.executable), approved=True)
         stage.assert_not_called()
         command.assert_not_called()
+
+    def test_native_host_guard_selects_only_matching_kvm_binary(self):
+        for machine in ("x86_64", "aarch64"):
+            with self.subTest(machine=machine), \
+                    patch.object(build.platform, "system", return_value="Linux"), \
+                    patch.object(build.platform, "machine", return_value=machine), \
+                    patch.object(build.os, "geteuid", return_value=1000), \
+                    patch.object(build.Path, "is_char_device", return_value=True), \
+                    patch.object(build.os, "access", return_value=True), \
+                    patch.object(build.shutil, "which", return_value="/synthetic") as which:
+                build.guard_host(True)
+            self.assertEqual([call.args[0] for call in which.call_args_list],
+                             [f"qemu-system-{machine}", "qemu-img", "ssh-keygen", "xorriso"])
+
+    def test_mismatched_architecture_fails_before_staging_or_subprocesses(self):
+        with patch.object(build, "guard_host"), \
+                patch.object(build.platform, "machine", return_value="aarch64"), \
+                patch.object(build, "stage") as stage, patch.object(build, "command") as command:
+            with self.assertRaisesRegex(prepare.InputError, "native KVM host"):
+                build.build(self.bundle, self.output, Path(sys.executable), approved=True)
+        stage.assert_not_called()
+        command.assert_not_called()
+        self.assertFalse(self.output.exists())
+
+    def test_host_guard_never_uses_root_unsupported_platform_or_emulation(self):
+        for system, machine, uid, device, access in (
+            ("Darwin", "aarch64", 1000, True, True),
+            ("Linux", "riscv64", 1000, True, True),
+            ("Linux", "aarch64", 0, True, True),
+            ("Linux", "aarch64", 1000, False, True),
+            ("Linux", "aarch64", 1000, True, False),
+        ):
+            with self.subTest(host=(system, machine, uid, device, access)), \
+                    patch.object(build.platform, "system", return_value=system), \
+                    patch.object(build.platform, "machine", return_value=machine), \
+                    patch.object(build.os, "geteuid", return_value=uid), \
+                    patch.object(build.Path, "is_char_device", return_value=device), \
+                    patch.object(build.os, "access", return_value=access), \
+                    patch.object(build.shutil, "which") as which:
+                with self.assertRaises(prepare.InputError):
+                    build.guard_host(True)
+                which.assert_not_called()
+
+    def firmware_fixture(self):
+        directory = self.root / "firmware-source"
+        directory.mkdir()
+        records = {}
+        for name in build.ARM_FIRMWARE:
+            path = directory / name
+            path.write_bytes(f"synthetic firmware, never executable: {name}".encode())
+            records[name] = build.measure(path)
+        return directory, records
+
+    def test_arm_build_binds_pinned_firmware_and_preserves_pristine_vars(self):
+        directory, records = self.firmware_fixture()
+        self.manifest["architecture"] = "arm64"
+        bundle = self.root / "arm-bundle"
+        prepare.prepare(self.manifest, self.assets, bundle)
+        with patch.object(build, "FIRMWARE_DIRECTORY", directory), \
+                patch.object(build, "ARM_FIRMWARE", records), \
+                patch.object(build.platform, "machine", return_value="aarch64"), \
+                patch.object(build, "guard_host"), \
+                patch.object(build, "command", side_effect=self.fake_command):
+            result = build.build(bundle, self.output, Path(sys.executable), approved=True)
+        recipe = build.read_json(self.output / "recipe.json")
+        self.assertEqual(recipe["firmware"], records)
+        self.assertIs(result["release_eligible"], False)
+        for name, item in records.items():
+            copied = self.output / "firmware" / name
+            self.assertEqual(build.measure(copied), item)
+            self.assertNotEqual(copied.stat().st_ino, (directory / name).stat().st_ino)
+            self.assertEqual(stat.S_IMODE(copied.stat().st_mode), 0o600)
+
+    def test_changed_firmware_never_gets_a_recipe_or_vm(self):
+        directory, records = self.firmware_fixture()
+        (directory / "AAVMF_VARS.fd").write_bytes(b"unexpected host NVRAM")
+        self.manifest["architecture"] = "arm64"
+        bundle = self.root / "arm-bundle"
+        prepare.prepare(self.manifest, self.assets, bundle)
+        with patch.object(build, "FIRMWARE_DIRECTORY", directory), \
+                patch.object(build, "ARM_FIRMWARE", records), \
+                patch.object(build.platform, "machine", return_value="aarch64"), \
+                patch.object(build, "guard_host"), patch.object(build, "command") as command:
+            with self.assertRaises(prepare.InputError):
+                build.build(bundle, self.output, Path(sys.executable), approved=True)
+        command.assert_not_called()
+        self.assertFalse((self.output / "recipe.json").exists())
+        self.assertFalse((self.output / "candidate.json").exists())
+
+    def test_firmware_changes_during_build_cannot_produce_candidate_receipt(self):
+        directory, records = self.firmware_fixture()
+        self.manifest["architecture"] = "arm64"
+        bundle = self.root / "arm-bundle"
+        prepare.prepare(self.manifest, self.assets, bundle)
+
+        def command(args, output, **kwargs):
+            result = self.fake_command(args, output, **kwargs)
+            if args[1] == "build":
+                (output / "firmware/AAVMF_VARS.fd").write_bytes(b"mutated vars")
+            return result
+
+        with patch.object(build, "FIRMWARE_DIRECTORY", directory), \
+                patch.object(build, "ARM_FIRMWARE", records), \
+                patch.object(build.platform, "machine", return_value="aarch64"), \
+                patch.object(build, "guard_host"), \
+                patch.object(build, "command", side_effect=command):
+            with self.assertRaisesRegex(prepare.InputError, "firmware differs"):
+                build.build(bundle, self.output, Path(sys.executable), approved=True)
+        self.assertFalse((self.output / "candidate.json").exists())
+        self.assertFalse((self.output / "build_key").exists())
 
     def test_real_subprocess_has_private_environment_and_discards_diagnostics(self):
         build.stage(self.bundle, self.output)
