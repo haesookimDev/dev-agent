@@ -6,9 +6,11 @@
 
 기준 코드: `main`의 `8cd09123cb3a2031cf18331cfe2ec74d7de1919d` ([PR #53](https://github.com/haesookimDev/dev-agent/pull/53) 병합). 아래 평가는 문서뿐 아니라 현재 코드·테스트·실제 구동 기록을 대조한 시점별 기록입니다. Draft 브랜치나 계획은 완료로 세지 않습니다.
 
-현재 동기화한 `main`은 문서 PR #54까지 포함한 `1fd999f`이며 [해당 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34423510547)는 통과했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)는 [Golden Image 후보 Builder](golden-image-inputs.md) 작업입니다. 이전 Head `a978cb2`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34428966533)는 5분 33초에 5개 Job 모두 통과했지만 이후 코드의 증거는 아닙니다. 현재 기능 기준은 `0379e48`입니다. Guest 설치·봉인/Packer 연결에 이어 `c63be0e`는 Guest 상태 검사, `34a16ff`는 제한된 Guest Agent 통신, `0379e48`은 빌드 후 두 차례 부팅·종료 검사의 자동 실행을 추가했습니다. 기존 병렬 CI가 새 테스트도 실행하며 Job·Timeout·VM CI를 늘리지 않았습니다.
+현재 동기화한 `main`은 문서 PR #54까지 포함한 `1fd999f`이며 [해당 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34423510547)는 통과했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)는 [Golden Image 후보 Builder](golden-image-inputs.md) 작업입니다. 이전 Head `55fa0cc`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34431563173)는 첫 실행 5분 14초에 5개 Job·이미지 85개 모두 통과했지만 이후 코드의 증거는 아닙니다. 현재 기능 기준은 `a73f600`입니다. Guest 설치·봉인/Packer·두 차례 자동 Boot 검사에 이어 `86369b4`는 Codex 플랫폼 패키지 전체 파일 검증, `a73f600`은 보조 파일을 보존하는 설치와 Boot Inventory 검사를 추가했습니다. 기존 ELF 입력도 지원하며 기존 병렬 CI에 Job·Timeout·VM CI를 늘리지 않았습니다.
 
-후속 이미지 테스트는 **85개 중 84개 통과/1개 Skip**(약 2.3초)이며 `make lint`, 실제 Packer 1.16.0/QEMU Plugin 1.1.6의 합성 입력 전체 설정 검증이 통과했습니다. 전용 PostgreSQL DB의 전체 `make test`는 API **1,270개 통과/1개 Skip**(199.48초), Runner 45개, Worker/Gateway, Web 125개·타입 검사, 이미지 84개 통과/1개 Skip입니다. API의 Skip은 macOS에서 실행 불가한 Linux systemd 구문 검사이고 이미지 Skip은 Linux 소켓 PID 검사로, 둘 다 Linux CI 대상입니다. 실제 Unix Socket 통신·별도 CLI/자식 프로세스 검증과 모의 Guest/QEMU 두 Boot·종료 검증을 구분했습니다. **실제 Image 설치/Boot/Desktop·Browser/Computer Use 증거는 없으므로 PR은 Draft·미병합이며 완료 수는 올리지 않습니다.** 최종 Head의 CI 결과는 PR에서 별도로 확인합니다.
+후속 이미지 테스트는 **97개 중 96개 통과/1개 Skip**(약 2.2초)이며 `make lint`, 실제 Packer 1.16.0/QEMU Plugin 1.1.6의 합성 입력 전체 설정 검증이 통과했습니다. 기능 기준 `a73f600`의 전용 PostgreSQL DB 전체 `make test`는 API **1,270개 통과/1개 Skip**(184.29초), Runner 45개, Worker/Gateway, Web 125개·타입 검사, 이미지 96개 통과/1개 Skip입니다. API의 Skip은 macOS에서 실행 불가한 Linux systemd 구문 검사이고 이미지 Skip은 Linux 소켓 PID 검사로, 둘 다 Linux CI 대상입니다. 실제 Unix Socket 통신·별도 CLI/자식 프로세스 검증과 모의 Guest/QEMU 두 Boot·종료 검증을 구분했습니다.
+
+공식 Ubuntu `20260826`, Codex `0.154.0`, Chrome for Testing `153.0.8010.36`과 고정 Runner 소스의 Wheel·의존 Wheel 8개를 확보했습니다. 실제 Codex/Browser Archive 추출·Codex 설치 Helper와 APT Snapshot `20260909T000000Z`의 16개 필수 패키지 Metadata를 확인했고, **실제 12개 파일의 입력 CLI가 `inputs_verified`·`release_eligible=false`로 통과**했습니다. 출처·Hash·미검증 범위는 [입력 검증 기록](golden-image-inputs.md)에 있습니다. **실제 Guest Image 설치/Boot/Desktop·Browser/Computer Use 증거는 없으므로 PR은 Draft·미병합이며 완료 수는 올리지 않습니다.** 최종 Head의 CI 결과는 PR에서 별도로 확인합니다.
 
 [바로 다음 Release](roadmap-summary.md#바로-다음-release)에 명시된 7단계를 고정된 분모로 사용합니다. **검증 완료 1/7 = 14.3%**, 부분 완료 3/7, 미완료 3/7입니다. 부분 구현에는 임의 점수를 주지 않습니다. 이 수치는 릴리즈 단계의 검증 완료율이며 코드 작성량·투입 공수·남은 일정의 비율이 아닙니다. 전체 개발 공수의 정확한 완료율은 현재 근거로 산정하지 않습니다.
 
@@ -39,7 +41,7 @@
 
 1. **P1 실행 경로를 우선합니다.** Golden Image 재현 → 영속 VM 수명주기·격리 → Preview/Console 강제 → 실제 두 작업·장애 복구 Acceptance의 의존 순서로 구현합니다. 실제 환경이 없어 검증하지 못한 기능 PR은 Draft로 유지합니다.
 2. P0의 남은 Secret·관측·보존·관리자 제어는 위 실행 경로와 연결해 완료합니다. 단위 테스트가 쉬운 부수 개선만 반복해 P1 완료를 대신하지 않습니다.
-3. 승인된 전용 Linux/KVM 테스트 Host와 필요한 테스트 네트워크·Image·TLS 연결 조건이 아직 제공되지 않았습니다. 현재 Mac의 Mock/명령 Fixture로 실제 Host Acceptance를 수행했다고 주장하지 않습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
+3. 공개 이미지·패키지는 직접 확보해 후보 입력 검증까지 완료했습니다. 승인된 전용 Linux/KVM 테스트 Host와 필요한 테스트 네트워크·TLS 연결 조건은 아직 제공되지 않았습니다. 현재 Mac의 Archive/입력 검증이나 Mock/명령 Fixture로 실제 Host Acceptance를 수행했다고 주장하지 않습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
 4. [Draft PR #21](https://github.com/haesookimDev/dev-agent/pull/21)의 Preview 작업은 `main`에 포함되지 않았습니다. 오래된 Head의 CI는 현재 Migration·권한 계약과의 통합 검증을 대체하지 않습니다. 실제 TLS·브라우저/Console 검증 전에는 완료로 계산하거나 강제 병합하지 않습니다.
 
 ## 갱신 방법
