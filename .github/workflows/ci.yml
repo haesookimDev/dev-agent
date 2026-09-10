@@ -78,7 +78,8 @@ jobs:
       - name: Test and lint Python
         run: |
           make test-runner PYTHON=python
-          python -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests
+          make test-images PYTHON=python
+          python -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests infra/images
       - name: Verify PostgreSQL migrations
         env:
           DATABASE_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
