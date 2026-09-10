@@ -6,7 +6,7 @@
 
 [`prepare.py`](../../infra/images/prepare.py) only verifies inputs and prepares separate copies. [`build.py`](../../infra/images/build.py) and the [Packer template](../../infra/images/ubuntu.pkr.hcl) invoke [`guest.py`](../../infra/images/guest.py) installation/sealing followed automatically by two [`boot.py`](../../infra/images/boot.py) boot checks on an approved dedicated KVM host. **Actual image build/boot/desktop verification of this path and release gates remain incomplete, as does IMG-001.** Existing Worker base-image configuration/execution is unchanged and no automatic rollout occurs.
 
-First obtain reviewed Ubuntu 24.04 amd64 image bytes, a Codex Linux x64 platform package or standalone executable, a Linux browser ZIP and wheels for Runner and all Python dependencies. The agent can acquire and verify public inputs from official sources; users need not supply those files themselves. Check expected hashes against reviewed official distribution/build evidence. Hashing an untrusted file yourself does not authenticate its publisher. The repository does not ship unverified production versions/checksums as a release lock.
+First obtain reviewed Ubuntu 24.04 **amd64 or arm64** image bytes, a matching-architecture Codex platform package or standalone executable, a Linux browser ZIP and wheels for Runner and all Python dependencies. The agent can acquire and verify public inputs from official sources; users need not supply those files themselves. Check expected hashes against reviewed official distribution/build evidence. Hashing an untrusted file yourself does not authenticate its publisher. The repository does not ship unverified production versions/checksums as a release lock.
 
 ## Version 1 input contract
 
@@ -14,7 +14,7 @@ The manifest is UTF-8 JSON, at most 128 KiB. Only the following fields are allow
 
 | Field | Required content |
 | --- | --- |
-| `schema_version`, `architecture` | Integer `1`, string `amd64` |
+| `schema_version`, `architecture` | Integer `1`, string `amd64` or `arm64`; no mixed architecture or TCG fallback |
 | `image_version` | Reviewed fixed image-version identifier |
 | `ubuntu_snapshot` | Valid UTC date `YYYYMMDDTHHMMSSZ`; guest APT execution checks actual availability |
 | `runner_source_commit` | Lowercase 40-character Runner source Git SHA; wheel-to-source provenance remains a later gate |
@@ -28,9 +28,9 @@ Input preparation requires APT names `build-essential`, `ca-certificates`, `dbus
 
 ### Complete Codex platform package
 
-Following the npm distribution route in the [official Codex CLI guidance](https://learn.chatgpt.com/docs/codex/cli), a reviewed `@openai/codex` `VERSION-linux-x64` platform archive is supported. Do not confuse it with the top-level JavaScript wrapper package or another architecture. Set `codex.version` to `VERSION`; filenames ending in `.tgz`/`.tar.gz` select the complete-package path. Existing amd64 ELF inputs with other names remain supported. There is no schema/Worker configuration change or automatic image replacement.
+The [official Codex CLI guidance](https://learn.chatgpt.com/docs/codex/cli) describes Linux installation; exact platform layouts are verified against actual distribution files. Reviewed `@openai/codex` `VERSION-linux-x64` (amd64) and `VERSION-linux-arm64` (arm64) platform archives are supported. Do not confuse these with the top-level JavaScript wrapper or another architecture. Set `codex.version` to `VERSION`; filenames ending in `.tgz`/`.tar.gz` select the complete-package path. Standalone ELF inputs with other names must also match the manifest architecture. Existing schema-1 amd64 calls remain compatible, with no Worker configuration change or automatic image replacement.
 
-- [`codex_package.py`](../../infra/images/codex_package.py) checks layout version 1/Linux x64 metadata and five amd64 ELF files (Codex, `codex-code-mode-host`, `rg`, `bwrap`, `zsh`) under `package/`. All files are preflighted before extraction into `/opt/kelpie/codex`, preserving relative layout; `/usr/local/bin/codex` points to the native entrypoint inside it. This does not claim an npm-managed installation or perform login.
+- [`codex_package.py`](../../infra/images/codex_package.py) checks layout version 1/platform metadata and five matching-architecture ELF files (Codex, `codex-code-mode-host`, `rg`, `bwrap`, `zsh`) under `package/`. amd64 uses `vendor/x86_64-unknown-linux-musl/` and ELF machine 62; arm64 uses `vendor/aarch64-unknown-linux-musl/` and machine 183. All files are preflighted before extraction into `/opt/kelpie/codex`, preserving relative layout; `/usr/local/bin/codex` points to the native entrypoint inside it. This does not claim an npm-managed installation or perform login.
 - Limits are 100 regular files, 512 MiB total and 64 KiB per metadata file. Path escapes, case aliases, ancestor/file conflicts, links and special/sparse files are rejected. Executable files become `0755`, others `0644`, without setuid/setgid bits. Decompressed reads are bounded too. Other layouts require review/tests before support is added.
 - Installation records filenames, sizes, SHA-256 and modes in `/opt/kelpie/codex-inventory.json`. Boot checks reverify every helper and the exact entrypoint link before checking the version. This inventory is not a publisher signature or complete SBOM.
 
@@ -55,7 +55,25 @@ python3 infra/images/prepare.py \
 
 ## Candidate build on a dedicated host
 
-Run this only as an approved **non-root Linux amd64 user with accessible `/dev/kvm`**. Do not substitute local Mac or ordinary GitHub runner VM execution. The host needs reviewed `qemu-system-x86_64`, `qemu-img`, `ssh-keygen`, `xorriso` and **Packer 1.16.0**. Verify the [official archive SHA-256](https://releases.hashicorp.com/packer/1.16.0/packer_1.16.0_SHA256SUMS), install separately and specify the executable path. The [QEMU plugin](https://developer.hashicorp.com/packer/integrations/hashicorp/qemu/latest/components/builder/qemu), installed by Packer into the private run directory, is pinned to **1.1.6**. No unapproved host access, environment discovery or automatic host dependency installation occurs.
+Run this only as an approved **non-root Linux amd64/arm64 user with accessible `/dev/kvm`**, matching the manifest to the native architecture. Do not run the builder directly on macOS; a Linux arm64 VM that has passed actual KVM verification in the [Mac-local KVM lab](macos-kvm-lab.md) can serve as the dedicated host. Ordinary GitHub runners or emulation do not replace actual KVM evidence. The host needs matching `qemu-system-x86_64` or `qemu-system-aarch64`, `qemu-img`, `ssh-keygen`, `xorriso` and **Packer 1.16.0**. Verify the [official archive SHA-256](https://releases.hashicorp.com/packer/1.16.0/packer_1.16.0_SHA256SUMS), install separately and specify the executable path. The [QEMU plugin](https://developer.hashicorp.com/packer/integrations/hashicorp/qemu/latest/components/builder/qemu), installed by Packer into the private run directory, is pinned to **1.1.6**. No unapproved host access, environment discovery or automatic host dependency installation occurs.
+
+### Additional ARM64 requirements
+
+- Images, Codex, browsers and native wheels must target Linux arm64. Chrome ZIP roots are `chrome-linux-arm64`, distinct from amd64 `chrome-linux64`. Pure Python wheels still require pinned versions, hashes and metadata verification.
+- ARM64 APT pins the date directly in `https://snapshot.ubuntu.com/ubuntu/<ubuntu_snapshot>/`. An initial `ports.ubuntu.com` plus `Snapshot:` configuration failed with a snapshot-support error on actual Ubuntu 24.04. The dated URL passed metadata refresh and candidate-version checks for all 16 required packages on the same VM with signature, TLS and expiry checks enabled. Existing amd64 archive/snapshot configuration remains unchanged.
+- Minimal Ubuntu hosts also need `ipxe-qemu`. The first actual build failed to initialize the virtio NIC because `efi-virtio.rom` was missing; installing `ipxe-qemu=1.21.1+git-20220113.fbbdc3926-0ubuntu2` on the dedicated host allowed identical device initialization to pass. This ROM is a host QEMU dependency, distinct from the guest APT lock. No NIC, security-check or hardware-acceleration bypass is used.
+- The Ubuntu 24.04 host needs the following files from `qemu-efi-aarch64=2024.02-2ubuntu0.9`. The builder verifies hashes, creates private copies and records them in the recipe without writing to the originals. Other versions require reviewed, tested pin changes rather than automatic acceptance.
+
+| File under `/usr/share/AAVMF/` | Size | SHA-256 |
+| --- | --- | --- |
+| `AAVMF_CODE.no-secboot.fd` | 67,108,864 bytes | `4a4cb7f6d8106bb2a7dd8c763fab14b1810152136fc4304e5b728f0043e84f12` |
+| `AAVMF_VARS.fd` | 67,108,864 bytes | `b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f` |
+
+ARM64 uses `virt`, KVM, host CPU/GIC, a virtio GPU and SCSI seed CD. The first probe starts with a pinned blank VARS copy, not builder-mutated NVRAM; both cold boots retain the same private VARS and disk overlay. CODE is read-only, and neither host firmware nor the original candidate is a writable VM target. amd64 retains q35. Actual Worker ARM64 lifecycle and console integration require separate acceptance; this builder does not complete them.
+
+Packer's `qemuargs` replaces the entire default `-device` list, so the ARM seed CD controller and drive are explicitly attached. Builder/probe VMs with dedicated DMI product markers also retain manufacturer `KVM`: ARM64 [systemd detection](https://github.com/systemd/systemd/blob/v255/src/basic/virt.c) uses DMI rather than x86 CPUID. DMI is descriptive metadata, not acceleration proof. Native host architecture and `/dev/kvm` checks, mandatory QEMU `accel=kvm`, and guest `kvm`/dedicated-product checks remain enforced. A `qemu` result or TCG fallback is not accepted.
+
+### Command
 
 ```sh
 image_build_workspace="$(mktemp -d /tmp/kelpie-build.XXXXXX)"
@@ -70,7 +88,7 @@ python3 infra/images/build.py \
 - The output parent must be owned with mode `0700`; the normalized output path must be at most 69 ASCII letters/digits/`/_.-`, reserving socket-path room for automatic `boot-check` before building. Only new paths are accepted. Budget space for input copies, Packer caches, a 40 GiB guest disk and the probe's candidate copy/overlay simultaneously.
 - The complete input receipt and manifest hash are checked, then every input is verified/copied again. Recipe files and the Runner unit are copied and hashed. Base/output disks must be independent unencrypted qcow2 without backing/external data files, at most 40 GiB virtual size. A `.img` must also contain qcow2.
 - Each build generates a temporary SSH key without forwarding the SSH agent or ambient API/SCM/cloud environment. SSH forwarding/VNC bind `127.0.0.1`; the guest-agent socket is inside the private run directory. Build NAT supports package installation; **it does not implement production per-work network isolation**.
-- The guest checks Ubuntu 24.04 amd64, KVM and its dedicated DMI marker before installing. It checks [Ubuntu snapshot](https://snapshot.ubuntu.com/)-pinned APT versions/inventory, hash-locked offline wheels/metadata/`pip check`, Codex ELF/version and browser ZIP boundaries/version. It configures Xfce/LightDM and a Runner disabled until assignment; no browser `--no-sandbox` bypass is used.
+- The guest checks Ubuntu 24.04, matching amd64/arm64 manifest architecture, KVM and its dedicated DMI marker before installing. It checks [Ubuntu snapshot](https://snapshot.ubuntu.com/)-pinned APT versions/inventory, hash-locked offline wheels/metadata/`pip check`, Codex ELF/version and browser ZIP boundaries/version. It configures Xfce/LightDM and a Runner disabled until assignment; no browser `--no-sandbox` bypass is used.
 - Ordinary automatic APT update timers are masked. Rebuild with a new snapshot/lock, verify, then replace images; never operate this candidate without security updates. Installed inventories remain in guest `/opt/kelpie/apt-inventory.json` and `python-inventory.json`; they are not a complete SBOM.
 - Sealing is configured to lock the builder account, remove its dedicated sudo/SSH access, clear SSH host keys/cloud-init seed/machine identity, then power off. Code existence is not evidence of actual reboot or credential non-disclosure.
 - The host driver applies command timeouts, a one-hour Packer build deadline and owned-process-group termination. It deletes the temporary key pair on exit, not existing bundles/partial run directories. Physical VM/key/file recovery after host termination or power loss remains a separate gate.
@@ -127,4 +145,27 @@ The following real files were acquired in a dedicated private directory on the M
 | Runner | Built a wheel with `hatchling==1.32.0` from the Git archive at `1fd999fbaf32706d8bbe8f07a803c61135d96ba4`. Compared SHA-256, size and non-yanked status of eight Linux amd64/Python 3.12 dependency wheels against PyPI version metadata. Guest `pip check` and execution remain unperformed. |
 | APT | An isolated metadata-only Ubuntu 24.04 container ran `apt-get update` and amd64 `apt-cache policy` for 16 required packages at snapshot `20260909T000000Z`. TLS, GPG and expiry checks remained enabled; this is not guest package installation evidence. |
 
-A separate `prepare.py` CLI using the 12 real inputs returned exit 0, `inputs_verified` and `release_eligible=false`. Manifest SHA-256: `39e57c6b068eab711f53b5e929460fdf3acb2fea12e685fb505cde5bff106855`. The candidate bundle, public provenance metadata and logs are retained locally; binaries/virtual environments are not committed. Public-input acquisition is separate from approval/access to a dedicated KVM host. The latter is missing, so build/boot/GUI gates and Draft status remain.
+A separate `prepare.py` CLI using the 12 real amd64 inputs returned exit 0, `inputs_verified` and `release_eligible=false`. Manifest SHA-256: `39e57c6b068eab711f53b5e929460fdf3acb2fea12e685fb505cde5bff106855`. The candidate bundle, public provenance metadata and logs are retained locally; binaries/virtual environments are not committed. No dedicated KVM host was available at that input-verification stage. A Mac-local arm64 KVM lab has since been verified, but its diskless Linux boot does not complete Golden Image build/boot/GUI gates.
+
+### ARM64 input preparation later that day
+
+Twelve actual ARM64 inputs were prepared separately as `20260910-arm64-candidate.1`, manifest SHA-256 `cb6c2a695d04f6f288f2c0b6b062550fe4d7dbbf69efe4cd0ccd5be5e7678970`. Status remains `inputs_verified`, `release_eligible=false`.
+
+| Input | Verified version, size and SHA-256 |
+| --- | --- |
+| Ubuntu arm64 | `24.04-20260826`, 619,036,160 bytes, `afa139bac6f2629c1e1f2f8f34215f3a9ad9779801bcb945521ba1a45016743f`; matched official checksum |
+| Codex arm64 | `0.154.0-linux-arm64`, 122,610,794 bytes, `a2315b5f64bfeaff79b71e0d35505ba8c22cc1e96cab9dc950b614c804105b24`; matched registry SHA-512, non-executing extraction and revalidation of all eight files |
+| Chrome arm64 | `153.0.8010.36`, 195,918,275 bytes, `dfc4955719c5d494c8507990506d2d5bed174c31bf89266aa2dc5593c6607e8b`; hash measured from the official CfT distribution |
+| PyYAML arm64 | `6.0.3`, Python 3.12 manylinux aarch64 wheel, 775,116 bytes, `9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28`; matched PyPI hash and size |
+
+The other eight pure Python wheels were hash-verified and copied from the previously verified bundle. Git diff confirmed Runner sources were unchanged since `1fd999f`, so the original source SHA is retained. All 16 ARM64 APT candidate versions were checked at the same `20260909T000000Z` snapshot and matched the amd64 candidates. An incorrect Ubuntu byte count in an earlier note was rejected by input preflight; only a new output using the remeasured size and unchanged pinned hash was consumed.
+
+The dedicated Linux VM received Packer `1.16.0` Linux arm64 from an archive whose SHA-256 `cf18f03460d92265d49b56befff333e80641d845822799eab04357c39f75b5d7` matched the official checksum. Executable hashes matched on both sides (`48a5367d3d1d84ebe3740a411b206b8b43143e91604179f517c77d9cad0af69d`), and actual version output was `Packer v1.16.0`. Input/tool preparation remains distinct from actual Golden Image build, boot and visual acceptance.
+
+After ARM installer integration through `3a727a0` and filesystem-clock-independent regression coverage in `6c2cf2e`, actual Ubuntu 24.04 arm64/Python 3.12 passed **all 125 image tests** (2.818s), including the `SO_PEERCRED` check skipped on Mac. Before the fixture correction, rapid consecutive writes shared a modification timestamp, so the mutation test reached a later hash check instead of the intended metadata guard. The test now explicitly changes the actual file timestamp and additionally checks the copied bytes retain the original hash, without relaxing rejection or no-success-record requirements. Sixteen invalid date/path/newline cases for direct installer-helper calls also failed before the fix and passed afterward.
+
+The Packer template at `5fd9219` passed full `validate` against actual ARM inputs, pinned firmware, Packer 1.16.0 and QEMU plugin 1.1.6. This does not prove execution of subsequent template changes. Temporary SSH keys were removed; that validation created no VM. Full regression passed API 1,270/one Linux-systemd skip, Runner 45, Worker/Gateway, Web 125/type checking and Lab 18.
+
+Subsequent actual runs reproduced a missing seed CD attachment and ARM64 KVM identification failure. `11518f9` restores the seed CD; `34ae353` preserves both the dedicated product marker and KVM identity. After first failing the regression checks, `34ae353` passed **all 127 image tests** on actual Linux (2.894s), **126 passed/one skipped** on Mac, Packer syntax checks and `make lint`. Failed VMs and disposable keys were cleaned, with no candidate approval record.
+
+A fresh standard builder run at `34ae353` reported `aarch64`, `kvm` and the dedicated DMI product over actual SSH; its QEMU process also held `/dev/kvm` and KVM VM/vCPU handles. A read-only framebuffer showed the Ubuntu 24.04.4 login screen. **Package installation was still running at this observation; it does not prove sealing, two boots or desktop/browser use.** A Mac Screen Sharing connection failure is recorded separately and is not counted as successful remote input.

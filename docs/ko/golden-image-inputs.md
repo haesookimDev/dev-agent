@@ -6,7 +6,7 @@
 
 [`prepare.py`](../../infra/images/prepare.py)는 입력 검증·별도 사본 준비만 수행합니다. [`build.py`](../../infra/images/build.py)와 [Packer 설정](../../infra/images/ubuntu.pkr.hcl)은 승인한 전용 KVM Host에서 [`guest.py`](../../infra/images/guest.py)의 설치·봉인 후 [`boot.py`](../../infra/images/boot.py)의 두 차례 부팅 검사를 자동 실행하는 후보 Builder입니다. **이 경로의 실제 Image Build/Boot/Desktop 검증과 릴리즈 Gate는 미완료이며 IMG-001도 미완료입니다.** 현재 Worker의 Base Image 설정이나 실행 경로를 바꾸거나 자동 Rollout하지 않습니다.
 
-검토한 Ubuntu 24.04 amd64 이미지, Codex Linux x64 플랫폼 패키지 또는 독립 실행 파일, Linux 브라우저 ZIP, Runner와 전체 Python 의존성 Wheel을 먼저 확보해야 합니다. 공개 배포 입력은 에이전트가 공식 출처에서 확보·검증할 수 있으며 사용자에게 파일 제공을 반드시 요구하지 않습니다. 기대 Hash는 검토한 공식 배포 자료/빌드 증거에서 확인하세요. 출처를 확인하지 않은 파일을 직접 Hash한 것만으로 신뢰할 수 있는 배포물이 되지는 않습니다. 저장소에는 실제 검증하지 않은 Version·Checksum을 릴리즈 Lock으로 넣지 않습니다.
+검토한 Ubuntu 24.04 **amd64 또는 arm64** 이미지와 같은 Architecture의 Codex 플랫폼 패키지 또는 독립 실행 파일, Linux 브라우저 ZIP, Runner와 전체 Python 의존성 Wheel을 먼저 확보해야 합니다. 공개 배포 입력은 에이전트가 공식 출처에서 확보·검증할 수 있으며 사용자에게 파일 제공을 반드시 요구하지 않습니다. 기대 Hash는 검토한 공식 배포 자료/빌드 증거에서 확인하세요. 출처를 확인하지 않은 파일을 직접 Hash한 것만으로 신뢰할 수 있는 배포물이 되지는 않습니다. 저장소에는 실제 검증하지 않은 Version·Checksum을 릴리즈 Lock으로 넣지 않습니다.
 
 ## Version 1 입력 계약
 
@@ -14,7 +14,7 @@ Manifest는 UTF-8 JSON이며 최대 128 KiB입니다. 아래 Field만 허용하�
 
 | Field | 필수 내용 |
 | --- | --- |
-| `schema_version`, `architecture` | 정수 `1`, 문자열 `amd64` |
+| `schema_version`, `architecture` | 정수 `1`, 문자열 `amd64` 또는 `arm64`; 혼합 Architecture·TCG 대체 불가 |
 | `image_version` | 검토한 고정 이미지 Version 식별자 |
 | `ubuntu_snapshot` | 유효한 UTC 날짜 `YYYYMMDDTHHMMSSZ`; 실제 가용성은 Guest의 APT 실행에서 확인 |
 | `runner_source_commit` | Runner 소스의 소문자 40자리 Git SHA; Wheel과 소스 간 Provenance 증명은 후속 Gate |
@@ -28,9 +28,9 @@ Manifest는 UTF-8 JSON이며 최대 128 KiB입니다. 아래 Field만 허용하�
 
 ### Codex 전체 플랫폼 패키지
 
-[공식 Codex CLI 안내](https://learn.chatgpt.com/docs/codex/cli)의 npm 배포 경로를 기준으로, 검토한 `@openai/codex`의 `VERSION-linux-x64` 플랫폼 Archive를 사용할 수 있습니다. 최상위 JavaScript Wrapper 패키지나 다른 Architecture의 Archive와 혼동하지 마세요. Manifest의 `codex.version`은 `VERSION`이며 파일 이름이 `.tgz`/`.tar.gz`이면 전체 패키지로 해석합니다. 다른 이름의 기존 amd64 ELF 입력도 계속 지원합니다. Schema/Worker 설정 변경이나 기존 이미지 자동 교체는 없습니다.
+[공식 Codex CLI 안내](https://learn.chatgpt.com/docs/codex/cli)의 Linux 설치 경로를 참고하되, 정확한 플랫폼 Layout은 실제 배포 파일로 검증합니다. 검토한 `@openai/codex`의 `VERSION-linux-x64`(amd64) 또는 `VERSION-linux-arm64`(arm64) 플랫폼 Archive를 사용할 수 있습니다. 최상위 JavaScript Wrapper 패키지나 다른 Architecture의 Archive와 혼동하지 마세요. Manifest의 `codex.version`은 `VERSION`이며 파일 이름이 `.tgz`/`.tar.gz`이면 전체 패키지로 해석합니다. 다른 이름의 독립 ELF도 Manifest와 Architecture가 일치해야 합니다. Schema 1의 기존 amd64 호출은 유지하며 Worker 설정 변경이나 기존 이미지 자동 교체는 없습니다.
 
-- [`codex_package.py`](../../infra/images/codex_package.py)는 `package/` 아래 Layout Version 1·Linux x64 Metadata와 5개 amd64 ELF(Codex, `codex-code-mode-host`, `rg`, `bwrap`, `zsh`)를 검사합니다. 전체 파일을 미리 검사한 뒤 `/opt/kelpie/codex`에 상대 배치를 보존해 추출하며 `/usr/local/bin/codex`는 그 안의 본체를 가리킵니다. npm 관리 설치라고 표시하거나 로그인하지 않습니다.
+- [`codex_package.py`](../../infra/images/codex_package.py)는 `package/` 아래 Layout Version 1·플랫폼 Metadata와 5개 동일 Architecture ELF(Codex, `codex-code-mode-host`, `rg`, `bwrap`, `zsh`)를 검사합니다. amd64는 `vendor/x86_64-unknown-linux-musl/`·ELF Machine 62, arm64는 `vendor/aarch64-unknown-linux-musl/`·ELF Machine 183입니다. 전체 파일을 미리 검사한 뒤 `/opt/kelpie/codex`에 상대 배치를 보존해 추출하며 `/usr/local/bin/codex`는 그 안의 본체를 가리킵니다. npm 관리 설치라고 표시하거나 로그인하지 않습니다.
 - 최대 100개 일반 파일·총 512 MiB·Metadata별 64 KiB입니다. 경로 이탈·대소문자 중복·부모/파일 충돌·링크·특수/Sparse 파일을 거부하고, 실행 파일은 `0755`, 나머지는 `0644`로 제한해 Setuid/Setgid를 보존하지 않습니다. 압축 해제 읽기에도 상한이 있습니다. 현재 지원 Layout과 다른 배포물은 검토·테스트 없이 수용하지 않습니다.
 - 설치 시 파일 목록·크기·SHA-256·Mode를 `/opt/kelpie/codex-inventory.json`에 기록합니다. 부팅 검사는 보조 파일까지 동일한지와 실행 링크의 정확한 대상을 재검사한 뒤 Version을 확인합니다. 이 Inventory는 배포자 서명이나 완전한 SBOM을 대체하지 않습니다.
 
@@ -55,7 +55,25 @@ python3 infra/images/prepare.py \
 
 ## 전용 Host의 후보 빌드
 
-이 절차는 승인된 **Linux amd64 비 Root 사용자·접근 가능한 `/dev/kvm`**에서만 실행합니다. 로컬 Mac이나 GitHub 일반 Runner에서 VM 구동으로 대체하지 않습니다. Host에 검토한 `qemu-system-x86_64`, `qemu-img`, `ssh-keygen`, `xorriso`와 **Packer 1.16.0**이 필요합니다. [공식 Archive의 SHA-256](https://releases.hashicorp.com/packer/1.16.0/packer_1.16.0_SHA256SUMS)을 확인해 별도로 설치하고 실행 경로를 지정합니다. Packer가 전용 Plugin 디렉터리에 설치하는 [QEMU Plugin](https://developer.hashicorp.com/packer/integrations/hashicorp/qemu/latest/components/builder/qemu)은 **1.1.6**으로 고정합니다. 승인되지 않은 Host 접속·환경 탐색·자동 의존성 설치는 하지 않습니다.
+이 절차는 승인된 **Linux amd64/arm64 비 Root 사용자·접근 가능한 `/dev/kvm`**에서 Manifest와 네이티브 Architecture가 일치할 때만 실행합니다. macOS에서 Builder를 직접 실행하지 않으며, [Mac 로컬 KVM Lab](macos-kvm-lab.md)의 실제 KVM 검증을 통과한 Linux arm64 VM을 전용 Host로 사용할 수 있습니다. 일반 GitHub Runner나 에뮬레이션으로 실제 KVM 검증을 대체하지 않습니다. Host에 Architecture에 맞는 `qemu-system-x86_64` 또는 `qemu-system-aarch64`, `qemu-img`, `ssh-keygen`, `xorriso`와 **Packer 1.16.0**이 필요합니다. [공식 Archive의 SHA-256](https://releases.hashicorp.com/packer/1.16.0/packer_1.16.0_SHA256SUMS)을 확인해 별도로 설치하고 실행 경로를 지정합니다. Packer가 전용 Plugin 디렉터리에 설치하는 [QEMU Plugin](https://developer.hashicorp.com/packer/integrations/hashicorp/qemu/latest/components/builder/qemu)은 **1.1.6**으로 고정합니다. 승인되지 않은 Host 접속·환경 탐색·자동 의존성 설치는 하지 않습니다.
+
+### ARM64의 추가 조건
+
+- 모든 이미지·Codex·브라우저·네이티브 Wheel은 Linux arm64용이어야 합니다. Chrome ZIP Root는 `chrome-linux-arm64`이며 amd64의 `chrome-linux64`와 구분합니다. 순수 Python Wheel도 고정한 Version·Hash·Metadata를 검사합니다.
+- ARM64 APT는 `https://snapshot.ubuntu.com/ubuntu/<ubuntu_snapshot>/`에 날짜를 직접 고정합니다. 실제 Ubuntu 24.04에서는 `ports.ubuntu.com`과 `Snapshot:`만 조합한 초기 설정이 지원 오류로 실패했습니다. 날짜가 URL에 포함된 경로는 같은 VM에서 서명·TLS·유효기간 검사를 유지한 메타데이터 갱신과 16개 필수 패키지 후보 확인을 통과했습니다. amd64의 기존 Archive/Snapshot 설정은 유지합니다.
+- 최소 구성의 Ubuntu Host에는 `ipxe-qemu`도 필요합니다. 실제 첫 빌드에서 `efi-virtio.rom` 누락으로 Virtio NIC 초기화가 실패했고, 전용 Host에 `ipxe-qemu=1.21.1+git-20220113.fbbdc3926-0ubuntu2`를 설치한 뒤 동일 장치 초기화가 통과했습니다. 이 ROM은 Host의 QEMU 의존성이며 Guest APT Lock과 구분합니다. NIC·보안 검사·하드웨어 가속을 끄는 우회는 사용하지 않습니다.
+- Ubuntu 24.04 Host의 `qemu-efi-aarch64=2024.02-2ubuntu0.9`에서 아래 두 파일이 필요합니다. Builder는 원본을 쓰지 않고 Hash 검증 후 비공개 사본을 만들어 Recipe에 기록합니다. 다른 Version은 자동 수용하지 않고 검토·테스트한 Pin 변경이 필요합니다.
+
+| `/usr/share/AAVMF/` 파일 | 크기 | SHA-256 |
+| --- | --- | --- |
+| `AAVMF_CODE.no-secboot.fd` | 67,108,864 Bytes | `4a4cb7f6d8106bb2a7dd8c763fab14b1810152136fc4304e5b728f0043e84f12` |
+| `AAVMF_VARS.fd` | 67,108,864 Bytes | `b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f` |
+
+ARM64는 `virt`·KVM·Host CPU/GIC, Virtio GPU와 SCSI Seed CD를 사용합니다. 최초 검사는 빌드 중 변경된 NVRAM 대신 고정된 빈 VARS 사본에서 시작하고, 두 Cold Boot는 같은 검사용 VARS와 Disk Overlay를 유지합니다. CODE는 읽기 전용이며 Host 펌웨어·원본 후보는 VM의 쓰기 대상으로 사용하지 않습니다. amd64는 기존 q35 경로를 유지합니다. Worker의 실제 ARM64 VM 수명주기·Console 연결은 별도 통합 검증 대상이며 이 Builder만으로 완료 처리하지 않습니다.
+
+Packer의 `qemuargs`는 기본 `-device` 목록 전체를 교체하므로 ARM Seed CD의 컨트롤러·드라이브를 명시적으로 연결합니다. 전용 DMI 제품명을 사용하는 Builder/Probe는 Manufacturer `KVM`도 유지합니다. ARM64의 [systemd 판별](https://github.com/systemd/systemd/blob/v255/src/basic/virt.c)은 x86 CPUID 대신 DMI를 사용하기 때문입니다. DMI는 설명용 정보이며 가속 증명이 아닙니다. Host의 네이티브 Architecture·`/dev/kvm` 검사와 QEMU의 `accel=kvm` 강제, Guest의 `kvm`·전용 제품명 검사는 그대로 유지합니다. `qemu` 결과를 허용하거나 TCG로 대체하지 않습니다.
+
+### 실행 명령
 
 ```sh
 image_build_workspace="$(mktemp -d /tmp/kelpie-build.XXXXXX)"
@@ -70,7 +88,7 @@ python3 infra/images/build.py \
 - 출력 부모는 소유한 `0700` 디렉터리, 정규화한 출력 전체 경로는 최대 69자의 ASCII 문자·숫자·`/_.-`여야 합니다. 자동 `boot-check` 하위 경로의 Socket 길이를 빌드 전에 확보합니다. 새로운 경로만 허용하며 입력 사본·Packer Cache·40 GiB Guest Disk·검사용 후보 사본/Overlay가 함께 존재할 디스크 공간이 필요합니다.
 - 완전한 입력 성공 기록과 Manifest Hash를 확인한 뒤 모든 입력을 다시 검증·복사합니다. 실행 Recipe와 Runner Unit도 사본과 SHA-256을 기록합니다. Base/출력은 외부 Backing/Data File이나 암호화가 없는 독립 qcow2, 가상 크기 최대 40 GiB여야 합니다. `.img`도 실제 형식은 qcow2여야 합니다.
 - 빌드마다 임시 SSH Key를 생성하고 SSH Agent·주변 API/SCM/Cloud 환경을 전달하지 않습니다. SSH Forward와 VNC는 `127.0.0.1`, Guest Agent Socket은 비공개 실행 디렉터리에 제한합니다. 빌드 NAT의 외부 접근은 Package 설치용이며 **작업별 운영 네트워크 격리를 구현한 것은 아닙니다.**
-- Guest는 Ubuntu 24.04 amd64·KVM·전용 DMI 표식을 확인한 뒤 설치합니다. [Ubuntu Snapshot](https://snapshot.ubuntu.com/)에 고정한 APT Version·설치 Inventory, Hash 고정 Offline Wheel·Metadata·`pip check`, Codex ELF/Version, Browser ZIP 경계/Version을 검사합니다. Xfce/LightDM과 배정 전 비활성 Runner를 구성하며 Browser의 `--no-sandbox` 우회는 사용하지 않습니다.
+- Guest는 Ubuntu 24.04·Manifest와 일치하는 amd64/arm64·KVM·전용 DMI 표식을 확인한 뒤 설치합니다. [Ubuntu Snapshot](https://snapshot.ubuntu.com/)에 고정한 APT Version·설치 Inventory, Hash 고정 Offline Wheel·Metadata·`pip check`, Codex ELF/Version, Browser ZIP 경계/Version을 검사합니다. Xfce/LightDM과 배정 전 비활성 Runner를 구성하며 Browser의 `--no-sandbox` 우회는 사용하지 않습니다.
 - 일반 자동 APT Update Timer를 Mask합니다. 이미지는 새 Snapshot·Lock으로 재빌드하고 검증 후 교체해야 하며 이 후보를 보안 업데이트 없이 운영하지 않습니다. 설치 Inventory는 Guest의 `/opt/kelpie/apt-inventory.json`, `python-inventory.json`에 보존합니다. 아직 완전한 SBOM은 아닙니다.
 - 봉인은 Builder 계정 잠금·전용 sudo 권한/SSH Key 제거, SSH Host Key·cloud-init Seed/Machine ID 초기화 후 전원을 끄도록 구성했습니다. 이 코드의 존재를 실제 재부팅·Secret 비노출 증거로 계산하지 않습니다.
 - Host 실행기는 명령별 Timeout과 최대 1시간의 Packer Build Timeout, 소유한 Process Group 종료를 사용합니다. 종료 시 임시 Key 쌍을 삭제하며 기존 Bundle/부분 실행 디렉터리는 삭제하지 않습니다. Host 강제 종료·전원 장애 후 실제 잔여 VM/Key/파일 정합성 복구는 별도 Gate입니다.
@@ -127,4 +145,27 @@ Mac의 전용 비공개 디렉터리에서 다음 실제 파일을 확보했습�
 | Runner | `1fd999fbaf32706d8bbe8f07a803c61135d96ba4`의 Git Archive에서 `hatchling==1.32.0`으로 Wheel 생성. Linux amd64/Python 3.12 대상 의존 Wheel 8개의 SHA-256·크기·비 Yank 상태를 PyPI Version Metadata와 비교. Guest `pip check`·실행은 미실시. |
 | APT | Ubuntu 24.04의 격리된 메타데이터 전용 컨테이너에서 `20260909T000000Z` Snapshot의 `apt-get update`와 16개 필수 패키지의 amd64 `apt-cache policy` 확인. TLS·GPG·유효기간 검사를 유지했으며 Guest 패키지 설치 증거는 아님. |
 
-실제 12개 입력으로 별도 `prepare.py` CLI가 Exit 0·`inputs_verified`·`release_eligible=false`를 반환했습니다. Manifest SHA-256은 `39e57c6b068eab711f53b5e929460fdf3acb2fea12e685fb505cde5bff106855`입니다. 후보 Bundle·공개 출처 Metadata·검사 로그는 로컬에 보존하고 바이너리·가상환경은 커밋하지 않습니다. 공개 입력 확보와 전용 KVM Host 승인/접근은 별개이며, 후자가 없으므로 Build/Boot/GUI Gate와 Draft 상태는 유지합니다.
+실제 12개 amd64 입력으로 별도 `prepare.py` CLI가 Exit 0·`inputs_verified`·`release_eligible=false`를 반환했습니다. Manifest SHA-256은 `39e57c6b068eab711f53b5e929460fdf3acb2fea12e685fb505cde5bff106855`입니다. 후보 Bundle·공개 출처 Metadata·검사 로그는 로컬에 보존하고 바이너리·가상환경은 커밋하지 않습니다. 이 입력 검증 시점에는 전용 KVM Host가 없었습니다. 이후 Mac 로컬 arm64 KVM Lab은 검증됐지만, 그 디스크 없는 Linux 부팅 결과를 Golden Image Build/Boot/GUI Gate 완료로 계산하지 않습니다.
+
+### 같은 날의 ARM64 입력 준비
+
+실제 ARM64 입력 12개는 `20260910-arm64-candidate.1`, Manifest SHA-256 `cb6c2a695d04f6f288f2c0b6b062550fe4d7dbbf69efe4cd0ccd5be5e7678970`으로 별도 준비했습니다. 상태는 `inputs_verified`, `release_eligible=false`입니다.
+
+| 입력 | 실제 확인한 Version·크기·SHA-256 |
+| --- | --- |
+| Ubuntu arm64 | `24.04-20260826`, 619,036,160 Bytes, `afa139bac6f2629c1e1f2f8f34215f3a9ad9779801bcb945521ba1a45016743f`; 공식 Checksum과 일치 |
+| Codex arm64 | `0.154.0-linux-arm64`, 122,610,794 Bytes, `a2315b5f64bfeaff79b71e0d35505ba8c22cc1e96cab9dc950b614c804105b24`; Registry SHA-512 일치, 비실행 추출 후 8개 전체 파일 재검증 |
+| Chrome arm64 | `153.0.8010.36`, 195,918,275 Bytes, `dfc4955719c5d494c8507990506d2d5bed174c31bf89266aa2dc5593c6607e8b`; 공식 CfT 배포 파일에서 계산한 Hash |
+| PyYAML arm64 | `6.0.3`, Python 3.12 manylinux aarch64 Wheel, 775,116 Bytes, `9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28`; PyPI Metadata의 Hash·크기 일치 |
+
+나머지 순수 Python Wheel 8개는 위 검증된 Bundle에서 Hash 검증 후 복사했습니다. Runner 소스는 `1fd999f` 이후 이번 작업까지 동일함을 Git diff로 확인했으며 원래 소스 SHA를 유지합니다. ARM64의 16개 APT 후보 Version은 같은 `20260909T000000Z` Snapshot에서 확인했고 amd64 후보와 일치했습니다. 이전 메모에 잘못 적힌 Ubuntu 파일 크기는 사전 입력 검사에서 거부됐으며 실제 크기·원래 Hash를 재확인한 새 출력만 사용했습니다.
+
+전용 Linux VM에는 Packer `1.16.0` Linux arm64 Archive(SHA-256 `cf18f03460d92265d49b56befff333e80641d845822799eab04357c39f75b5d7`)를 공식 Checksum과 대조해 전달했습니다. 실행 파일의 양쪽 Hash `48a5367d3d1d84ebe3740a411b206b8b43143e91604179f517c77d9cad0af69d`가 일치하고 실제 Version 출력이 `Packer v1.16.0`임을 확인했습니다. 이 입력·도구 준비는 실제 Golden Image 빌드·부팅·화면 검증과 별도입니다.
+
+`3a727a0`까지의 ARM 설치 통합과 `6c2cf2e`의 파일시스템 시계 독립 회귀 보강 후, 실제 Ubuntu 24.04 arm64/Python 3.12에서는 이미지 테스트 **125개 전부 통과**(2.818초)했습니다. Mac에서 건너뛴 `SO_PEERCRED` 검사도 포함합니다. 시계 보강 전에는 빠른 연속 쓰기의 수정 시간이 같아 변조 테스트가 의도한 메타데이터 검사 대신 후속 Hash 검사에 도달했습니다. 테스트가 실제 파일의 수정 시간을 명시적으로 바꾸도록 하고 복사 바이트의 원래 Hash까지 추가 검증했으며, 거부 조건이나 성공 기록 금지 조건을 낮추지 않았습니다. 설치 Helper 직접 호출의 잘못된 날짜·경로·개행 입력 16개 경로도 수정 전 실패/수정 후 통과를 확인했습니다.
+
+`5fd9219` 시점 Packer Template은 실제 ARM 입력·고정 펌웨어·Packer 1.16.0/QEMU Plugin 1.1.6으로 전체 `validate`를 통과했습니다. 이는 후속 Template 변경의 실행 증거가 아닙니다. 임시 SSH Key는 삭제했고 해당 검증은 VM을 생성하지 않았습니다. 전체 회귀는 API 1,270개 통과/1개 Linux systemd Skip, Runner 45개, Worker/Gateway, Web 125개·타입 검사, Lab 18개를 통과했습니다.
+
+후속 실제 실행에서 CD 연결 누락과 ARM64 KVM 식별 오류를 재현했습니다. `11518f9`는 Seed CD 연결을, `34ae353`은 전용 제품명과 KVM 식별의 공존을 수정했습니다. 수정 전 실패하는 회귀 검사 후 `34ae353`에서 실제 Linux 이미지 테스트 **127개 전부 통과**(2.894초), Mac **126개 통과/1개 Skip**, Packer 구문 검사와 `make lint`를 확인했습니다. 실패한 VM과 임시 Key가 정리됐고 후보 승인 기록은 생성되지 않았습니다.
+
+`34ae353`의 새 표준 Builder 실행은 실제 SSH에서 `aarch64`·`kvm`·전용 DMI 제품명을 확인했고, 해당 QEMU 프로세스의 `/dev/kvm`·KVM VM/vCPU 핸들도 확인했습니다. 읽기 전용 Framebuffer에는 Ubuntu 24.04.4 로그인 화면이 표시됐습니다. **이 시점은 패키지 설치 중이며 봉인·두 Boot·Desktop/Browser 사용 완료 증거는 아닙니다.** Mac 화면 공유의 연결 실패도 별도로 기록했으며 원격 입력 성공으로 계산하지 않습니다.
