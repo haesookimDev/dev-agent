@@ -15,8 +15,9 @@ from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
 
 if __package__:
-    from . import prepare
+    from . import codex_package, prepare
 else:
+    import codex_package
     import prepare
 
 BUILD_PRODUCT = "KelpieGoldenImageBuild"
@@ -157,6 +158,29 @@ def configure_apt(snapshot: str, packages: dict) -> None:
     prepare.write_json(INSTALL_ROOT / "apt-inventory.json", installed)
 
 
+def install_codex(item: dict, inputs: Path, root: Path, executable: Path) -> None:
+    require(not os.path.lexists(executable), "Codex entrypoint already exists")
+    source = inputs / item["file"]
+    if item["file"].endswith((".tgz", ".tar.gz")):
+        destination = root / "codex"
+        records = codex_package.extract(source, destination, item["version"])
+        codex_package.verify_installed(destination, item["version"], records)
+        prepare.write_json(root / "codex-inventory.json", records)
+        # Preserve the native package layout, without claiming an npm-managed installation.
+        executable.symlink_to(destination / codex_package.PREFIX / "bin/codex")
+    else:
+        with os.fdopen(prepare.regular_file(source), "rb") as stream:
+            header = stream.read(20)
+        require(header[:6] == b"\x7fELF\x02\x01" and header[18:20] == b"\x3e\x00",
+                "Codex must be an amd64 ELF executable")
+        source_fd = os.open(inputs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            prepare.copy_verified(item, source_fd, executable)
+        finally:
+            os.close(source_fd)
+        executable.chmod(0o755)
+
+
 def reject_credentials() -> None:
     for directory in (Path("/root"), Path("/home/kelpie"), Path("/home/kelpie-builder")):
         require(not (directory / ".codex/auth.json").exists()
@@ -188,11 +212,7 @@ def install() -> None:
         os.close(source_fd)
     for item in manifest["runner_wheels"]:
         verify_wheel(inputs / item["file"], item)
-    codex = inputs / manifest["codex"]["file"]
-    with codex.open("rb") as stream:
-        header = stream.read(20)
-    require(header[:6] == b"\x7fELF\x02\x01" and header[18:20] == b"\x3e\x00",
-            "Codex must be an amd64 ELF executable")
+    install_codex(manifest["codex"], inputs, INSTALL_ROOT, Path("/usr/local/bin/codex"))
     configure_apt(manifest["ubuntu_snapshot"], manifest["apt_packages"])
     command("python3.12", "-m", "venv", "/opt/kelpie/runner")
     requirements = "".join(
@@ -210,12 +230,6 @@ def install() -> None:
         capture=True,
     ))
     prepare.write_json(INSTALL_ROOT / "python-inventory.json", wheel_versions)
-    source_fd = os.open(inputs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        prepare.copy_verified(manifest["codex"], source_fd, Path("/usr/local/bin/codex"))
-    finally:
-        os.close(source_fd)
-    os.chmod("/usr/local/bin/codex", 0o755)
     require(command("runuser", "-u", "kelpie", "--", "/usr/local/bin/codex", "--version",
                     timeout=30, capture=True) == f"codex-cli {manifest['codex']['version']}",
             "installed Codex version differs from lock")
@@ -247,7 +261,7 @@ def install() -> None:
     prepare.write_json(INSTALL_ROOT / "image-manifest.json", manifest)
     health_tools = INSTALL_ROOT / "image-health"
     health_tools.mkdir(mode=0o755)
-    for name in ("health.py", "prepare.py", "guest.py"):
+    for name in ("health.py", "prepare.py", "guest.py", "codex_package.py"):
         write_file(health_tools / name, (STAGING / "tooling" / name).read_text())
     reject_credentials()
     # This is build-owned package staging, never a workspace or caller-selected path.

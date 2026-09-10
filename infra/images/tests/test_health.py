@@ -12,7 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from infra.images import health, prepare
+from infra.images import codex_package, health, prepare
+from infra.images.tests import test_codex_package
 
 
 class HealthTests(unittest.TestCase):
@@ -23,7 +24,8 @@ class HealthTests(unittest.TestCase):
         self.manifest = {
             "image_version": "synthetic.1", "apt_packages": {"synthetic-package": "1.0"},
             "runner_wheels": [{"name": "kelpie-vm-runner", "version": "1.0"}],
-            "codex": {"version": "0.0-fixture"}, "browser": {"version": "0.0-fixture"},
+            "codex": {"file": "codex", "version": "0.0-fixture"},
+            "browser": {"version": "0.0-fixture"},
         }
         self.put("opt/kelpie/image-manifest.json", json.dumps(self.manifest))
         self.digest = hashlib.sha256(
@@ -105,6 +107,43 @@ class HealthTests(unittest.TestCase):
             self.manifest["apt_packages"]["synthetic-package"] = "1.0"
             self.manifest["runner_wheels"][0]["version"] = "2.0"
             with self.assertRaisesRegex(prepare.InputError, "wheel versions"):
+                health.installed(self.manifest)
+
+    def test_boot_checks_complete_codex_package_and_canonical_entrypoint(self):
+        case = test_codex_package.CodexPackageTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        destination = self.root / "opt/kelpie/codex"
+        records = codex_package.extract(case.archive(), destination, case.version)
+        self.put("opt/kelpie/codex-inventory.json", json.dumps(records))
+        entrypoint = self.root / "usr/local/bin/codex"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.symlink_to(f"/opt/kelpie/codex/{codex_package.PREFIX}bin/codex")
+        self.manifest["codex"] = {"file": "codex.tgz", "version": case.version}
+        self.put("opt/kelpie/apt-inventory.json", json.dumps(self.manifest["apt_packages"]))
+        self.put("opt/kelpie/python-inventory.json", '{"kelpie-vm-runner":"1.0"}')
+
+        def command(*args, **kwargs):
+            if args[0] == "dpkg-query":
+                return "synthetic-package\t1.0"
+            if args[1] == "-c":
+                return '{"kelpie-vm-runner":"1.0"}'
+            if args[-1] == "--version":
+                return (f"codex-cli {case.version}" if args[-2].endswith("codex")
+                        else "Chrome 0.0-fixture")
+            return ""
+
+        with patch.object(health, "command", side_effect=command):
+            health.installed(self.manifest)
+            entrypoint.unlink()
+            entrypoint.symlink_to("/different/codex")
+            with self.assertRaisesRegex(prepare.InputError, "entrypoint differs"):
+                health.installed(self.manifest)
+            entrypoint.unlink()
+            entrypoint.symlink_to(f"/opt/kelpie/codex/{codex_package.PREFIX}bin/codex")
+            helper = destination / codex_package.PREFIX / "bin/codex-code-mode-host"
+            helper.write_bytes(b"x" * helper.stat().st_size)
+            with self.assertRaisesRegex(prepare.InputError, "installed file changed"):
                 health.installed(self.manifest)
 
     def test_browser_uses_disposable_unprivileged_profile_and_keeps_sandbox(self):

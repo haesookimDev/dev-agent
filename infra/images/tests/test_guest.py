@@ -8,7 +8,8 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from infra.images import guest, prepare
+from infra.images import build, codex_package, guest, prepare
+from infra.images.tests import test_codex_package
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -91,6 +92,55 @@ class GuestTests(unittest.TestCase):
                      {"name": "kelpie-vm-runner", "version": "0.2.0"}):
             with self.assertRaisesRegex(prepare.InputError, "wheel identity differs from lock"):
                 guest.verify_wheel(wheel, item)
+
+    def test_installs_complete_codex_package_without_executing_it(self):
+        case = test_codex_package.CodexPackageTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        source = case.archive()
+        item = build.measure(source) | {"version": case.version}
+        entrypoint = self.root / "codex-entry"
+        with patch.object(guest, "command") as command:
+            guest.install_codex(item, source.parent, self.root, entrypoint)
+        command.assert_not_called()
+        self.assertEqual(entrypoint.readlink(),
+                         self.root / "codex" / codex_package.PREFIX / "bin/codex")
+        records = build.read_json(self.root / "codex-inventory.json")
+        codex_package.verify_installed(self.root / "codex", case.version, records)
+        self.assertEqual(set(records), set(case.files))
+        with self.assertRaisesRegex(prepare.InputError, "entrypoint already exists"):
+            guest.install_codex(item, source.parent, self.root, entrypoint)
+
+    def test_incomplete_codex_package_never_creates_entrypoint_or_inventory(self):
+        case = test_codex_package.CodexPackageTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        source = case.archive({codex_package.PREFIX + "codex-resources/bwrap": None})
+        with self.assertRaises(prepare.InputError):
+            guest.install_codex(build.measure(source) | {"version": case.version},
+                                source.parent, self.root, self.root / "codex-entry")
+        self.assertFalse(os.path.lexists(self.root / "codex-entry"))
+        self.assertFalse((self.root / "codex-inventory.json").exists())
+        self.assertFalse((self.root / "codex").exists())
+
+    def test_legacy_codex_elf_remains_supported_with_digest_and_architecture_checks(self):
+        source = self.root / "codex-standalone"
+        entrypoint = self.root / "codex-entry"
+        source.write_bytes(b"\x7fELF\x02\x01" + b"\x00" * 12 + b"\x3e\x00" + b"synthetic")
+        item = build.measure(source) | {"version": "0.0-fixture"}
+        guest.install_codex(item, self.root, self.root, entrypoint)
+        self.assertFalse(entrypoint.is_symlink())
+        self.assertEqual(entrypoint.read_bytes(), source.read_bytes())
+        self.assertEqual(stat.S_IMODE(entrypoint.stat().st_mode), 0o755)
+        self.assertFalse((self.root / "codex-inventory.json").exists())
+        entrypoint.unlink()
+        with self.assertRaises(prepare.InputError):
+            guest.install_codex(item | {"sha256": "0" * 64}, self.root, self.root, entrypoint)
+        entrypoint.unlink(missing_ok=True)  # Only this test's failed copy, never reused.
+        source.write_bytes(b"not an amd64 ELF")
+        with self.assertRaisesRegex(prepare.InputError, "amd64 ELF"):
+            guest.install_codex(build.measure(source), self.root, self.root, entrypoint)
+        self.assertFalse(entrypoint.exists())
 
     def test_rejects_ambiguous_wheel_metadata(self):
         for index, entries in enumerate([

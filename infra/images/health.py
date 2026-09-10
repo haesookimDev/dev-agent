@@ -14,8 +14,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 if __package__:
-    from . import guest, prepare
+    from . import codex_package, guest, prepare
 else:
+    import codex_package
     import guest
     import prepare
 
@@ -106,6 +107,13 @@ def installed(manifest: dict) -> None:
     require(all(normalized.get(re.sub(r"[-_.]+", "-", item["name"])) == item["version"]
                 for item in manifest["runner_wheels"]), "installed wheel versions differ from lock")
     command(guest.RUNNER_PYTHON, "-m", "pip", "--isolated", "check")
+    if manifest["codex"]["file"].endswith((".tgz", ".tar.gz")):
+        codex_root = ROOT / "opt/kelpie/codex"
+        codex_package.verify_installed(codex_root, manifest["codex"]["version"],
+                                       read_json(ROOT / "opt/kelpie/codex-inventory.json"))
+        require(os.readlink(ROOT / "usr/local/bin/codex")
+                == f"/opt/kelpie/codex/{codex_package.PREFIX}bin/codex",
+                "Codex entrypoint differs from installed package")
     require(command("runuser", "-u", "kelpie", "--", "/usr/local/bin/codex", "--version")
             == f"codex-cli {manifest['codex']['version']}", "Codex version differs from lock")
     require(command("runuser", "-u", "kelpie", "--", "/usr/local/bin/chromium", "--version")
