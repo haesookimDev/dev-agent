@@ -54,7 +54,8 @@ Continuous MVP development uses the roadmap's [next release](roadmap-summary.md#
 
 ## Verification
 
-- `make test`: API, Runner, Worker, Gateway, Web tests and Web type checking
+- `make test`: API, Runner, Worker, Gateway, Web/image-input tests and Web type checking
+- `make test-images`: [golden image input](golden-image-inputs.md) file/CLI regressions. Actual image build/boot verification is a separate gate.
 - `make lint`: Python Ruff, Go vet and Web ESLint
 - `make test-monitoring PROMTOOL=/path/to/promtool`: monitoring configuration and PromQL alert validation. [Installation and operations](monitoring-alerts.md)
 - `cd apps/web && npm run build`: production Web build

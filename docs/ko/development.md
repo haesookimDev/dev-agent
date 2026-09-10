@@ -54,7 +54,8 @@ MVP 지속 개발에서는 [로드맵의 바로 다음 Release](roadmap-summary.
 
 ## 검증
 
-- `make test`: API, Runner, Worker, Gateway, Web 테스트와 Web 타입 검사
+- `make test`: API, Runner, Worker, Gateway, Web·이미지 입력 테스트와 Web 타입 검사
+- `make test-images`: [Golden Image 입력](golden-image-inputs.md)의 파일·CLI 회귀. 실제 Image Build/Boot 검증은 별도 Gate입니다.
 - `make lint`: Python Ruff, Go vet, Web ESLint
 - `make test-monitoring PROMTOOL=/path/to/promtool`: Monitoring 설정과 PromQL 알림 규칙 검증. [설치·운영 안내](monitoring-alerts.md)
 - `cd apps/web && npm run build`: 운영 Web 빌드
