@@ -6,7 +6,7 @@
 
 [`prepare.py`](../../infra/images/prepare.py)는 입력 검증·별도 사본 준비만 수행합니다. [`build.py`](../../infra/images/build.py)와 [Packer 설정](../../infra/images/ubuntu.pkr.hcl)은 승인한 전용 KVM Host에서 [`guest.py`](../../infra/images/guest.py)의 설치·봉인 후 [`boot.py`](../../infra/images/boot.py)의 두 차례 부팅 검사를 자동 실행하는 후보 Builder입니다. **이 경로의 실제 Image Build/Boot/Desktop 검증과 릴리즈 Gate는 미완료이며 IMG-001도 미완료입니다.** 현재 Worker의 Base Image 설정이나 실행 경로를 바꾸거나 자동 Rollout하지 않습니다.
 
-승인된 Ubuntu 24.04 amd64 이미지, Codex 실행 파일, Linux 브라우저 ZIP, Runner와 전체 Python 의존성 Wheel을 먼저 확보해야 합니다. 기대 Hash는 검토한 공식 배포 자료/빌드 증거에서 확인하세요. 출처를 확인하지 않은 파일을 직접 Hash한 것만으로 신뢰할 수 있는 배포물이 되지는 않습니다. 저장소에는 실제 검증하지 않은 Version·Checksum을 릴리즈 Lock으로 넣지 않습니다.
+검토한 Ubuntu 24.04 amd64 이미지, Codex Linux x64 플랫폼 패키지 또는 독립 실행 파일, Linux 브라우저 ZIP, Runner와 전체 Python 의존성 Wheel을 먼저 확보해야 합니다. 공개 배포 입력은 에이전트가 공식 출처에서 확보·검증할 수 있으며 사용자에게 파일 제공을 반드시 요구하지 않습니다. 기대 Hash는 검토한 공식 배포 자료/빌드 증거에서 확인하세요. 출처를 확인하지 않은 파일을 직접 Hash한 것만으로 신뢰할 수 있는 배포물이 되지는 않습니다. 저장소에는 실제 검증하지 않은 Version·Checksum을 릴리즈 Lock으로 넣지 않습니다.
 
 ## Version 1 입력 계약
 
@@ -24,7 +24,15 @@ Manifest는 UTF-8 JSON이며 최대 128 KiB입니다. 아래 Field만 허용하�
 
 입력 준비의 필수 APT 이름은 `build-essential`, `ca-certificates`, `dbus-x11`, `git`, `nodejs`, `npm`, `python3.12-venv`, `qemu-guest-agent`, `xfce4`, `xorg`입니다. Builder는 추가로 `lightdm`, `libnss3`, `libgbm1`, `libasound2t64`, `fonts-liberation`, `x11-utils`의 정확한 Version을 요구합니다. `x11-utils`의 `xdpyinfo`는 실제 X Display 응답 검사에 사용합니다. 이 목록이 완전한 Desktop/Browser 의존성 집합임을 보장하지 않으며 실제 설치·사용 검증이 필요합니다.
 
-`file`은 하위 경로 없는 ASCII 파일명이며 대소문자 Alias까지 중복을 금지합니다. Base Image 확장자는 `.qcow2`/`.img`(최대 64 GiB), Browser는 `.zip`(2 GiB), Wheel은 `.whl`(개당 256 MiB), Codex는 압축 해제된 단일 실행 파일(1 GiB)입니다. `size_bytes`는 양의 정수, `sha256`은 소문자 64자리입니다. 확장자 검사는 내부 형식·Architecture·실행 안전성 검사가 아닙니다.
+`file`은 하위 경로 없는 ASCII 파일명이며 대소문자 Alias까지 중복을 금지합니다. Base Image 확장자는 `.qcow2`/`.img`(최대 64 GiB), Browser는 `.zip`(2 GiB), Wheel은 `.whl`(개당 256 MiB), Codex 입력은 최대 1 GiB입니다. `size_bytes`는 양의 정수, `sha256`은 소문자 64자리입니다. 확장자 검사는 내부 형식·Architecture·실행 안전성 검사가 아닙니다.
+
+### Codex 전체 플랫폼 패키지
+
+[공식 Codex CLI 안내](https://learn.chatgpt.com/docs/codex/cli)의 npm 배포 경로를 기준으로, 검토한 `@openai/codex`의 `VERSION-linux-x64` 플랫폼 Archive를 사용할 수 있습니다. 최상위 JavaScript Wrapper 패키지나 다른 Architecture의 Archive와 혼동하지 마세요. Manifest의 `codex.version`은 `VERSION`이며 파일 이름이 `.tgz`/`.tar.gz`이면 전체 패키지로 해석합니다. 다른 이름의 기존 amd64 ELF 입력도 계속 지원합니다. Schema/Worker 설정 변경이나 기존 이미지 자동 교체는 없습니다.
+
+- [`codex_package.py`](../../infra/images/codex_package.py)는 `package/` 아래 Layout Version 1·Linux x64 Metadata와 5개 amd64 ELF(Codex, `codex-code-mode-host`, `rg`, `bwrap`, `zsh`)를 검사합니다. 전체 파일을 미리 검사한 뒤 `/opt/kelpie/codex`에 상대 배치를 보존해 추출하며 `/usr/local/bin/codex`는 그 안의 본체를 가리킵니다. npm 관리 설치라고 표시하거나 로그인하지 않습니다.
+- 최대 100개 일반 파일·총 512 MiB·Metadata별 64 KiB입니다. 경로 이탈·대소문자 중복·부모/파일 충돌·링크·특수/Sparse 파일을 거부하고, 실행 파일은 `0755`, 나머지는 `0644`로 제한해 Setuid/Setgid를 보존하지 않습니다. 압축 해제 읽기에도 상한이 있습니다. 현재 지원 Layout과 다른 배포물은 검토·테스트 없이 수용하지 않습니다.
+- 설치 시 파일 목록·크기·SHA-256·Mode를 `/opt/kelpie/codex-inventory.json`에 기록합니다. 부팅 검사는 보조 파일까지 동일한지와 실행 링크의 정확한 대상을 재검사한 뒤 Version을 확인합니다. 이 Inventory는 배포자 서명이나 완전한 SBOM을 대체하지 않습니다.
 
 ## 실행과 결과
 
@@ -104,3 +112,19 @@ python3 infra/images/build.py \
 `make test-image-template PACKER=/path/to/packer`는 Format와 **구문만** 검사합니다. 기존 `Go` CI에서 공식 Packer Archive를 캐시하고 매번 고정 SHA-256을 확인한 뒤 실행합니다. Plugin/VM 설치가 없고 새 Job·Matrix·8분 Timeout 증가는 없습니다. 전체 Plugin 설정 검증·실제 Build/Boot를 이 구문 검사로 대체하지 않습니다. 이번 후속 변경의 전체 회귀·최종 SHA CI는 PR 검증 기록을 확인하세요.
 
 후속 `c63be0e`(Guest 검사), `34a16ff`(Guest Agent 통신), `0379e48`(자동 두 차례 부팅 연결)은 `make test-images` **85개 중 84개 통과/1개 Skip**(macOS 약 2.3초), `make lint`, Packer Format/구문 및 합성 입력 전체 설정 검증을 통과했습니다. Skip은 Linux `SO_PEERCRED` PID 검사이며 Linux CI에서 실제 Unix Socket으로 실행합니다. Mac에서도 실제 Unix Socket의 동기화·분할/오래된 응답·중복 Key·크기/시간 제한을 검사했습니다. 두 Boot·Guest 상태·QEMU 종료는 모의 호출 검증이며 실제 VM을 구동하지 않았습니다. 새 Python 의존성·CI Job·VM CI는 추가하지 않았습니다.
+
+`86369b4`의 플랫폼 패키지 검증과 `a73f600`의 Guest/Boot 연결은 이미지 테스트 **97개 중 96개 통과/1개 Linux 전용 Skip**(2.216초), `make lint`, Packer Format/구문·합성 입력 전체 설정 검증을 통과했습니다. 전체 파일 보존, Metadata·Architecture 불일치, 경로/링크/크기 제한, 기존 ELF 호환성, 설치 후 보조 파일 변조와 잘못된 실행 링크를 검사합니다. 기존 CI Job 안에서 실행하며 제품 Python 의존성을 추가하지 않았습니다.
+
+### 2026-09-10 실제 공개 입력 검증
+
+Mac의 전용 비공개 디렉터리에서 다음 실제 파일을 확보했습니다. 이는 합성 Fixture가 아니지만 **Guest 설치·바이너리 실행·KVM/GUI 검증은 아닙니다.**
+
+| 입력 | 고정한 대상과 실제 확인 |
+| --- | --- |
+| Ubuntu | [Noble `release-20260826`](https://cloud-images.ubuntu.com/releases/noble/release-20260826/) amd64 `.img`를 내려받아 공식 `SHA256SUMS`와 일치 확인. GPG 서명·qcow2 내부 검사는 아직 미실시. |
+| Codex | `0.154.0-linux-x64` 플랫폼 Archive와 최상위 npm 배포물의 SHA-512를 공식 Registry Metadata의 Integrity와 비교. 플랫폼 8개 파일을 실제 추출·설치 Helper·Inventory 재검사. 인증된 Codex 작업은 미실시. |
+| Browser | [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/) `153.0.8010.36` Linux64 ZIP의 실제 경계 검사·추출. 계산한 SHA-256을 후보 Lock에 기록했으며 독립 배포자 SHA-256 증명으로 표현하지 않음. |
+| Runner | `1fd999fbaf32706d8bbe8f07a803c61135d96ba4`의 Git Archive에서 `hatchling==1.32.0`으로 Wheel 생성. Linux amd64/Python 3.12 대상 의존 Wheel 8개의 SHA-256·크기·비 Yank 상태를 PyPI Version Metadata와 비교. Guest `pip check`·실행은 미실시. |
+| APT | Ubuntu 24.04의 격리된 메타데이터 전용 컨테이너에서 `20260909T000000Z` Snapshot의 `apt-get update`와 16개 필수 패키지의 amd64 `apt-cache policy` 확인. TLS·GPG·유효기간 검사를 유지했으며 Guest 패키지 설치 증거는 아님. |
+
+실제 12개 입력으로 별도 `prepare.py` CLI가 Exit 0·`inputs_verified`·`release_eligible=false`를 반환했습니다. Manifest SHA-256은 `39e57c6b068eab711f53b5e929460fdf3acb2fea12e685fb505cde5bff106855`입니다. 후보 Bundle·공개 출처 Metadata·검사 로그는 로컬에 보존하고 바이너리·가상환경은 커밋하지 않습니다. 공개 입력 확보와 전용 KVM Host 승인/접근은 별개이며, 후자가 없으므로 Build/Boot/GUI Gate와 Draft 상태는 유지합니다.

@@ -6,7 +6,7 @@
 
 [`prepare.py`](../../infra/images/prepare.py) only verifies inputs and prepares separate copies. [`build.py`](../../infra/images/build.py) and the [Packer template](../../infra/images/ubuntu.pkr.hcl) invoke [`guest.py`](../../infra/images/guest.py) installation/sealing followed automatically by two [`boot.py`](../../infra/images/boot.py) boot checks on an approved dedicated KVM host. **Actual image build/boot/desktop verification of this path and release gates remain incomplete, as does IMG-001.** Existing Worker base-image configuration/execution is unchanged and no automatic rollout occurs.
 
-First obtain approved Ubuntu 24.04 amd64 image bytes, an unpacked Codex executable, a Linux browser ZIP and wheels for Runner and all Python dependencies. Check expected hashes against reviewed official distribution/build evidence. Hashing an untrusted file yourself does not authenticate its publisher. The repository does not ship unverified production versions/checksums as a release lock.
+First obtain reviewed Ubuntu 24.04 amd64 image bytes, a Codex Linux x64 platform package or standalone executable, a Linux browser ZIP and wheels for Runner and all Python dependencies. The agent can acquire and verify public inputs from official sources; users need not supply those files themselves. Check expected hashes against reviewed official distribution/build evidence. Hashing an untrusted file yourself does not authenticate its publisher. The repository does not ship unverified production versions/checksums as a release lock.
 
 ## Version 1 input contract
 
@@ -24,7 +24,15 @@ The manifest is UTF-8 JSON, at most 128 KiB. Only the following fields are allow
 
 Input preparation requires APT names `build-essential`, `ca-certificates`, `dbus-x11`, `git`, `nodejs`, `npm`, `python3.12-venv`, `qemu-guest-agent`, `xfce4`, `xorg`. The builder additionally requires exact versions of `lightdm`, `libnss3`, `libgbm1`, `libasound2t64`, `fonts-liberation`, `x11-utils`. The latter supplies `xdpyinfo` to check the actual X display response. This list does not guarantee complete desktop/browser dependencies; actual installation and use must be verified.
 
-`file` is a flat ASCII filename; even case aliases must be unique. Base images use `.qcow2`/`.img` (maximum 64 GiB), browsers `.zip` (2 GiB), wheels `.whl` (256 MiB each); Codex is a single unpacked executable (1 GiB). `size_bytes` is a positive integer and `sha256` is 64 lowercase hex characters. Extension checks do not validate internal formats, architecture or executable safety.
+`file` is a flat ASCII filename; even case aliases must be unique. Base images use `.qcow2`/`.img` (maximum 64 GiB), browsers `.zip` (2 GiB), wheels `.whl` (256 MiB each); Codex inputs are at most 1 GiB. `size_bytes` is a positive integer and `sha256` is 64 lowercase hex characters. Extension checks do not validate internal formats, architecture or executable safety.
+
+### Complete Codex platform package
+
+Following the npm distribution route in the [official Codex CLI guidance](https://learn.chatgpt.com/docs/codex/cli), a reviewed `@openai/codex` `VERSION-linux-x64` platform archive is supported. Do not confuse it with the top-level JavaScript wrapper package or another architecture. Set `codex.version` to `VERSION`; filenames ending in `.tgz`/`.tar.gz` select the complete-package path. Existing amd64 ELF inputs with other names remain supported. There is no schema/Worker configuration change or automatic image replacement.
+
+- [`codex_package.py`](../../infra/images/codex_package.py) checks layout version 1/Linux x64 metadata and five amd64 ELF files (Codex, `codex-code-mode-host`, `rg`, `bwrap`, `zsh`) under `package/`. All files are preflighted before extraction into `/opt/kelpie/codex`, preserving relative layout; `/usr/local/bin/codex` points to the native entrypoint inside it. This does not claim an npm-managed installation or perform login.
+- Limits are 100 regular files, 512 MiB total and 64 KiB per metadata file. Path escapes, case aliases, ancestor/file conflicts, links and special/sparse files are rejected. Executable files become `0755`, others `0644`, without setuid/setgid bits. Decompressed reads are bounded too. Other layouts require review/tests before support is added.
+- Installation records filenames, sizes, SHA-256 and modes in `/opt/kelpie/codex-inventory.json`. Boot checks reverify every helper and the exact entrypoint link before checking the version. This inventory is not a publisher signature or complete SBOM.
 
 ## Running and results
 
@@ -104,3 +112,19 @@ Follow-up guest installation/sealing `7b24b20` and host/Packer integration `ce5a
 `make test-image-template PACKER=/path/to/packer` checks formatting and **syntax only**. Existing `Go` CI caches the official Packer archive and verifies its pinned SHA-256 every time. It installs no plugin/VM and adds no job/matrix/eight-minute timeout increase. Syntax checking does not replace full plugin configuration validation or actual build/boot. See the PR verification record for this follow-up's full regression and final-head CI.
 
 Follow-ups `c63be0e` (guest checks), `34a16ff` (guest-agent transport) and `0379e48` (automatic two-boot integration) passed **84 of 85 image tests/one skipped** (about 2.3 seconds on macOS), `make lint`, Packer formatting/syntax and full synthetic-input configuration validation. The skip is Linux `SO_PEERCRED` PID verification, run against a real Unix socket in Linux CI. Mac tests also use real Unix sockets for synchronization, fragmented/stale responses, duplicate keys and size/time limits. Two boots, guest state and QEMU shutdown are mocked, not actual VM execution. No Python dependency, CI job or VM CI was added.
+
+Platform verification `86369b4` and guest/boot integration `a73f600` passed **96 of 97 image tests/one Linux-only skip** (2.216s), `make lint`, Packer formatting/syntax and full synthetic configuration validation. Coverage includes complete file preservation, metadata/architecture mismatch, path/link/size limits, legacy ELF compatibility, installed helper mutation and incorrect entrypoint links. Existing CI jobs run these tests without new product Python dependencies.
+
+### Actual public-input verification on 2026-09-10
+
+The following real files were acquired in a dedicated private directory on the Mac. They are not synthetic fixtures, but this is **not guest installation, binary execution or KVM/GUI verification**.
+
+| Input | Pinned target and actual check |
+| --- | --- |
+| Ubuntu | Downloaded [Noble `release-20260826`](https://cloud-images.ubuntu.com/releases/noble/release-20260826/) amd64 `.img`; matched official `SHA256SUMS`. GPG signature and internal qcow2 inspection remain unperformed. |
+| Codex | Compared SHA-512 of the `0.154.0-linux-x64` platform archive and top-level npm distribution against official registry integrity metadata. Actually extracted eight platform files and exercised the install helper/inventory recheck. No authenticated Codex job. |
+| Browser | Actual boundary checks/extraction of [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/) `153.0.8010.36` Linux64 ZIP. Calculated SHA-256 is in the candidate lock, not claimed as independent publisher SHA-256 attestation. |
+| Runner | Built a wheel with `hatchling==1.32.0` from the Git archive at `1fd999fbaf32706d8bbe8f07a803c61135d96ba4`. Compared SHA-256, size and non-yanked status of eight Linux amd64/Python 3.12 dependency wheels against PyPI version metadata. Guest `pip check` and execution remain unperformed. |
+| APT | An isolated metadata-only Ubuntu 24.04 container ran `apt-get update` and amd64 `apt-cache policy` for 16 required packages at snapshot `20260909T000000Z`. TLS, GPG and expiry checks remained enabled; this is not guest package installation evidence. |
+
+A separate `prepare.py` CLI using the 12 real inputs returned exit 0, `inputs_verified` and `release_eligible=false`. Manifest SHA-256: `39e57c6b068eab711f53b5e929460fdf3acb2fea12e685fb505cde5bff106855`. The candidate bundle, public provenance metadata and logs are retained locally; binaries/virtual environments are not committed. Public-input acquisition is separate from approval/access to a dedicated KVM host. The latter is missing, so build/boot/GUI gates and Draft status remain.
