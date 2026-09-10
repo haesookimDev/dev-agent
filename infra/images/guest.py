@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import zipfile
+from datetime import datetime
 from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
 
@@ -30,10 +31,20 @@ GUEST_PACKAGES = prepare.REQUIRED_PACKAGES | {
     "x11-utils",
 }
 MAX_EXPANDED_BROWSER_BYTES = 8 * 1024**3
+ARCHITECTURES = {
+    "amd64": ("x86_64", 62, "chrome-linux64", "https://archive.ubuntu.com/ubuntu/"),
+    "arm64": ("aarch64", 183, "chrome-linux-arm64", "https://snapshot.ubuntu.com/ubuntu/"),
+}
 
 
 def require(condition: bool, message: str) -> None:
     prepare.require(condition, message)
+
+
+def architecture_values(architecture: str) -> tuple[str, int, str, str]:
+    require(isinstance(architecture, str) and architecture in ARCHITECTURES,
+            "unsupported guest architecture")
+    return ARCHITECTURES[architecture]
 
 
 def command(*args: str, timeout: int = 900, capture: bool = False) -> str:
@@ -57,7 +68,9 @@ def guard_guest() -> None:
     release = platform.freedesktop_os_release()
     require(release.get("ID") == "ubuntu" and release.get("VERSION_ID") == "24.04",
             "installer requires Ubuntu 24.04")
-    require(platform.machine() == "x86_64", "installer requires an amd64 guest")
+    machine = platform.machine()
+    require(machine in {values[0] for values in ARCHITECTURES.values()},
+            "installer requires an amd64 or arm64 guest")
     require(command("systemd-detect-virt", "--vm", timeout=10, capture=True) == "kvm",
             "installer requires a KVM guest")
 
@@ -90,7 +103,8 @@ def verify_wheel(path: Path, item: dict) -> None:
             and parsed["Version"] == item["version"], "wheel identity differs from lock")
 
 
-def extract_browser(source: Path, destination: Path) -> Path:
+def extract_browser(source: Path, destination: Path, architecture: str = "amd64") -> Path:
+    _, elf_machine, archive_root, _ = architecture_values(architecture)
     with zipfile.ZipFile(source) as archive:
         entries = archive.infolist()
         require(1 <= len(entries) <= 10_000, "invalid browser archive")
@@ -101,7 +115,7 @@ def extract_browser(source: Path, destination: Path) -> Path:
             mode = entry.external_attr >> 16
             require(not path.is_absolute() and ".." not in path.parts
                     and "\\" not in entry.filename and "\x00" not in entry.orig_filename
-                    and path.parts and path.parts[0] == "chrome-linux64",
+                    and path.parts and path.parts[0] == archive_root,
                     "unsafe browser archive path")
             require(stat.S_IFMT(mode) in {0, stat.S_IFREG, stat.S_IFDIR},
                     "browser archive contains a special file")
@@ -125,12 +139,25 @@ def extract_browser(source: Path, destination: Path) -> Path:
                 # No setuid/setgid bits, writable shared files or --no-sandbox workaround.
                 mode = (entry.external_attr >> 16) & 0o755
                 os.fchmod(target_file.fileno(), mode or 0o644)
-    binary = destination / "chrome-linux64/chrome"
+    binary = destination / archive_root / "chrome"
     require(binary.is_file() and os.access(binary, os.X_OK), "browser executable is missing")
+    with os.fdopen(prepare.regular_file(binary), "rb") as stream:
+        header = stream.read(20)
+    require(header[:6] == b"\x7fELF\x02\x01"
+            and header[18:20] == elf_machine.to_bytes(2, "little"),
+            f"browser executable must be {architecture} ELF")
     return binary
 
 
-def configure_apt(snapshot: str, packages: dict) -> None:
+def configure_apt(snapshot: str, packages: dict, architecture: str = "amd64") -> None:
+    _, _, _, mirror = architecture_values(architecture)
+    require(isinstance(snapshot, str)
+            and re.fullmatch(r"[0-9]{8}T[0-9]{6}Z", snapshot) is not None,
+            "invalid Ubuntu snapshot")
+    try:
+        datetime.strptime(snapshot, "%Y%m%dT%H%M%SZ")
+    except ValueError:
+        raise prepare.InputError("invalid Ubuntu snapshot") from None
     require(GUEST_PACKAGES <= packages.keys(), "required guest packages are missing")
     sources_dir = Path("/etc/apt/sources.list.d")
     require(set(sources_dir.glob("*.sources")) <= {sources_dir / "ubuntu.sources"}
@@ -139,12 +166,14 @@ def configure_apt(snapshot: str, packages: dict) -> None:
     if legacy.exists():
         require(all(not line.strip() or line.lstrip().startswith("#")
                     for line in legacy.read_text().splitlines()), "unexpected APT sources")
+    uri = mirror if architecture == "amd64" else f"{mirror}{snapshot}/"
+    snapshot_field = f"Snapshot: {snapshot}\n" if architecture == "amd64" else ""
     write_file(sources_dir / "ubuntu.sources", (
-        "Types: deb\nURIs: https://archive.ubuntu.com/ubuntu/\n"
+        f"Types: deb\nURIs: {uri}\n"
         "Suites: noble noble-updates noble-security\n"
         "Components: main restricted universe multiverse\n"
         "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
-        f"Snapshot: {snapshot}\n"
+        f"{snapshot_field}"
     ))
     # Keep signature, certificate and metadata-expiry validation enabled.
     command("apt-get", "update")
@@ -158,21 +187,25 @@ def configure_apt(snapshot: str, packages: dict) -> None:
     prepare.write_json(INSTALL_ROOT / "apt-inventory.json", installed)
 
 
-def install_codex(item: dict, inputs: Path, root: Path, executable: Path) -> None:
+def install_codex(item: dict, inputs: Path, root: Path, executable: Path,
+                  architecture: str = "amd64") -> None:
+    _, elf_machine, _, _ = architecture_values(architecture)
     require(not os.path.lexists(executable), "Codex entrypoint already exists")
     source = inputs / item["file"]
     if item["file"].endswith((".tgz", ".tar.gz")):
         destination = root / "codex"
-        records = codex_package.extract(source, destination, item["version"])
-        codex_package.verify_installed(destination, item["version"], records)
+        records = codex_package.extract(source, destination, item["version"], architecture)
+        codex_package.verify_installed(destination, item["version"], records, architecture)
         prepare.write_json(root / "codex-inventory.json", records)
         # Preserve the native package layout, without claiming an npm-managed installation.
-        executable.symlink_to(destination / codex_package.PREFIX / "bin/codex")
+        executable.symlink_to(
+            destination / codex_package.runtime_prefix(architecture) / "bin/codex")
     else:
         with os.fdopen(prepare.regular_file(source), "rb") as stream:
             header = stream.read(20)
-        require(header[:6] == b"\x7fELF\x02\x01" and header[18:20] == b"\x3e\x00",
-                "Codex must be an amd64 ELF executable")
+        require(header[:6] == b"\x7fELF\x02\x01"
+                and header[18:20] == elf_machine.to_bytes(2, "little"),
+                f"Codex must be an {architecture} ELF executable")
         source_fd = os.open(inputs, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             prepare.copy_verified(item, source_fd, executable)
@@ -196,6 +229,9 @@ def install() -> None:
     command("cloud-init", "status", "--wait", timeout=600)
     reject_credentials()
     manifest = prepare.read_manifest(STAGING / "manifest.json")
+    architecture = manifest["architecture"]
+    require(prepare.native_machine(architecture) == platform.machine(),
+            "manifest architecture differs from native guest")
     require(GUEST_PACKAGES <= manifest["apt_packages"].keys(),
             "required guest packages are missing")
     for name in ("/usr/local/bin/codex", "/usr/local/bin/chromium",
@@ -212,8 +248,9 @@ def install() -> None:
         os.close(source_fd)
     for item in manifest["runner_wheels"]:
         verify_wheel(inputs / item["file"], item)
-    install_codex(manifest["codex"], inputs, INSTALL_ROOT, Path("/usr/local/bin/codex"))
-    configure_apt(manifest["ubuntu_snapshot"], manifest["apt_packages"])
+    install_codex(manifest["codex"], inputs, INSTALL_ROOT, Path("/usr/local/bin/codex"),
+                  architecture)
+    configure_apt(manifest["ubuntu_snapshot"], manifest["apt_packages"], architecture)
     command("python3.12", "-m", "venv", "/opt/kelpie/runner")
     requirements = "".join(
         f"{item['name']}=={item['version']} --hash=sha256:{item['sha256']}\n"
@@ -233,13 +270,13 @@ def install() -> None:
     require(command("runuser", "-u", "kelpie", "--", "/usr/local/bin/codex", "--version",
                     timeout=30, capture=True) == f"codex-cli {manifest['codex']['version']}",
             "installed Codex version differs from lock")
-    browser = extract_browser(inputs / manifest["browser"]["file"], BROWSER_ROOT)
+    browser = extract_browser(inputs / manifest["browser"]["file"], BROWSER_ROOT, architecture)
     browser_version = command("runuser", "-u", "kelpie", "--", str(browser), "--version",
                               timeout=30, capture=True)
     require(browser_version.split()[-1:] == [manifest["browser"]["version"]],
             "installed browser version differs from lock")
     write_file(Path("/usr/local/bin/chromium"),
-               '#!/bin/sh\nexec /opt/kelpie/browser/chrome-linux64/chrome "$@"\n', 0o755)
+               f'#!/bin/sh\nexec {browser} "$@"\n', 0o755)
     Path("/usr/local/bin/kelpie-runner").symlink_to("/opt/kelpie/runner/bin/kelpie-runner")
     unit = (STAGING / "tooling/kelpie-runner.service").read_text()
     write_file(Path("/etc/systemd/system/kelpie-runner.service"), unit)

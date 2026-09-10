@@ -29,17 +29,61 @@ class GuestTests(unittest.TestCase):
                 archive.writestr(info, content)
         return path
 
+    @staticmethod
+    def elf(machine):
+        header = bytearray(64)
+        header[:16] = b"\x7fELF\x02\x01\x01" + b"\x00" * 9
+        header[16:18] = (2).to_bytes(2, "little")
+        header[18:20] = machine.to_bytes(2, "little")
+        header[20:24] = (1).to_bytes(4, "little")
+        header[52:54] = (64).to_bytes(2, "little")
+        return bytes(header) + b"synthetic fixture, never executable"
+
     def test_extracts_browser_without_privileged_modes(self):
         archive = self.archive([
-            ("chrome-linux64/chrome", stat.S_IFREG | 0o6755, b"synthetic executable"),
+            ("chrome-linux64/chrome", stat.S_IFREG | 0o6755, self.elf(62)),
             ("chrome-linux64/locales/ko.pak", stat.S_IFREG | 0o666, b"synthetic locale"),
         ])
         target = self.root / "browser"
         binary = guest.extract_browser(archive, target)
-        self.assertEqual(binary.read_bytes(), b"synthetic executable")
+        self.assertEqual(binary.read_bytes(), self.elf(62))
         self.assertEqual(stat.S_IMODE(binary.stat().st_mode), 0o755)
         self.assertEqual(stat.S_IMODE((target / "chrome-linux64/locales/ko.pak").stat().st_mode),
                          0o644)
+
+    def test_extracts_arm64_browser_from_the_architecture_specific_root(self):
+        archive = self.archive([
+            ("chrome-linux-arm64/chrome", stat.S_IFREG | 0o755, self.elf(183)),
+            ("chrome-linux-arm64/locales/en-US.pak", stat.S_IFREG | 0o644, b"locale"),
+        ])
+        target = self.root / "arm-browser"
+        binary = guest.extract_browser(archive, target, "arm64")
+        self.assertEqual(binary, target / "chrome-linux-arm64/chrome")
+        self.assertEqual(binary.read_bytes(), self.elf(183))
+
+    def test_rejects_cross_architecture_browser_roots_and_executables(self):
+        for index, (architecture, archive_root, machine) in enumerate([
+            ("amd64", "chrome-linux-arm64", 183),
+            ("arm64", "chrome-linux64", 62),
+        ]):
+            with self.subTest(architecture=architecture, kind="root"):
+                source = self.archive([
+                    (f"{archive_root}/chrome", stat.S_IFREG | 0o755, self.elf(machine)),
+                ], name=f"wrong-root-{index}.zip")
+                target = self.root / f"wrong-root-{index}"
+                with self.assertRaisesRegex(prepare.InputError, "unsafe browser archive path"):
+                    guest.extract_browser(source, target, architecture)
+                self.assertFalse(target.exists())
+        for index, (architecture, archive_root, machine) in enumerate([
+            ("amd64", "chrome-linux64", 183),
+            ("arm64", "chrome-linux-arm64", 62),
+        ]):
+            with self.subTest(architecture=architecture, kind="ELF"):
+                source = self.archive([
+                    (f"{archive_root}/chrome", stat.S_IFREG | 0o755, self.elf(machine)),
+                ], name=f"wrong-elf-{index}.zip")
+                with self.assertRaisesRegex(prepare.InputError, f"{architecture} ELF"):
+                    guest.extract_browser(source, self.root / f"wrong-elf-{index}", architecture)
 
     def test_rejects_browser_path_escapes_and_special_files_before_extraction(self):
         for index, (name, mode) in enumerate([
@@ -58,21 +102,21 @@ class GuestTests(unittest.TestCase):
 
     def test_rejects_browser_aliases(self):
         source = self.archive([
-            ("chrome-linux64/chrome", stat.S_IFREG | 0o755, b"one"),
-            ("chrome-linux64/Chrome", stat.S_IFREG | 0o755, b"two"),
+            ("chrome-linux64/chrome", stat.S_IFREG | 0o755, self.elf(62)),
+            ("chrome-linux64/Chrome", stat.S_IFREG | 0o755, self.elf(62)),
         ])
         with self.assertRaisesRegex(prepare.InputError, "duplicate browser archive path"):
             guest.extract_browser(source, self.root / "out")
 
     def test_limits_browser_expansion_before_creating_output(self):
-        source = self.archive([("chrome-linux64/chrome", stat.S_IFREG | 0o755, b"long")])
+        source = self.archive([("chrome-linux64/chrome", stat.S_IFREG | 0o755, self.elf(62))])
         with patch.object(guest, "MAX_EXPANDED_BROWSER_BYTES", 3):
             with self.assertRaisesRegex(prepare.InputError, "browser expansion limit exceeded"):
                 guest.extract_browser(source, self.root / "out")
         self.assertFalse((self.root / "out").exists())
 
     def test_browser_requires_executable_without_overwriting_existing_output(self):
-        source = self.archive([("chrome-linux64/chrome", stat.S_IFREG | 0o644, b"synthetic")])
+        source = self.archive([("chrome-linux64/chrome", stat.S_IFREG | 0o644, self.elf(62))])
         with self.assertRaisesRegex(prepare.InputError, "browser executable is missing"):
             guest.extract_browser(source, self.root / "out")
         sentinel = self.root / "existing"
@@ -123,10 +167,25 @@ class GuestTests(unittest.TestCase):
         self.assertFalse((self.root / "codex-inventory.json").exists())
         self.assertFalse((self.root / "codex").exists())
 
+    def test_threads_arm64_through_complete_codex_package_installation(self):
+        source = self.root / "codex-arm64.tgz"
+        source.write_bytes(b"synthetic archive, parsing is mocked by the package contract")
+        item = build.measure(source) | {"version": "0.154.0"}
+        destination = self.root / "codex"
+        entrypoint = self.root / "codex-entry"
+        records = {"synthetic": {"size_bytes": 1, "sha256": "0" * 64, "mode": 0o644}}
+        with patch.object(codex_package, "extract", return_value=records) as extract, \
+                patch.object(codex_package, "verify_installed") as verify:
+            guest.install_codex(item, self.root, self.root, entrypoint, "arm64")
+        extract.assert_called_once_with(source, destination, "0.154.0", "arm64")
+        verify.assert_called_once_with(destination, "0.154.0", records, "arm64")
+        self.assertEqual(entrypoint.readlink(),
+                         destination / codex_package.runtime_prefix("arm64") / "bin/codex")
+
     def test_legacy_codex_elf_remains_supported_with_digest_and_architecture_checks(self):
         source = self.root / "codex-standalone"
         entrypoint = self.root / "codex-entry"
-        source.write_bytes(b"\x7fELF\x02\x01" + b"\x00" * 12 + b"\x3e\x00" + b"synthetic")
+        source.write_bytes(self.elf(62))
         item = build.measure(source) | {"version": "0.0-fixture"}
         guest.install_codex(item, self.root, self.root, entrypoint)
         self.assertFalse(entrypoint.is_symlink())
@@ -141,6 +200,132 @@ class GuestTests(unittest.TestCase):
         with self.assertRaisesRegex(prepare.InputError, "amd64 ELF"):
             guest.install_codex(build.measure(source), self.root, self.root, entrypoint)
         self.assertFalse(entrypoint.exists())
+
+    def test_arm64_codex_elf_is_supported_and_cross_architecture_elf_is_rejected(self):
+        source = self.root / "codex-standalone"
+        entrypoint = self.root / "codex-entry"
+        source.write_bytes(self.elf(183))
+        guest.install_codex(build.measure(source), self.root, self.root, entrypoint, "arm64")
+        self.assertEqual(entrypoint.read_bytes(), self.elf(183))
+        entrypoint.unlink()
+        for architecture, machine in (("amd64", 183), ("arm64", 62)):
+            with self.subTest(architecture=architecture):
+                source.write_bytes(self.elf(machine))
+                with self.assertRaisesRegex(prepare.InputError, f"{architecture} ELF"):
+                    guest.install_codex(build.measure(source), self.root, self.root, entrypoint,
+                                        architecture)
+                self.assertFalse(entrypoint.exists())
+
+    def test_configures_architecture_specific_signed_snapshot_sources(self):
+        snapshot = "20260901T000000Z"
+        packages = dict.fromkeys(guest.GUEST_PACKAGES, "1.0-fixture")
+
+        def fake_command(*args, **_kwargs):
+            if args[0] == "dpkg-query":
+                return "\n".join(f"{name}\t{version}" for name, version in packages.items())
+            return ""
+
+        for architecture, uri, snapshot_field in (
+            ("amd64", "https://archive.ubuntu.com/ubuntu/", True),
+            ("arm64", f"https://snapshot.ubuntu.com/ubuntu/{snapshot}/", False),
+        ):
+            sources = self.root / f"sources-{architecture}"
+            sources.mkdir()
+            legacy = self.root / f"legacy-{architecture}.list"
+
+            def fixed_path(value, sources=sources, legacy=legacy):
+                return {
+                    "/etc/apt/sources.list.d": sources,
+                    "/etc/apt/sources.list": legacy,
+                }.get(value, Path(value))
+
+            with self.subTest(architecture=architecture), \
+                    patch.object(guest, "Path", side_effect=fixed_path), \
+                    patch.object(guest, "command", side_effect=fake_command) as command, \
+                    patch.object(guest.prepare, "write_json") as write_json:
+                if architecture == "amd64":
+                    guest.configure_apt(snapshot, packages)
+                else:
+                    guest.configure_apt(snapshot, packages, architecture)
+            content = (sources / "ubuntu.sources").read_text()
+            self.assertIn(f"URIs: {uri}\n", content)
+            self.assertEqual(f"Snapshot: {snapshot}\n" in content, snapshot_field)
+            self.assertIn("Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n", content)
+            self.assertEqual(command.call_args_list[0].args, ("apt-get", "update"))
+            self.assertEqual(command.call_args_list[1].args[:4],
+                             ("apt-get", "install", "-y", "--no-install-recommends"))
+            write_json.assert_called_once()
+
+    def test_rejects_unsupported_architecture_before_installation_helpers(self):
+        with patch.object(guest, "write_file") as write_file, \
+                patch.object(guest, "command") as command:
+            with self.assertRaisesRegex(prepare.InputError, "unsupported guest architecture"):
+                guest.configure_apt("20260901T000000Z", {}, "riscv64")
+        write_file.assert_not_called()
+        command.assert_not_called()
+
+    def test_invalid_snapshot_is_rejected_before_filesystem_access_or_apt(self):
+        sources = self.root / "snapshot-sources"
+        sources.mkdir()
+        packages = dict.fromkeys(guest.GUEST_PACKAGES, "1.0-fixture")
+        inventory = "\n".join(f"{name}\t{version}" for name, version in packages.items())
+        for architecture in ("amd64", "arm64"):
+            for snapshot in (None, [], "latest", "../20260909T000000Z",
+                             "20260909T000000Z\nTrusted: yes", "20260230T000000Z",
+                             "20260909T250000Z", "20260909T000000Z/"):
+                with self.subTest(architecture=architecture, snapshot=snapshot), \
+                        patch.object(guest, "Path", return_value=sources) as path, \
+                        patch.object(guest, "write_file") as write_file, \
+                        patch.object(guest, "command", return_value=inventory) as command, \
+                        patch.object(guest.prepare, "write_json"):
+                    # Treat the legacy source as absent, without touching system paths.
+                    with patch.object(Path, "exists", return_value=False):
+                        with self.assertRaisesRegex(prepare.InputError, "snapshot"):
+                            guest.configure_apt(snapshot, packages, architecture)
+                    path.assert_not_called()
+                    write_file.assert_not_called()
+                    command.assert_not_called()
+
+    def test_guest_guard_accepts_only_native_x86_64_and_aarch64(self):
+        release = {"ID": "ubuntu", "VERSION_ID": "24.04"}
+        for machine in ("x86_64", "aarch64"):
+            with self.subTest(machine=machine), \
+                    patch.object(guest.platform, "system", return_value="Linux"), \
+                    patch.object(guest.os, "geteuid", return_value=0), \
+                    patch.object(Path, "read_text", return_value=guest.BUILD_PRODUCT), \
+                    patch.object(guest.platform, "freedesktop_os_release", return_value=release), \
+                    patch.object(guest.platform, "machine", return_value=machine), \
+                    patch.object(guest, "command", return_value="kvm"):
+                self.assertIsNone(guest.guard_guest())
+        for machine in ("arm64", "riscv64", "AMD64", ""):
+            with self.subTest(machine=machine), \
+                    patch.object(guest.platform, "system", return_value="Linux"), \
+                    patch.object(guest.os, "geteuid", return_value=0), \
+                    patch.object(Path, "read_text", return_value=guest.BUILD_PRODUCT), \
+                    patch.object(guest.platform, "freedesktop_os_release", return_value=release), \
+                    patch.object(guest.platform, "machine", return_value=machine), \
+                    patch.object(guest, "command") as command:
+                with self.assertRaisesRegex(prepare.InputError, "amd64 or arm64 guest"):
+                    guest.guard_guest()
+                command.assert_not_called()
+
+    def test_install_rejects_cross_architecture_manifest_before_destinations_change(self):
+        installation = self.root / "installation"
+        with patch.object(guest, "INSTALL_ROOT", installation), \
+                patch.object(guest, "STAGING", self.root / "staging"), \
+                patch.object(guest, "guard_guest"), \
+                patch.object(guest.platform, "machine", return_value="aarch64"), \
+                patch.object(guest, "command") as command, \
+                patch.object(guest, "reject_credentials"), \
+                patch.object(guest.prepare, "read_manifest",
+                             return_value={"architecture": "amd64"}), \
+                patch.object(guest.os.path, "lexists") as lexists:
+            with self.assertRaisesRegex(prepare.InputError,
+                                        "manifest architecture differs from native guest"):
+                guest.install()
+        self.assertFalse(installation.exists())
+        lexists.assert_not_called()
+        command.assert_called_once_with("cloud-init", "status", "--wait", timeout=600)
 
     def test_rejects_ambiguous_wheel_metadata(self):
         for index, entries in enumerate([
