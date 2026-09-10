@@ -39,6 +39,7 @@ class HealthTests(unittest.TestCase):
         self.put("opt/kelpie/candidate.json", json.dumps(self.seal))
         self.put("etc/machine-id", "a" * 32)
         self.put("proc/sys/kernel/random/boot_id", "11111111-1111-4111-8111-111111111111")
+        self.put("sys/fs/cgroup/cgroup.controllers", "cpu memory pids\n")
         self.root_patch = patch.object(health, "ROOT", self.root)
         self.root_patch.start()
         self.addCleanup(self.root_patch.stop)
@@ -154,11 +155,11 @@ class HealthTests(unittest.TestCase):
         paths = []
 
         def command(*args, **kwargs):
-            self.assertEqual(args[:5], ("runuser", "-u", "kelpie", "--", "/usr/local/bin/chromium"))
+            self.assertEqual(args[1], "/usr/local/bin/chromium")
             self.assertNotIn("--no-sandbox", args)
             self.assertTrue(args[-1].startswith("data:text/html,"))
             directory = Path(next(arg.split("=", 1)[1] for arg in args
-                                  if arg.startswith("--user-data-dir=")))
+                                  if isinstance(arg, str) and arg.startswith("--user-data-dir=")))
             self.assertTrue(directory.is_dir())
             paths.append(directory)
             return '<p id="probe">4</p>'
@@ -166,7 +167,7 @@ class HealthTests(unittest.TestCase):
         with patch.object(health.pwd, "getpwnam",
                           return_value=SimpleNamespace(pw_uid=1234, pw_gid=1234)), \
                 patch.object(health.os, "chown") as chown, \
-                patch.object(health, "command", side_effect=command):
+                patch.object(health, "smoke_service", side_effect=command):
             health.browser()
         self.assertEqual(chown.call_args.args[1:], (1234, 1234))
         self.assertTrue(paths)
@@ -212,9 +213,144 @@ class HealthTests(unittest.TestCase):
         with patch.object(health.pwd, "getpwnam",
                           return_value=SimpleNamespace(pw_uid=1234, pw_gid=1234)), \
                 patch.object(health.os, "chown"), \
-                patch.object(health, "command", return_value='<p id="probe">pending</p>'):
+                patch.object(health, "smoke_service", return_value='<p id="probe">pending</p>'):
             with self.assertRaisesRegex(prepare.InputError, "DOM smoke failed"):
                 health.browser()
+
+    def test_smoke_service_owns_a_bounded_cgroup_with_literal_clean_unprivileged_command(self):
+        user = SimpleNamespace(pw_uid=1234, pw_gid=1234)
+        with patch.object(health, "service_state", return_value={"LoadState": "not-found"}), \
+                patch.object(health, "clean_smoke_service") as cleanup, \
+                patch.object(health, "command", return_value="synthetic DOM") as command:
+            self.assertEqual(health.smoke_service(user, "/bin/echo", "$SYNTHETIC;$(false)"),
+                             "synthetic DOM")
+        args = command.call_args.args
+        for option in ("--wait", "--pipe", "--collect", "--quiet", "--no-ask-password",
+                       "--service-type=exec", "--expand-environment=no", "--uid=1234",
+                       "--gid=1234", "--property=KillMode=control-group",
+                       "--property=SendSIGKILL=yes", "--property=FinalKillSignal=SIGKILL",
+                       "--property=RuntimeMaxSec=30s", "--property=TimeoutStartSec=5s",
+                       "--property=TimeoutStopSec=5s", "--property=Restart=no",
+                       "--property=Delegate=no", "--slice=system.slice"):
+            self.assertIn(option, args)
+        self.assertEqual(args[-6:], ("/usr/bin/env", "-i",
+                                    "PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                                    "LANG=C.UTF-8", "/bin/echo", "$SYNTHETIC;$(false)"))
+        self.assertEqual(command.call_args.kwargs, {"timeout": 45})
+        unit = next(arg.removeprefix("--unit=") for arg in args if arg.startswith("--unit="))
+        owner = next(arg.removeprefix("--description=") for arg in args
+                     if arg.startswith("--description="))
+        self.assertRegex(unit, r"^kelpie-image-smoke-[0-9a-f]{32}\.service$")
+        cleanup.assert_called_once_with(unit, owner)
+
+    def test_smoke_service_cleans_up_on_command_error_timeout_and_interruption(self):
+        user = SimpleNamespace(pw_uid=1234, pw_gid=1234)
+        failures = (subprocess.CalledProcessError(7, "synthetic"),
+                    subprocess.TimeoutExpired("synthetic", 45), KeyboardInterrupt())
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__), \
+                    patch.object(health, "service_state",
+                                 return_value={"LoadState": "not-found"}), \
+                    patch.object(health, "clean_smoke_service") as cleanup, \
+                    patch.object(health, "command", side_effect=failure):
+                with self.assertRaises(type(failure)):
+                    health.smoke_service(user, "/bin/true")
+                cleanup.assert_called_once()
+
+    def test_smoke_service_rejects_existing_unit_before_launch_or_cleanup(self):
+        with patch.object(health, "service_state", return_value={"LoadState": "loaded"}), \
+                patch.object(health, "command") as command, \
+                patch.object(health, "clean_smoke_service") as cleanup:
+            with self.assertRaisesRegex(prepare.InputError, "already exists"):
+                health.smoke_service(SimpleNamespace(pw_uid=1234, pw_gid=1234), "/bin/true")
+        command.assert_not_called()
+        cleanup.assert_not_called()
+
+    def test_smoke_service_requires_inspectable_cgroup_v2_before_launch(self):
+        (self.root / "sys/fs/cgroup/cgroup.controllers").unlink()
+        with patch.object(health, "service_state") as state, \
+                patch.object(health, "command") as command:
+            with self.assertRaisesRegex(prepare.InputError, "cgroup v2"):
+                health.smoke_service(SimpleNamespace(pw_uid=1234, pw_gid=1234), "/bin/true")
+        state.assert_not_called()
+        command.assert_not_called()
+
+    def test_cleanup_stops_only_owned_transient_unit_and_requires_empty_cgroup(self):
+        unit, owner = "kelpie-image-smoke-" + "a" * 32 + ".service", "synthetic-owner"
+        group = "/system.slice/" + unit
+        owned = {"LoadState": "loaded", "Description": owner, "Transient": "yes",
+                 "ActiveState": "active", "ControlGroup": group}
+        with patch.object(health, "service_state",
+                          side_effect=[owned, {"LoadState": "not-found"}]), \
+                patch.object(health, "command") as command:
+            health.clean_smoke_service(unit, owner)
+        command.assert_called_once_with("systemctl", "--no-ask-password", "stop", unit, timeout=10)
+        self.put("sys/fs/cgroup" + group + "/cgroup.events", "populated 1\nfrozen 0\n")
+        with patch.object(health, "service_state", return_value={"LoadState": "not-found"}):
+            with self.assertRaisesRegex(prepare.InputError, "processes remain"):
+                health.clean_smoke_service(unit, owner)
+            self.put("sys/fs/cgroup" + group + "/cgroup.events", "populated 0\nfrozen 0\n")
+            health.clean_smoke_service(unit, owner)
+
+    def test_cleanup_rejects_foreign_ownership_without_stopping_anything(self):
+        unit, owner = "kelpie-image-smoke-" + "b" * 32 + ".service", "synthetic-owner"
+        owned = {"LoadState": "loaded", "Description": owner, "Transient": "yes",
+                 "ActiveState": "active", "ControlGroup": "/system.slice/" + unit}
+        for change in ({"Description": "another-owner"}, {"Transient": "no"},
+                       {"ControlGroup": "/system.slice/unrelated.service"}):
+            with self.subTest(change=change), \
+                    patch.object(health, "service_state", return_value=owned | change), \
+                    patch.object(health, "command") as command:
+                with self.assertRaisesRegex(prepare.InputError, "ownership"):
+                    health.clean_smoke_service(unit, owner)
+                command.assert_not_called()
+
+    def test_cleanup_accepts_gc_race_only_after_confirming_absence_and_no_processes(self):
+        unit, owner = "kelpie-image-smoke-" + "c" * 32 + ".service", "synthetic-owner"
+        owned = {"LoadState": "loaded", "Description": owner, "Transient": "yes",
+                 "ActiveState": "inactive", "ControlGroup": ""}
+        for state, populated, accepted in (({"LoadState": "not-found"}, False, True),
+                                          ({"LoadState": "not-found"}, True, False),
+                                          (owned, False, False)):
+            with self.subTest(state=state, populated=populated), \
+                    patch.object(health, "service_state", side_effect=[owned, state]), \
+                    patch.object(health, "command", side_effect=subprocess.CalledProcessError(
+                        5, "synthetic missing service")):
+                self.put("sys/fs/cgroup/system.slice/" + unit + "/cgroup.events",
+                         "populated " + str(int(populated)) + "\n")
+                if accepted:
+                    health.clean_smoke_service(unit, owner)
+                else:
+                    with self.assertRaises((prepare.InputError, subprocess.CalledProcessError)):
+                        health.clean_smoke_service(unit, owner)
+
+    def test_cleanup_failure_cannot_turn_browser_output_into_success(self):
+        with patch.object(health, "service_state", return_value={"LoadState": "not-found"}), \
+                patch.object(health, "command", return_value="synthetic DOM"), \
+                patch.object(health, "clean_smoke_service",
+                             side_effect=prepare.InputError("cleanup failed")):
+            with self.assertRaisesRegex(prepare.InputError, "cleanup failed"):
+                health.smoke_service(SimpleNamespace(pw_uid=1234, pw_gid=1234), "/bin/true")
+
+    def test_service_state_uses_only_fixed_metadata_and_rejects_ambiguous_results(self):
+        state = {"LoadState": "not-found", "Description": "", "Transient": "no",
+                 "ActiveState": "inactive", "ControlGroup": ""}
+        valid = "\n".join(name + "=" + value for name, value in state.items()) + "\n"
+        with patch.object(health.subprocess, "run", return_value=SimpleNamespace(
+                returncode=1, stdout=valid)) as run:
+            self.assertEqual(health.service_state("synthetic.service"), state)
+        self.assertEqual(run.call_args.kwargs["env"],
+                         {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+        self.assertEqual(run.call_args.kwargs["stderr"], subprocess.DEVNULL)
+        self.assertEqual(run.call_args.kwargs["timeout"], 5)
+        for code, output in ((2, valid), (0, valid + "LoadState=loaded\n"),
+                             (0, "LoadState=not-found\n"), (0, "x" * 4096),
+                             (1, valid.replace("not-found", "loaded")), (0, "invalid line")):
+            with self.subTest(code=code, output=output[:20]), \
+                    patch.object(health.subprocess, "run", return_value=SimpleNamespace(
+                        returncode=code, stdout=output)):
+                with self.assertRaises(prepare.InputError):
+                    health.service_state("synthetic.service")
 
     def test_desktop_requires_active_session_and_idle_runner(self):
         def command(*args, **kwargs):

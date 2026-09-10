@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -143,6 +144,85 @@ def desktop() -> None:
             "XAUTHORITY=/home/kelpie/.Xauthority", "xdpyinfo", "-display", ":0")
 
 
+def service_state(unit: str) -> dict[str, str]:
+    fields = {"LoadState", "Description", "Transient", "ActiveState", "ControlGroup"}
+    result = subprocess.run(
+        ["systemctl", "--no-ask-password", "show", "--property=" + ",".join(sorted(fields)),
+         unit], timeout=5, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, text=True,
+        env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
+    )
+    require(result.returncode in {0, 1} and len(result.stdout) < 4096,
+            "cannot inspect browser service")
+    lines = [line.split("=", 1) for line in result.stdout.splitlines()]
+    require(all(len(line) == 2 for line in lines), "invalid browser service state")
+    state = dict(lines)
+    require(len(lines) == len(fields) and state.keys() == fields
+            and state["LoadState"] in {"loaded", "not-found"}, "invalid browser service state")
+    require(result.returncode == 0 or state["LoadState"] == "not-found",
+            "cannot inspect browser service")
+    return state
+
+
+def clean_smoke_service(unit: str, owner: str) -> None:
+    require(re.fullmatch(r"kelpie-image-smoke-[a-f0-9]{32}\.service", unit) is not None,
+            "invalid browser service identity")
+    group = "/system.slice/" + unit
+    state = service_state(unit)
+    if state["LoadState"] != "not-found":
+        require(state["Description"] == owner and state["Transient"] == "yes"
+                and state["ControlGroup"] in {"", group}, "browser service ownership mismatch")
+        try:
+            command("systemctl", "--no-ask-password", "stop", unit, timeout=10)
+        except subprocess.CalledProcessError:
+            # --collect may unload the completed unit between show and stop. Do not
+            # swallow permission/manager errors while the unit still exists.
+            state = service_state(unit)
+            if state["LoadState"] != "not-found":
+                raise
+        else:
+            state = service_state(unit)
+        require(state["LoadState"] == "not-found"
+                or (state["Description"] == owner and state["Transient"] == "yes"
+                    and state["ControlGroup"] in {"", group}
+                    and state["ActiveState"] in {"inactive", "failed"}),
+                "browser service cleanup incomplete")
+    # cgroup.events covers descendants too, including setsid/double-fork crash handlers.
+    path = ROOT / ("sys/fs/cgroup" + group)
+    if os.path.lexists(path):
+        require(stat.S_ISDIR(path.lstat().st_mode), "invalid browser control group")
+        events = (path / "cgroup.events").read_text().splitlines()
+        require(events.count("populated 0") == 1 and "populated 1" not in events,
+                "browser processes remain after cleanup")
+
+
+def smoke_service(user, *args: str) -> str:
+    require(type(user.pw_uid) is int and type(user.pw_gid) is int
+            and user.pw_uid > 0 and user.pw_gid > 0, "browser user must be unprivileged")
+    require((ROOT / "sys/fs/cgroup/cgroup.controllers").is_file(),
+            "browser cleanup requires cgroup v2")
+    unit = "kelpie-image-smoke-" + uuid.uuid4().hex + ".service"
+    owner = "Kelpie image smoke " + uuid.uuid4().hex
+    require(service_state(unit)["LoadState"] == "not-found", "browser service already exists")
+    try:
+        # A manager-owned cgroup outlives runuser/the calling Python process. Its independent
+        # deadline also applies when the CLI is interrupted; never stop by UID or name glob.
+        return command(
+            "systemd-run", "--quiet", "--no-ask-password", "--wait", "--pipe", "--collect",
+            "--service-type=exec", "--expand-environment=no", "--unit=" + unit,
+            "--description=" + owner, "--slice=system.slice",
+            f"--uid={user.pw_uid}", f"--gid={user.pw_gid}",
+            "--property=RuntimeMaxSec=30s", "--property=TimeoutStartSec=5s",
+            "--property=TimeoutStopSec=5s", "--property=TimeoutStopFailureMode=kill",
+            "--property=KillMode=control-group", "--property=SendSIGKILL=yes",
+            "--property=FinalKillSignal=SIGKILL", "--property=Restart=no", "--property=Delegate=no",
+            "/usr/bin/env", "-i", "PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "LANG=C.UTF-8", *args, timeout=45,
+        )
+    finally:
+        clean_smoke_service(unit, owner)
+
+
 def browser() -> None:
     user = pwd.getpwnam("kelpie")
     require(user.pw_uid > 0 and user.pw_gid > 0, "browser user must be unprivileged")
@@ -150,8 +230,8 @@ def browser() -> None:
             '<script>document.getElementById("probe").textContent=2+2</script>')
     with tempfile.TemporaryDirectory(prefix="kelpie-image-smoke-", dir="/tmp") as directory:
         os.chown(directory, user.pw_uid, user.pw_gid)
-        output = command(
-            "runuser", "-u", "kelpie", "--", "/usr/local/bin/chromium", "--headless=new",
+        output = smoke_service(
+            user, "/usr/local/bin/chromium", "--headless=new",
             "--disable-background-networking", "--no-first-run", "--no-default-browser-check",
             f"--user-data-dir={directory}", "--timeout=10000", "--dump-dom",
             "data:text/html," + quote(html),
