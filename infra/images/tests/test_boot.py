@@ -232,9 +232,33 @@ class BootTests(unittest.TestCase):
         self.assertEqual(execution["path"], "/usr/bin/env")
         self.assertEqual(execution["arg"], [
             "-i", f"PATH={build.TOOL_PATH}", "LANG=C.UTF-8",
+            "/bin/sh", "-c", 'exec 2>/dev/null; exec "$@"', "kelpie-image-smoke",
             "/usr/bin/python3", "/opt/kelpie/image-health/health.py",
         ])
-        self.assertEqual(execution["capture-output"], "stdout")
+        self.assertIs(execution["capture-output"], True)
+
+    def test_capture_compatibility_wrapper_discards_stderr_and_preserves_exit_status(self):
+        agent = Mock()
+        agent.call.side_effect = [self.capabilities(), {"pid": 7}, self.encoded_status()]
+        boot.check_guest(agent, self.process, self.manifest, self.digest, time.monotonic() + 5)
+        execution = agent.call.call_args_list[1].args[1]
+        self.assertIs(execution["capture-output"], True)
+        # Use the actual fixed shell boundary with a synthetic probe, not the guest installer.
+        literal = "literal;$(printf synthetic-command-substitution)"
+        for code in (0, 7):
+            script = ("import os,sys; assert 'KELPIE_TEST_SECRET' not in os.environ; "
+                      f"assert sys.argv[1] == {literal!r}; "
+                      "print('synthetic-report'); "
+                      "print('synthetic-sensitive-diagnostic',file=sys.stderr); "
+                      f"sys.exit({code})")
+            args = [execution["path"], *execution["arg"][:-2],
+                    sys.executable, "-c", script, literal]
+            with self.subTest(code=code):
+                result = subprocess.run(args, capture_output=True, text=True, timeout=5,
+                                        env={"KELPIE_TEST_SECRET": "synthetic-value"})
+                self.assertEqual(result.returncode, code)
+                self.assertEqual(result.stdout, "synthetic-report\n")
+                self.assertEqual(result.stderr, "")
 
     def test_disabled_or_malformed_capabilities_do_not_enable_guest_rpcs(self):
         for info in (None, {}, {"supported_commands": [{"name": [], "enabled": True}]},
@@ -250,9 +274,12 @@ class BootTests(unittest.TestCase):
         duplicate = base64.b64encode(b'{"schema_version":1,"schema_version":1}').decode()
         sequences = [
             [{"pid": True}], [{"pid": 0}], [{"pid": 7}, {"exited": 1}],
+            [{"pid": 7}, {"exited": True, "exitcode": 1, "err-data": "eA=="}],
             *[[{"pid": 7}, self.encoded_status() | change] for change in (
                 {"out-truncated": True}, {"out-data": "not base64!"}, {"out-data": duplicate},
                 {"out-data": "x" * (16 * 1024 + 1)}, {"signal": 9},
+                {"err-data": base64.b64encode(b"synthetic-sensitive-diagnostic").decode()},
+                {"err-truncated": True},
             )],
         ]
         for sequence in sequences:

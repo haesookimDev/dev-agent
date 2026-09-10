@@ -173,8 +173,11 @@ def check_guest(agent: qga.GuestAgent, process, manifest: dict,
         require(process.poll() is None, "probe VM exited during smoke checks")
         started = agent.call("guest-exec", {
             "path": "/usr/bin/env", "arg": ["-i", f"PATH={build.TOOL_PATH}", "LANG=C.UTF-8",
+                "/bin/sh", "-c", 'exec 2>/dev/null; exec "$@"', "kelpie-image-smoke",
                 "/usr/bin/python3", "/opt/kelpie/image-health/health.py"],
-            "capture-output": "stdout",
+            # QGA 8.2 stdout-only capture can report exited=false forever. The
+            # fixed wrapper closes stderr before the probe; no data enters that pipe.
+            "capture-output": True,
         })
         require(isinstance(started, dict) and type(started.get("pid")) is int
                 and started["pid"] > 0, "invalid guest probe process")
@@ -184,6 +187,9 @@ def check_guest(agent: qga.GuestAgent, process, manifest: dict,
             require(isinstance(status, dict) and type(status.get("exited")) is bool,
                     "invalid guest probe status")
             if status["exited"]:
+                require(status.get("err-data", "") == ""
+                        and status.get("err-truncated", False) is False,
+                        "unexpected guest probe diagnostic output")
                 if type(status.get("exitcode")) is int and status["exitcode"] == 0:
                     require("signal" not in status and status.get("out-truncated", False) is False
                             and isinstance(status.get("out-data"), str)
