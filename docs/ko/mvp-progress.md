@@ -4,9 +4,9 @@
 
 ## 기준과 진행률
 
-기준 코드: `main`의 `8cd09123cb3a2031cf18331cfe2ec74d7de1919d` ([PR #53](https://github.com/haesookimDev/dev-agent/pull/53) 병합). 아래 평가는 문서뿐 아니라 현재 코드·테스트·실제 구동 기록을 대조한 시점별 기록입니다. Draft 브랜치나 계획은 완료로 세지 않습니다.
+제품 기준 코드: `main`의 `c231d6f0bf73d58505c160870a1919a07950f63c` ([PR #56](https://github.com/haesookimDev/dev-agent/pull/56) 병합). 로컬 개발 호스트 검증은 `feat/macos-kvm-lab`의 템플릿 `055a61e`·실제 부팅 Probe `a7413dd`·CI 연결 `847e0ce`에 근거하며 아래에 별도로 기록합니다. 아래 평가는 문서뿐 아니라 현재 코드·테스트·실제 구동 기록을 대조한 시점별 기록입니다. Draft 브랜치나 계획은 완료로 세지 않습니다.
 
-현재 동기화한 `main`은 문서 PR #54까지 포함한 `1fd999f`이며 [해당 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34423510547)는 통과했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)는 [Golden Image 후보 Builder](golden-image-inputs.md) 작업입니다. 이전 Head `55fa0cc`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34431563173)는 첫 실행 5분 14초에 5개 Job·이미지 85개 모두 통과했지만 이후 코드의 증거는 아닙니다. 현재 기능 기준은 `a73f600`입니다. Guest 설치·봉인/Packer·두 차례 자동 Boot 검사에 이어 `86369b4`는 Codex 플랫폼 패키지 전체 파일 검증, `a73f600`은 보조 파일을 보존하는 설치와 Boot Inventory 검사를 추가했습니다. 기존 ELF 입력도 지원하며 기존 병렬 CI에 Job·Timeout·VM CI를 늘리지 않았습니다.
+이전 이미지 작업의 `main` 기준은 문서 PR #54까지 포함한 `1fd999f`이며 [해당 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34423510547)는 통과했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)는 [Golden Image 후보 Builder](golden-image-inputs.md) 작업입니다. 이전 Head `55fa0cc`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34431563173)는 첫 실행 5분 14초에 5개 Job·이미지 85개 모두 통과했지만 이후 코드의 증거는 아닙니다. 당시 기능 검증 기준은 `a73f600`입니다. Guest 설치·봉인/Packer·두 차례 자동 Boot 검사에 이어 `86369b4`는 Codex 플랫폼 패키지 전체 파일 검증, `a73f600`은 보조 파일을 보존하는 설치와 Boot Inventory 검사를 추가했습니다. 기존 ELF 입력도 지원하며 기존 병렬 CI에 Job·Timeout·VM CI를 늘리지 않았습니다.
 
 후속 이미지 테스트는 **97개 중 96개 통과/1개 Skip**(약 2.2초)이며 `make lint`, 실제 Packer 1.16.0/QEMU Plugin 1.1.6의 합성 입력 전체 설정 검증이 통과했습니다. 기능 기준 `a73f600`의 전용 PostgreSQL DB 전체 `make test`는 API **1,270개 통과/1개 Skip**(184.29초), Runner 45개, Worker/Gateway, Web 125개·타입 검사, 이미지 96개 통과/1개 Skip입니다. API의 Skip은 macOS에서 실행 불가한 Linux systemd 구문 검사이고 이미지 Skip은 Linux 소켓 PID 검사로, 둘 다 Linux CI 대상입니다. 실제 Unix Socket 통신·별도 CLI/자식 프로세스 검증과 모의 Guest/QEMU 두 Boot·종료 검증을 구분했습니다.
 
@@ -39,9 +39,13 @@
 
 ## 다음 진행 순서와 외부 의존성
 
+2026-09-10 사용자의 Mac 로컬 개발 승인에 따라 **전용 Linux 머신 부재의 우회 경로를 실제로 검증했습니다**. [Mac KVM Lab](macos-kvm-lab.md)에서 M4 Pro/macOS 15.7.3 → Lima 2.2.0/Ubuntu ARM64 → 실제 KVM Linux 부팅·정상 종료(5.790초), KVM 활성, Timeout 후 프로세스 정리와 기존 증거 보존을 확인했습니다. 이 호스트 검증은 Golden Image/작업 VM의 완료가 아니므로 1/7을 유지합니다. ARM64 로컬 테스트 경로를 추가한 결정이며 기존 amd64 제품 검증을 면제한 결정은 아닙니다.
+
+이번 로컬 전체 검증: 전용 PostgreSQL DB를 사용한 `make test`에서 API 1270 통과/1 Skip(systemd Parser는 Linux CI), Runner 45, Web 125, Go, Lab 18 통과. `make lint`, KO/EN 명령 일치·Shell 문법·문서 링크 검사도 통과했습니다. 새 Lab 검사는 기존 Python Job에서 실행하며 추가 VM 빌드나 CI Job은 없습니다. 최종 Head의 CI·리뷰·머지 상태는 해당 PR에 기록하고 확인합니다.
+
 1. **P1 실행 경로를 우선합니다.** Golden Image 재현 → 영속 VM 수명주기·격리 → Preview/Console 강제 → 실제 두 작업·장애 복구 Acceptance의 의존 순서로 구현합니다. 실제 환경이 없어 검증하지 못한 기능 PR은 Draft로 유지합니다.
 2. P0의 남은 Secret·관측·보존·관리자 제어는 위 실행 경로와 연결해 완료합니다. 단위 테스트가 쉬운 부수 개선만 반복해 P1 완료를 대신하지 않습니다.
-3. 공개 이미지·패키지는 직접 확보해 후보 입력 검증까지 완료했습니다. 승인된 전용 Linux/KVM 테스트 Host와 필요한 테스트 네트워크·TLS 연결 조건은 아직 제공되지 않았습니다. 현재 Mac의 Archive/입력 검증이나 Mock/명령 Fixture로 실제 Host Acceptance를 수행했다고 주장하지 않습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
+3. 승인된 Mac 내부 ARM64 Linux/KVM 호스트를 확보했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)의 Head `f96635c`는 amd64 입력 무결성·Builder·Guest/Boot 검사 경로이며 아직 실제 Golden Image Acceptance를 통과하지 않았습니다. ARM64 입력·Firmware·Browser·모든 생산자/소비자 계약을 함께 확장한 뒤 실제 Desktop 부팅을 검증합니다. 작업별 네트워크·TLS·Console 경계와 동시 2작업 Acceptance는 여전히 남아 있습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
 4. [Draft PR #21](https://github.com/haesookimDev/dev-agent/pull/21)의 Preview 작업은 `main`에 포함되지 않았습니다. 오래된 Head의 CI는 현재 Migration·권한 계약과의 통합 검증을 대체하지 않습니다. 실제 TLS·브라우저/Console 검증 전에는 완료로 계산하거나 강제 병합하지 않습니다.
 
 ## 갱신 방법

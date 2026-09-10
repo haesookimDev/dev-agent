@@ -2,6 +2,10 @@
 
 한국어 | [English](../en/development.md)
 
+## Mac 로컬 KVM 개발
+
+[전용 ARM64 Lima 호스트](macos-kvm-lab.md)에서 실제 중첩 KVM을 검증합니다. `make test-lab`은 템플릿·실패 경계·QMP 프로토콜을 검사하고 기존 `Python` CI/`make test`에 포함됩니다. 실제 Linux 부팅·종료는 별도 `kvm_smoke.py`로 증명하며 합성 테스트나 Lima의 `READY`로 대체하지 않습니다. 새 CI Job/VM 빌드/Timeout은 추가하지 않습니다. 이 개발 호스트의 관리자 권한을 제품 작업 VM에 옮기지 않습니다.
+
 ## Migration 원자성 회귀
 
 `apps/api/tests/test_migration_atomicity.py`는 여러 SQLite Revision을 되돌리다가 안전 검사에서 실패해도 전체 Schema가 유지되는지 검증합니다. 실제 Alembic CLI·API 검증은 모든 행·Schema 보존, 기존 로그인·산출물 조회 200, 다른 조직 접근 404와 `/readyz`를 함께 확인합니다. 기존 `make test-api`와 필수 `Python` CI에 포함하며 새 Job·의존성·Timeout은 추가하지 않습니다. Migration 실행기도 `.venv/bin/python -m ruff check apps/api/migrations/env.py`로 검사합니다. 이 검증은 격리된 합성 데이터 전용이며 운영 DB의 위험한 Downgrade를 실행할 권한을 의미하지 않습니다.

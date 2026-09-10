@@ -1,4 +1,4 @@
-.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web test-monitoring test-images test-image-template lint
+.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web test-monitoring test-images test-image-template test-lab lint
 
 PYTHON ?= .venv/bin/python
 PROMTOOL ?= promtool
@@ -10,7 +10,7 @@ dev:
 migrate-api:
 	$(PYTHON) -m alembic -c apps/api/alembic.ini upgrade head
 
-test: test-api test-runner test-worker test-gateway test-web test-images
+test: test-api test-runner test-worker test-gateway test-web test-images test-lab
 
 test-api:
 	$(PYTHON) -m pytest -q apps/api/tests
@@ -38,8 +38,11 @@ test-monitoring:
 	$(PROMTOOL) check config --lint-fatal infra/monitoring/prometheus.example.yml
 	$(PROMTOOL) test rules infra/monitoring/alerts.test.yml infra/monitoring/execution-alerts.test.yml
 
+test-lab:
+	$(PYTHON) -m unittest discover -s infra/lima/tests -v
+
 lint:
-	$(PYTHON) -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests infra/images
+	$(PYTHON) -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests infra/images infra/lima
 	cd apps/worker && go vet ./...
 	cd apps/gateway && go vet ./...
 	cd apps/web && npm run lint
