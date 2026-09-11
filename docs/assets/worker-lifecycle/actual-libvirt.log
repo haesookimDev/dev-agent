@@ -1,0 +1,11 @@
+=== RUN   TestDedicatedLibvirtCleanupBeforeRelease
+=== RUN   TestDedicatedLibvirtCleanupBeforeRelease/terminal
+    libvirt_integration_test.go:60: preserved ownership journal: /var/tmp/kelpie-lifecycle-2073974739/1690a65a-938c-42ca-8b64-b11f31a6424e
+    libvirt_integration_test.go:165: real KVM running -> ACPI -> force-stop -> undefined -> artifacts absent -> API ACK -> capacity returned
+=== RUN   TestDedicatedLibvirtCleanupBeforeRelease/cancelled
+    libvirt_integration_test.go:60: preserved ownership journal: /var/tmp/kelpie-lifecycle-851463866/533b0e25-c4ab-47e9-b504-fe38d7a9aa03
+    libvirt_integration_test.go:165: real KVM running -> ACPI -> force-stop -> undefined -> artifacts absent -> API ACK -> capacity returned
+--- PASS: TestDedicatedLibvirtCleanupBeforeRelease (43.62s)
+    --- PASS: TestDedicatedLibvirtCleanupBeforeRelease/terminal (21.98s)
+    --- PASS: TestDedicatedLibvirtCleanupBeforeRelease/cancelled (21.60s)
+PASS
