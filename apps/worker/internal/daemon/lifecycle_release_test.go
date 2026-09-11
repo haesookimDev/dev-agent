@@ -144,6 +144,12 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 		!strings.Contains(args, "description="+domainOwner(runs[0].Record)+"\n") || strings.Contains(args, claim.LeaseToken) {
 		t.Fatal("launch lost ownership metadata or leaked a lease argument")
 	}
+	nvram := filepath.Join(store.root.Name(), runs[0].Record.RunID, "nvram.fd")
+	if !strings.Contains(args, "--boot\nuefi,nvram="+nvram+"\n") ||
+		!strings.Contains(args, "--virt-type\nkvm\n") ||
+		!strings.Contains(args, "/seed.iso,device=cdrom,bus=scsi\n") {
+		t.Fatal("launch did not require KVM, owned UEFI variables and an ARM-compatible seed bus")
+	}
 	for _, artifact := range runArtifacts {
 		if _, err := os.Stat(filepath.Join(store.root.Name(), runs[0].Record.RunID, artifact)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatal("failed launch left its owned disk or credential seed")

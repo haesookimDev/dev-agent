@@ -181,9 +181,13 @@ runcmd:
 	args := []string{
 		"--connect", "qemu:///system", "--name", name, "--uuid", owned.Record.RunID,
 		"--metadata", "description=" + domainOwner(owned.Record),
+		"--virt-type", "kvm",
 		"--memory", fmt.Sprint(e.config.RunResources.MemoryMB), "--vcpus", fmt.Sprint(e.config.RunResources.CPU),
 		"--import", "--noautoconsole", "--os-variant", "ubuntu24.04",
-		"--disk", overlay + ",format=qcow2,bus=virtio", "--disk", seed + ",device=cdrom",
+		// Let the trusted host select compatible firmware, but keep writable
+		// UEFI variables inside the recorded run, never libvirt's shared store.
+		"--boot", "uefi,nvram=" + filepath.Join(runDir, "nvram.fd"),
+		"--disk", overlay + ",format=qcow2,bus=virtio", "--disk", seed + ",device=cdrom,bus=scsi",
 		"--network", "network=default,model=virtio", "--graphics", "vnc,listen=127.0.0.1",
 	}
 	if err := run(ctx, "virt-install", args...); err != nil {
