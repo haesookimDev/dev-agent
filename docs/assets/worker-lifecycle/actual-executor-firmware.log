@@ -1,0 +1,11 @@
+=== RUN   TestDedicatedLibvirtExecutorFirmware
+=== RUN   TestDedicatedLibvirtExecutorFirmware/terminal
+    libvirt_firmware_integration_test.go:110: preserved ownership journal: /var/tmp/kelpie-firmware-4188707631/77defff6-6f3c-405d-9850-2b4d16133950
+    libvirt_firmware_integration_test.go:215: production Executor -> real KVM/owned UEFI -> physical cleanup -> synthetic API ACK -> durable release
+=== RUN   TestDedicatedLibvirtExecutorFirmware/transition-rejected
+    libvirt_firmware_integration_test.go:110: preserved ownership journal: /var/tmp/kelpie-firmware-644435258/87dccf50-3cd0-45e3-83f4-87924818ffec
+    libvirt_firmware_integration_test.go:215: production Executor -> real KVM/owned UEFI -> physical cleanup -> synthetic API ACK -> durable release
+--- PASS: TestDedicatedLibvirtExecutorFirmware (48.90s)
+    --- PASS: TestDedicatedLibvirtExecutorFirmware/terminal (27.24s)
+    --- PASS: TestDedicatedLibvirtExecutorFirmware/transition-rejected (21.62s)
+PASS
