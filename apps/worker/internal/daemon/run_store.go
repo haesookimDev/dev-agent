@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -48,6 +49,7 @@ type ownedRun struct {
 // operations cannot escape it through a replaced path component. The lock is
 // never unlinked: removing a locked file would permit two owners on two inodes.
 type runStore struct {
+	mu   sync.Mutex
 	root *os.Root
 	lock *os.File
 }
@@ -89,6 +91,8 @@ func openRunStore(path string) (*runStore, error) {
 }
 
 func (s *runStore) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_ = s.lock.Close()
 	_ = s.root.Close()
 }
@@ -123,6 +127,14 @@ func validStoreDirectory(root *os.Root, name string) bool {
 }
 
 func (s *runStore) Create(workID, leaseID string, resources Resources) (ownedRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.create(workID, leaseID, resources)
+}
+
+// Internal operations below run under mu. Public readers cannot observe the
+// directory between mkdir and its durable initial record.
+func (s *runStore) create(workID, leaseID string, resources Resources) (ownedRun, error) {
 	if !workUUID.MatchString(workID) || !runUUID.MatchString(leaseID) || resources.CPU < 1 || resources.MemoryMB < 1 || resources.DiskGB < 1 {
 		return ownedRun{}, errRunStore
 	}
@@ -143,6 +155,12 @@ func (s *runStore) Create(workID, leaseID string, resources Resources) (ownedRun
 }
 
 func (s *runStore) Load(uuid string) (ownedRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.load(uuid)
+}
+
+func (s *runStore) load(uuid string) (ownedRun, error) {
 	if !runUUID.MatchString(uuid) {
 		return ownedRun{}, errRunStore
 	}
@@ -182,7 +200,9 @@ func nextRunPhase(current, next string) bool {
 }
 
 func (s *runStore) Advance(uuid, phase string) (ownedRun, error) {
-	run, err := s.Load(uuid)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	run, err := s.load(uuid)
 	if err != nil {
 		return ownedRun{}, err
 	}
@@ -199,10 +219,16 @@ func (s *runStore) Advance(uuid, phase string) (ownedRun, error) {
 	if err := s.writeExclusive(uuid+"/"+phase+".json", runPhase{RunID: uuid, Phase: phase, At: at}); err != nil {
 		return ownedRun{}, err
 	}
-	return s.Load(uuid)
+	return s.load(uuid)
 }
 
 func (s *runStore) List() ([]ownedRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.list()
+}
+
+func (s *runStore) list() ([]ownedRun, error) {
 	dir, err := s.root.Open(".")
 	if err != nil {
 		return nil, errRunStore
@@ -218,7 +244,7 @@ func (s *runStore) List() ([]ownedRun, error) {
 		if entry.Name() == ".worker.lock" {
 			continue
 		}
-		run, err := s.Load(entry.Name())
+		run, err := s.load(entry.Name())
 		if err != nil {
 			// Unknown/legacy directories are not evidence of ownership.
 			return nil, err
