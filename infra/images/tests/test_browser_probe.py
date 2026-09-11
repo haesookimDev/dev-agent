@@ -254,7 +254,9 @@ class BrowserProbeTests(unittest.TestCase):
         self.assertEqual(self.open_descriptors(), before)
 
     def test_close_response_is_followed_by_command_eof_before_reaping(self):
-        self.run_probe("close_waits_for_eof", timeout=0.5)
+        # This tests EOF ordering, not a half-second Python startup SLA. Use the
+        # same bounded budget as other success paths; a missing EOF still times out.
+        self.run_probe("close_waits_for_eof")
 
     def test_validates_version_identity_and_exact_owned_profile(self):
         profile = Path(self.profile.name)
