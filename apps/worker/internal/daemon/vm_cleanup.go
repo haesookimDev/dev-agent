@@ -65,8 +65,8 @@ func (c *vmCleanup) command(ctx context.Context, args ...string) ([]byte, error)
 	return data, nil
 }
 
-func (c *vmCleanup) domains(ctx context.Context) ([]string, error) {
-	data, err := c.command(ctx, "list", "--all", "--uuid")
+func (c *vmCleanup) domains(ctx context.Context, filters ...string) ([]string, error) {
+	data, err := c.command(ctx, append([]string{"list", "--all", "--uuid"}, filters...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -250,49 +250,71 @@ func (c *vmCleanup) stopDomain(ctx context.Context, record runRecord) error {
 }
 
 func (c *vmCleanup) verifyNoReferences(ctx context.Context, ids []string) error {
-	directory := filepath.Join(c.store.root.Name(), c.runID)
+	persistent, err := c.domains(ctx, "--persistent")
+	if err != nil {
+		return err
+	}
+	for _, uuid := range persistent {
+		if !slices.Contains(ids, uuid) {
+			return errVMCleanup
+		}
+	}
 	for _, uuid := range ids {
 		if uuid == c.runID {
 			return errVMCleanup
 		}
-		data, err := c.command(ctx, "dumpxml", uuid)
+		views := [][]string{{"dumpxml", uuid}}
+		if slices.Contains(persistent, uuid) {
+			views = append(views, []string{"dumpxml", uuid, "--inactive"})
+		}
+		for _, args := range views {
+			data, err := c.command(ctx, args...)
+			if err != nil {
+				return err
+			}
+			if err := c.verifyXMLReferences(data); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (c *vmCleanup) verifyXMLReferences(data []byte) error {
+	directory := filepath.Join(c.store.root.Name(), c.runID)
+	if !validDomainXML(data) {
+		return errVMCleanup
+	}
+	var domain domainIdentity
+	if xml.Unmarshal(data, &domain) != nil {
+		return errVMCleanup
+	}
+	for _, value := range domain.NVRAM {
+		path := filepath.Clean(value)
+		if path == directory || strings.HasPrefix(path, directory+string(filepath.Separator)) {
+			return errVMCleanup
+		}
+	}
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
 		if err != nil {
-			return err
-		}
-		if !validDomainXML(data) {
 			return errVMCleanup
 		}
-		var domain domainIdentity
-		if xml.Unmarshal(data, &domain) != nil {
-			return errVMCleanup
-		}
-		for _, value := range domain.NVRAM {
-			path := filepath.Clean(value)
+		if content, ok := token.(xml.CharData); ok {
+			path := filepath.Clean(strings.TrimSpace(string(content)))
 			if path == directory || strings.HasPrefix(path, directory+string(filepath.Separator)) {
 				return errVMCleanup
 			}
 		}
-		decoder := xml.NewDecoder(bytes.NewReader(data))
-		for {
-			token, err := decoder.Token()
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return errVMCleanup
-			}
-			if content, ok := token.(xml.CharData); ok {
-				path := filepath.Clean(strings.TrimSpace(string(content)))
+		if element, ok := token.(xml.StartElement); ok {
+			for _, attr := range element.Attr {
+				path := filepath.Clean(attr.Value)
 				if path == directory || strings.HasPrefix(path, directory+string(filepath.Separator)) {
 					return errVMCleanup
-				}
-			}
-			if element, ok := token.(xml.StartElement); ok {
-				for _, attr := range element.Attr {
-					path := filepath.Clean(attr.Value)
-					if path == directory || strings.HasPrefix(path, directory+string(filepath.Separator)) {
-						return errVMCleanup
-					}
 				}
 			}
 		}

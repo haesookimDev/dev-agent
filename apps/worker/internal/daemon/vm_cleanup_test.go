@@ -192,6 +192,53 @@ func TestVMCleanupAbsentDomainStillChecksForeignDiskReferences(t *testing.T) {
 	}
 }
 
+func TestVMCleanupChecksInactivePersistentDomainReferences(t *testing.T) {
+	f := newCleanupFixture(t)
+	f.exists, f.running = false, false
+	f.foreign = `<domain><devices><disk><source file="/unrelated/current.qcow2"/></disk></devices></domain>`
+	path := filepath.Join(f.cleanup.store.root.Name(), f.run.Record.RunID, "root.qcow2")
+	query := f.cleanup.query
+	f.cleanup.query = func(ctx context.Context, args ...string) ([]byte, error) {
+		if args[0] == "dumpxml" && len(args) == 3 && args[2] == "--inactive" {
+			return []byte(fmt.Sprintf(`<domain><devices><disk><source file="%s"/></disk></devices></domain>`, path)), nil
+		}
+		return query(ctx, args...)
+	}
+	if err := f.cleanup.Cleanup(context.Background()); err == nil {
+		t.Fatal("inactive persistent reference allowed disk removal")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("future boot disk was deleted")
+	}
+}
+
+func TestVMCleanupDistinguishesTransientFromUnreadablePersistentConfig(t *testing.T) {
+	for _, transient := range []bool{true, false} {
+		f := newCleanupFixture(t)
+		f.exists, f.running = false, false
+		f.foreign = `<domain/>`
+		inactiveCalls := 0
+		query := f.cleanup.query
+		f.cleanup.query = func(ctx context.Context, args ...string) ([]byte, error) {
+			if args[0] == "list" && len(args) == 4 && args[3] == "--persistent" && transient {
+				return nil, nil
+			}
+			if args[0] == "dumpxml" && len(args) == 3 && args[2] == "--inactive" {
+				inactiveCalls++
+				return nil, errors.New("test-only inactive lookup failure")
+			}
+			return query(ctx, args...)
+		}
+		err := f.cleanup.Cleanup(context.Background())
+		if transient && (err != nil || inactiveCalls != 0) {
+			t.Fatal("transient VM incorrectly required an inactive definition")
+		}
+		if !transient && (err == nil || inactiveCalls != 1) {
+			t.Fatal("unreadable persistent definition allowed cleanup")
+		}
+	}
+}
+
 func TestVMCleanupRejectsUnownedArtifactsAndNeverReDeletesCleanedRuns(t *testing.T) {
 	for _, scenario := range []string{"symlink", "hardlink", "unknown", "reappeared"} {
 		t.Run(scenario, func(t *testing.T) {
