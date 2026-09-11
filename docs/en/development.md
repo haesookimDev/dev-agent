@@ -58,7 +58,9 @@ Continuous MVP development uses the roadmap's [next release](roadmap-summary.md#
 
 ## Verification
 
-- `make test`: API, Runner, Worker, Gateway, Web tests and Web type checking
+- `make test`: API, Runner, Worker, Gateway, Web/image-input tests and Web type checking
+- `make test-images`: [golden image candidate builder](golden-image-inputs.md) file/CLI/guest-helper regressions. Actual image build/boot verification is a separate gate.
+- `make test-image-template PACKER=/path/to/packer`: Packer 1.16.0 formatting/syntax check, not plugin configuration validation or actual VM execution.
 - `make lint`: Python Ruff, Go vet and Web ESLint
 - `make test-monitoring PROMTOOL=/path/to/promtool`: monitoring configuration and PromQL alert validation. [Installation and operations](monitoring-alerts.md)
 - `cd apps/web && npm run build`: production Web build
@@ -100,6 +102,8 @@ The current `CI` workflow requires `Python`, `Go` and `Web`. The complete API co
 GitHub Actions configuration follows the official [workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax) and [dependency caching reference](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching). Keep tokens read-only and pin external actions to verified SHAs.
 
 Required check `Go` also runs `make test-monitoring`. It caches the official Prometheus 3.14.0 archive and verifies SHA-256 every time before testing configuration/rules. Synthetic series avoid real alert delays in CI. Existing required check names, eight-minute timeouts, and application coverage remain unchanged.
+
+The same `Go` check runs `make test-image-template`, caching and SHA-256-verifying the official Packer 1.16.0 archive without installing QEMU plugins or building images. This detects syntax errors without another job or longer timeout; actual Linux/KVM/desktop gates require an approved dedicated host.
 
 Required check `Python` also runs `python -m pytest -q apps/api/tests/test_cancellation_postgres.py apps/api/tests/test_budget_version_postgres.py` to verify cancellation/Claim and [budget approval version](budget-approval-version.md) races against actual PostgreSQL. Locally, set `KELPIE_TEST_POSTGRES_URL` to a dedicated test database URL. Each test creates a randomly named isolated schema and cleans up only that schema, without deleting existing data or audits. These eight tests skip when the URL is absent; passing default SQLite tests alone does not complete concurrency verification.
 

@@ -1,10 +1,18 @@
-# MVP 진행 현황 — 2026-09-10
+# MVP 진행 현황 — 2026-09-11
 
 한국어 | [English](../en/mvp-progress.md) · [개발 요약](roadmap-summary.md) · [상세 기준](roadmap-detailed.md)
 
 ## 기준과 진행률
 
-제품 기준 코드: `main`의 `c231d6f0bf73d58505c160870a1919a07950f63c` ([PR #56](https://github.com/haesookimDev/dev-agent/pull/56) 병합). 로컬 개발 호스트 검증은 `feat/macos-kvm-lab`의 템플릿 `055a61e`·실제 부팅 Probe `a7413dd`·CI 연결 `847e0ce`에 근거하며 아래에 별도로 기록합니다. 아래 평가는 문서뿐 아니라 현재 코드·테스트·실제 구동 기록을 대조한 시점별 기록입니다. Draft 브랜치나 계획은 완료로 세지 않습니다.
+제품 기준 코드: `main`의 `fb1f57eab91a9feef031e236d289c8d74ec03942` ([PR #57](https://github.com/haesookimDev/dev-agent/pull/57) 병합). Mac 로컬 개발 호스트 검증 기반은 병합됐으며 정확한 Head `ab9378a`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34447949823)는 5개 Job 모두 통과했습니다. 미병합 `feat/golden-image-arm64`의 이미지 설치 기준은 `cea2e53`, 후속 입력 장치 기능 기준은 `70fd562`, 테스트 기준은 `8217967`입니다. 실제 ARM64 표준 빌드·봉인·두 Boot를 통과했고 `8217967` 도구로 새 사본의 두 Boot도 재검증했습니다. [실행 기록과 실제 JSON·화면 증거](golden-image-inputs.md)는 원본 이미지 Recipe와 후속 검사 도구를 구분합니다. GitHub `main`은 9월 11일 재확인했으며 최신 PR Head·CI는 [Draft #55](https://github.com/haesookimDev/dev-agent/pull/55)에서 대조합니다. Draft 브랜치나 계획은 완료로 세지 않습니다.
+
+이전 이미지 작업의 `main` 기준은 문서 PR #54까지 포함한 `1fd999f`이며 [해당 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34423510547)는 통과했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)는 [Golden Image 후보 Builder](golden-image-inputs.md) 작업입니다. 이전 Head `55fa0cc`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34431563173)는 첫 실행 5분 14초에 5개 Job·이미지 85개 모두 통과했지만 이후 코드의 증거는 아닙니다. 당시 기능 검증 기준은 `a73f600`입니다. Guest 설치·봉인/Packer·두 차례 자동 Boot 검사에 이어 `86369b4`는 Codex 플랫폼 패키지 전체 파일 검증, `a73f600`은 보조 파일을 보존하는 설치와 Boot Inventory 검사를 추가했습니다. 기존 ELF 입력도 지원하며 기존 병렬 CI에 Job·Timeout·VM CI를 늘리지 않았습니다.
+
+후속 이미지 테스트는 **97개 중 96개 통과/1개 Skip**(약 2.2초)이며 `make lint`, 실제 Packer 1.16.0/QEMU Plugin 1.1.6의 합성 입력 전체 설정 검증이 통과했습니다. 기능 기준 `a73f600`의 전용 PostgreSQL DB 전체 `make test`는 API **1,270개 통과/1개 Skip**(184.29초), Runner 45개, Worker/Gateway, Web 125개·타입 검사, 이미지 96개 통과/1개 Skip입니다. API의 Skip은 macOS에서 실행 불가한 Linux systemd 구문 검사이고 이미지 Skip은 Linux 소켓 PID 검사로, 둘 다 Linux CI 대상입니다. 실제 Unix Socket 통신·별도 CLI/자식 프로세스 검증과 모의 Guest/QEMU 두 Boot·종료 검증을 구분했습니다.
+
+공식 Ubuntu `20260826`, Codex `0.154.0`, Chrome for Testing `153.0.8010.36`과 고정 Runner 소스의 Wheel·의존 Wheel 8개를 확보했습니다. 실제 12개 파일의 입력 검증 후 고정 Snapshot의 AppArmor Version을 추가한 17개 APT 입력으로 `20260911-arm64-candidate.1`을 빌드했습니다. **ARM64 후보의 설치·봉인·두 Cold Boot·제한된 Desktop/Browser 입력은 확인했지만 amd64 실제 실행·전체 이미지 릴리즈 Gate·제품 Worker/Console 인수는 미완료입니다.** PR #55는 Draft·미병합이며 완료 수는 올리지 않습니다. 출처·Hash·실패/재검증·미검증 범위는 [입력 검증 기록](golden-image-inputs.md)에 있습니다.
+
+후속 ARM64 통합은 QGA 종료 응답 수집(`fabc600`), Browser 하위 프로세스 정리(`7b46236`), 전용 CDP 검사(`2c52b12`), 정확한 AppArmor 정책/파일 무결성(`2fa0cdd`), Guest 도구 전송 누락(`cea2e53`), 실제 GUI의 키보드/Tablet 누락(`70fd562`)을 회귀 재현 후 수정했습니다. 최신 **Linux 171개 전부 통과**(4.551초), **Mac 170개 통과/플랫폼 Skip 1개**(6.320초), `make lint`, Packer 형식/구문 검사가 통과했습니다. 테스트 전용 `8217967`의 12개 Linux 회귀도 통과했습니다. 표준 자동 부팅 결과는 `boot_smoke_passed_unreleased`·`release_eligible=false`이며 원본 후보를 Worker에 적용하지 않았습니다. Computer Use의 실제 입력 확인과 후속 GUI 검사 중 시간 초과를 구분하고, 이를 제품 Console 권한·입력 소유권 검증으로 계산하지 않습니다.
 
 [바로 다음 Release](roadmap-summary.md#바로-다음-release)에 명시된 7단계를 고정된 분모로 사용합니다. **검증 완료 1/7 = 14.3%**, 부분 완료 3/7, 미완료 3/7입니다. 부분 구현에는 임의 점수를 주지 않습니다. 이 수치는 릴리즈 단계의 검증 완료율이며 코드 작성량·투입 공수·남은 일정의 비율이 아닙니다. 전체 개발 공수의 정확한 완료율은 현재 근거로 산정하지 않습니다.
 
@@ -16,7 +24,7 @@
 | 2. OIDC·조직/저장소 권한·감사 | **부분 완료.** OIDC/RBAC, 추가 전용 피드백·승인·대기 취소·전달 감사가 있습니다. [운영](operations.md#oidc-인증), [IAM 테스트](../../apps/api/tests/test_iam.py), [감사](control-action-audit.md) | OIDC Preview Grant의 통합·실제 TLS 경계 검증, 실행 중 관리자 취소와 VM 종료·정리 보장. |
 | 3. Worker Secret·격리 | **부분 완료.** 파일 Provider, 개별 발급·중첩 교체·폐기, 제어 영역 격리, Runner/API/Worker 진단 보호를 검증했습니다. [자격증명](worker-credentials.md), [격리](worker-quarantine.md), [최신 진단 검증](worker-private-diagnostics.md) | 실제 Host/VM/네트워크와 기존 연결 격리, Event/Artifact/Crash Dump/cloud-init 전체 비노출·보존 정책. 제한된 가림을 범용 Secret Scan으로 계산하지 않습니다. |
 | 4. 관측·복구·보존 운영 기반 | **부분 완료.** Correlation·Metric·DB 준비 검사·장애 알림, 실제 PostgreSQL 복원, 일반 산출물 백업·예약 정리가 있습니다. [관측](execution-monitoring.md), [복원](postgres-restore.md), [예약 정리](scheduled-retention.md) | 외부 의존성 Readiness, 실제 진행 기반 정체 관측·통합 운영 화면, 다른 데이터 종류의 보존/Janitor, 실행 중 취소·재시도·강제 해제의 물리적 안전성, 외부 저장소·실제 운영 복구 검증. |
-| 5. Golden Image·실제 libvirt 실행 | **미완료.** [Worker 실행기](../../apps/worker/internal/daemon/executor.go)는 주어진 Base Image로 VM을 시작하는 초기 구현입니다. [Host 설치 스크립트](../../infra/host/install-ubuntu.sh)는 Image Builder가 아닙니다. | Version 고정 Desktop Image의 재현 가능한 생성·무결성/Boot 검사, Run Metadata·Timeout·Shutdown·재시작/Orphan 복구·정확한 자원 회수·작업별 네트워크·실제 시간 예산 강제. |
+| 5. Golden Image·실제 libvirt 실행 | **미완료.** Draft #55의 ARM64 후보 빌드·봉인·두 Boot와 제한된 GUI 입력을 실제 확인했습니다. [Worker 실행기](../../apps/worker/internal/daemon/executor.go)는 여전히 공급된 Base Image로 VM을 시작하는 초기 구현입니다. | amd64 실제 실행·이미지 재현성/릴리즈 Gate, 영속 Run Metadata·Timeout·Shutdown·재시작/Orphan 복구·정확한 자원 회수·작업별 네트워크·실제 시간 예산 강제. |
 | 6. WireGuard Preview·Console 소유권 | **미완료.** [Gateway](../../apps/gateway/main.go)는 운영 인증이 없으면 503이며 Console 읽기 전용 값을 Header로 전달할 뿐입니다. | 실제 WireGuard Routing·Wildcard TLS·조직/작업/만료/대상 경계, noVNC 입력 필터와 에이전트 입력 중단·반환 Version·Timeout 복구. Header만으로 입력 차단을 증명하지 않습니다. |
 | 7. 실제 Host 동시 2작업 Acceptance | **미완료.** 현재 Mock/HTTP/Chromium 회귀는 이 기준의 대체 증거가 아닙니다. | 서로 다른 저장소 2개를 동시에 Clone→분석→개발→Browser 검증→피드백→재검증→승인→전달→정리하고, Worker 재시작·네트워크 단절 후 복구와 Display/입력/프로필/네트워크/디스크/자격증명 격리를 증명해야 합니다. |
 
@@ -39,7 +47,7 @@
 
 1. **P1 실행 경로를 우선합니다.** Golden Image 재현 → 영속 VM 수명주기·격리 → Preview/Console 강제 → 실제 두 작업·장애 복구 Acceptance의 의존 순서로 구현합니다. 실제 환경이 없어 검증하지 못한 기능 PR은 Draft로 유지합니다.
 2. P0의 남은 Secret·관측·보존·관리자 제어는 위 실행 경로와 연결해 완료합니다. 단위 테스트가 쉬운 부수 개선만 반복해 P1 완료를 대신하지 않습니다.
-3. 승인된 Mac 내부 ARM64 Linux/KVM 호스트를 확보했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)의 Head `f96635c`는 amd64 입력 무결성·Builder·Guest/Boot 검사 경로이며 아직 실제 Golden Image Acceptance를 통과하지 않았습니다. ARM64 입력·Firmware·Browser·모든 생산자/소비자 계약을 함께 확장한 뒤 실제 Desktop 부팅을 검증합니다. 작업별 네트워크·TLS·Console 경계와 동시 2작업 Acceptance는 여전히 남아 있습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
+3. 승인된 Mac 내부 ARM64 Linux/KVM 호스트에서 후보 빌드와 표준 두 Cold Boot를 통과했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)는 이미지 범위로 유지하고, 다음 Worker 변경은 **영속 소유권·정확한 VM/디스크 정리 후 Lease/자원 예약 해제**를 별도 Branch/PR로 진행합니다. 실패·취소·Worker 재시작과 실제 libvirt 검증이 필요합니다. GUI 응답성·amd64 실행·작업별 네트워크·TLS/Console·동시 2작업 Acceptance도 남습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
 4. [Draft PR #21](https://github.com/haesookimDev/dev-agent/pull/21)의 Preview 작업은 `main`에 포함되지 않았습니다. 오래된 Head의 CI는 현재 Migration·권한 계약과의 통합 검증을 대체하지 않습니다. 실제 TLS·브라우저/Console 검증 전에는 완료로 계산하거나 강제 병합하지 않습니다.
 
 ## 갱신 방법

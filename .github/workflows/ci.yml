@@ -77,8 +77,8 @@ jobs:
         run: python -m pip install -e './apps/api[dev]' -e './apps/runner[dev]'
       - name: Test and lint Python
         run: |
-          make test-runner test-lab PYTHON=python
-          python -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests infra/lima
+          make test-runner test-images test-lab PYTHON=python
+          python -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests infra/images infra/lima
       - name: Verify PostgreSQL migrations
         env:
           DATABASE_URL: postgresql+asyncpg://ci:ci-test-only@127.0.0.1:5432/kelpie_ci
@@ -170,6 +170,26 @@ jobs:
           printf '%s  %s\n' 'f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d' "$RUNNER_TEMP/kelpie-prometheus-3.14.0.tar.gz" | sha256sum --check --status
           tar -xzf "$RUNNER_TEMP/kelpie-prometheus-3.14.0.tar.gz" -C "$RUNNER_TEMP" --strip-components=1 prometheus-3.14.0.linux-amd64/promtool
           make test-monitoring PROMTOOL="$RUNNER_TEMP/promtool"
+
+      - name: Cache pinned Packer archive
+        id: packer-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.temp }}/kelpie-packer-1.16.0.zip
+          key: packer-linux-amd64-1.16.0-5edcd14ab59b535040c512dbecd6ec9ef976a000b073c19d93e4c431c948581e
+      - name: Download Packer on cache miss
+        if: steps.packer-cache.outputs.cache-hit != 'true'
+        run: >-
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2
+          --retry 2 --connect-timeout 10 --max-time 90
+          --output "$RUNNER_TEMP/kelpie-packer-1.16.0.zip"
+          https://releases.hashicorp.com/packer/1.16.0/packer_1.16.0_linux_amd64.zip
+      - name: Verify and check image template syntax
+        run: |
+          printf '%s  %s\n' '5edcd14ab59b535040c512dbecd6ec9ef976a000b073c19d93e4c431c948581e' "$RUNNER_TEMP/kelpie-packer-1.16.0.zip" | sha256sum --check --status
+          packer_extract="$(mktemp -d "$RUNNER_TEMP/kelpie-packer.XXXXXX")"
+          unzip -q "$RUNNER_TEMP/kelpie-packer-1.16.0.zip" packer -d "$packer_extract"
+          make test-image-template PACKER="$packer_extract/packer"
 
   web:
     name: Web

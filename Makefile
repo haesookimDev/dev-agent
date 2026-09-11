@@ -1,7 +1,8 @@
-.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web test-monitoring test-lab lint
+.PHONY: dev migrate-api test test-api test-runner test-worker test-gateway test-web test-monitoring test-images test-image-template test-lab lint
 
 PYTHON ?= .venv/bin/python
 PROMTOOL ?= promtool
+PACKER ?= packer
 
 dev:
 	docker compose --profile demo up --build
@@ -9,7 +10,7 @@ dev:
 migrate-api:
 	$(PYTHON) -m alembic -c apps/api/alembic.ini upgrade head
 
-test: test-api test-runner test-worker test-gateway test-web test-lab
+test: test-api test-runner test-worker test-gateway test-web test-images test-lab
 
 test-api:
 	$(PYTHON) -m pytest -q apps/api/tests
@@ -26,6 +27,13 @@ test-gateway:
 test-web:
 	cd apps/web && npm test
 
+test-images:
+	$(PYTHON) -m unittest discover -s infra/images/tests -v
+
+test-image-template:
+	CHECKPOINT_DISABLE=1 $(PACKER) fmt -check infra/images/ubuntu.pkr.hcl
+	CHECKPOINT_DISABLE=1 $(PACKER) validate -syntax-only infra/images/ubuntu.pkr.hcl
+
 test-monitoring:
 	$(PROMTOOL) check config --lint-fatal infra/monitoring/prometheus.example.yml
 	$(PROMTOOL) test rules infra/monitoring/alerts.test.yml infra/monitoring/execution-alerts.test.yml
@@ -34,7 +42,7 @@ test-lab:
 	$(PYTHON) -m unittest discover -s infra/lima/tests -v
 
 lint:
-	$(PYTHON) -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests infra/lima
+	$(PYTHON) -m ruff check apps/api/app apps/api/tests apps/runner/kelpie_runner apps/runner/tests infra/images infra/lima
 	cd apps/worker && go vet ./...
 	cd apps/gateway && go vet ./...
 	cd apps/web && npm run lint
