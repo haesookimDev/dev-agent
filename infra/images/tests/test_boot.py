@@ -364,6 +364,7 @@ class BootTests(unittest.TestCase):
         self.assertIs(result["release_eligible"], False)
         self.assertEqual(build.read_json(self.output / "boot-smoke.json"), result)
         self.assertEqual(result["image"], build.measure(self.source / "image/kelpie.qcow2"))
+        self.assertIn("browser_probe.py", result["probe_tooling_sha256"])
         for name, digest in result["probe_tooling_sha256"].items():
             self.assertEqual(build.measure(build.ROOT / "infra/images" / name)["sha256"], digest)
 

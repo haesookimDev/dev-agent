@@ -12,7 +12,6 @@ import sys
 import tempfile
 import uuid
 from pathlib import Path
-from urllib.parse import quote
 
 if __package__:
     from . import codex_package, guest, prepare
@@ -223,20 +222,24 @@ def smoke_service(user, *args: str) -> str:
         clean_smoke_service(unit, owner)
 
 
-def browser() -> None:
+def browser(expected_version: str) -> None:
     user = pwd.getpwnam("kelpie")
     require(user.pw_uid > 0 and user.pw_gid > 0, "browser user must be unprivileged")
-    html = ('<p id="probe">pending</p>'
-            '<script>document.getElementById("probe").textContent=2+2</script>')
     with tempfile.TemporaryDirectory(prefix="kelpie-image-smoke-", dir="/tmp") as directory:
         os.chown(directory, user.pw_uid, user.pw_gid)
         output = smoke_service(
-            user, "/usr/local/bin/chromium", "--headless=new",
-            "--disable-background-networking", "--no-first-run", "--no-default-browser-check",
-            f"--user-data-dir={directory}", "--timeout=10000", "--dump-dom",
-            "data:text/html," + quote(html),
+            user, "/usr/bin/python3", "/opt/kelpie/image-health/browser_probe.py",
+            directory, expected_version,
         )
-        require('<p id="probe">4</p>' in output, "browser DOM smoke failed")
+        require(len(output) <= 4096, "browser completion exceeds limit")
+        try:
+            report = json.loads(output, object_pairs_hook=prepare.unique_object)
+        except (ValueError, RecursionError) as exc:
+            raise prepare.InputError("invalid browser completion") from exc
+        require(isinstance(report, dict) and type(report.get("schema_version")) is int
+                and report == {"schema_version": 1, "status": "browser_dom_passed",
+                               "browser_version": expected_version},
+                "browser DOM smoke failed")
 
 
 def probe() -> dict:
@@ -249,7 +252,7 @@ def probe() -> dict:
     access_removed()
     installed(manifest)
     desktop()
-    browser()
+    browser(manifest["browser"]["version"])
     return {"schema_version": 1, "status": "guest_smoke_passed", "release_eligible": False,
             "image_version": manifest["image_version"], **identity,
             "checks": dict.fromkeys(CHECKS, True)}

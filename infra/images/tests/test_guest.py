@@ -330,6 +330,26 @@ class GuestTests(unittest.TestCase):
         lexists.assert_not_called()
         command.assert_called_once_with("cloud-init", "status", "--wait", timeout=600)
 
+    def test_installs_browser_probe_with_all_standalone_health_dependencies(self):
+        installation = self.root / "installation"
+        installation.mkdir()
+        staging = self.root / "staging"
+        tooling = staging / "tooling"
+        tooling.mkdir(parents=True)
+        names = {"health.py", "prepare.py", "guest.py", "codex_package.py", "browser_probe.py"}
+        for name in names:
+            (tooling / name).write_text(f"# synthetic {name}\n")
+        with patch.object(guest, "INSTALL_ROOT", installation), \
+                patch.object(guest, "STAGING", staging):
+            guest.install_health_tools()
+            with self.assertRaises(FileExistsError):
+                guest.install_health_tools()
+        installed = installation / "image-health"
+        self.assertEqual({path.name for path in installed.iterdir()}, names)
+        for name in names:
+            self.assertEqual((installed / name).read_text(), f"# synthetic {name}\n")
+            self.assertEqual(stat.S_IMODE((installed / name).stat().st_mode), 0o644)
+
     def test_rejects_ambiguous_wheel_metadata(self):
         for index, entries in enumerate([
             [],

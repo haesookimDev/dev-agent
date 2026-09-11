@@ -155,20 +155,20 @@ class HealthTests(unittest.TestCase):
         paths = []
 
         def command(*args, **kwargs):
-            self.assertEqual(args[1], "/usr/local/bin/chromium")
-            self.assertNotIn("--no-sandbox", args)
-            self.assertTrue(args[-1].startswith("data:text/html,"))
-            directory = Path(next(arg.split("=", 1)[1] for arg in args
-                                  if isinstance(arg, str) and arg.startswith("--user-data-dir=")))
+            self.assertEqual(args[1:3], ("/usr/bin/python3",
+                                        "/opt/kelpie/image-health/browser_probe.py"))
+            self.assertEqual(args[4], "1.2.3.4")
+            directory = Path(args[3])
             self.assertTrue(directory.is_dir())
             paths.append(directory)
-            return '<p id="probe">4</p>'
+            return json.dumps({"schema_version": 1, "status": "browser_dom_passed",
+                               "browser_version": "1.2.3.4"})
 
         with patch.object(health.pwd, "getpwnam",
                           return_value=SimpleNamespace(pw_uid=1234, pw_gid=1234)), \
                 patch.object(health.os, "chown") as chown, \
                 patch.object(health, "smoke_service", side_effect=command):
-            health.browser()
+            health.browser("1.2.3.4")
         self.assertEqual(chown.call_args.args[1:], (1234, 1234))
         self.assertTrue(paths)
         self.assertTrue(all(not path.exists() for path in paths))
@@ -209,13 +209,22 @@ class HealthTests(unittest.TestCase):
             with self.assertRaisesRegex(prepare.InputError, "invalid Codex installed inventory"):
                 health.installed(self.manifest)
 
-    def test_browser_rejects_unexecuted_javascript(self):
-        with patch.object(health.pwd, "getpwnam",
-                          return_value=SimpleNamespace(pw_uid=1234, pw_gid=1234)), \
-                patch.object(health.os, "chown"), \
-                patch.object(health, "smoke_service", return_value='<p id="probe">pending</p>'):
-            with self.assertRaisesRegex(prepare.InputError, "DOM smoke failed"):
-                health.browser()
+    def test_browser_rejects_missing_malformed_or_mismatched_completion(self):
+        record = {"schema_version": 1, "status": "browser_dom_passed",
+                  "browser_version": "1.2.3.4"}
+        invalid = ["", '<p id="probe">4</p>', "[]", "null", "x" * 4097,
+                   '{"schema_version":1,"schema_version":1}',
+                   *[json.dumps(record | change) for change in (
+                       {"schema_version": True}, {"status": "browser_started"},
+                       {"browser_version": "9.9.9.9"}, {"extra": True})]]
+        for output in invalid:
+            with self.subTest(output=output[:20]), \
+                    patch.object(health.pwd, "getpwnam",
+                                 return_value=SimpleNamespace(pw_uid=1234, pw_gid=1234)), \
+                    patch.object(health.os, "chown"), \
+                    patch.object(health, "smoke_service", return_value=output):
+                with self.assertRaises(prepare.InputError):
+                    health.browser("1.2.3.4")
 
     def test_smoke_service_owns_a_bounded_cgroup_with_literal_clean_unprivileged_command(self):
         user = SimpleNamespace(pw_uid=1234, pw_gid=1234)
@@ -385,6 +394,7 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(result["checks"], dict.fromkeys(health.CHECKS, True))
         for check in checks:
             self.assertEqual(check.call_count, 1)
+        checks[-1].assert_called_once_with(self.manifest["browser"]["version"])
 
     def test_probe_rejects_manifest_architecture_before_package_or_browser_checks(self):
         with patch.object(health, "guard"), patch.object(health, "command"), \

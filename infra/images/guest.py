@@ -224,6 +224,13 @@ def reject_credentials() -> None:
             "build guest must not have a work assignment")
 
 
+def install_health_tools() -> None:
+    health_tools = INSTALL_ROOT / "image-health"
+    health_tools.mkdir(mode=0o755)
+    for name in ("health.py", "prepare.py", "guest.py", "codex_package.py", "browser_probe.py"):
+        write_file(health_tools / name, (STAGING / "tooling" / name).read_text())
+
+
 def install() -> None:
     guard_guest()
     command("cloud-init", "status", "--wait", timeout=600)
@@ -296,10 +303,7 @@ def install() -> None:
     command("systemctl", "mask", "apt-daily.service", "apt-daily-upgrade.service",
             "apt-daily.timer", "apt-daily-upgrade.timer")
     prepare.write_json(INSTALL_ROOT / "image-manifest.json", manifest)
-    health_tools = INSTALL_ROOT / "image-health"
-    health_tools.mkdir(mode=0o755)
-    for name in ("health.py", "prepare.py", "guest.py", "codex_package.py"):
-        write_file(health_tools / name, (STAGING / "tooling" / name).read_text())
+    install_health_tools()
     reject_credentials()
     # This is build-owned package staging, never a workspace or caller-selected path.
     shutil.rmtree(inputs)
