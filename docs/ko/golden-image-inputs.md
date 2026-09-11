@@ -22,7 +22,7 @@ Manifest는 UTF-8 JSON이며 최대 128 KiB입니다. 아래 Field만 허용하�
 | `base_image`, `codex`, `browser` | 각각 `file`, `version`, `sha256`, `size_bytes`를 가진 Object |
 | `runner_wheels` | 동일 4개 Field와 `name`을 가진 Wheel Object 목록, 1~64개. `kelpie-vm-runner` 필수, 정규화된 Package 이름 중복 금지 |
 
-입력 준비의 필수 APT 이름은 `build-essential`, `ca-certificates`, `dbus-x11`, `git`, `nodejs`, `npm`, `python3.12-venv`, `qemu-guest-agent`, `xfce4`, `xorg`입니다. Builder는 추가로 `lightdm`, `libnss3`, `libgbm1`, `libasound2t64`, `fonts-liberation`, `x11-utils`의 정확한 Version을 요구합니다. `x11-utils`의 `xdpyinfo`는 실제 X Display 응답 검사에 사용합니다. 이 목록이 완전한 Desktop/Browser 의존성 집합임을 보장하지 않으며 실제 설치·사용 검증이 필요합니다.
+입력 준비의 필수 APT 이름은 `build-essential`, `ca-certificates`, `dbus-x11`, `git`, `nodejs`, `npm`, `python3.12-venv`, `qemu-guest-agent`, `xfce4`, `xorg`입니다. Builder는 추가로 `lightdm`, `libnss3`, `libgbm1`, `libasound2t64`, `fonts-liberation`, `x11-utils`, `apparmor`의 정확한 Version을 요구합니다. `x11-utils`의 `xdpyinfo`는 실제 X Display 응답 검사에, AppArmor는 전역 사용자 네임스페이스 제한을 유지하는 앱별 Sandbox 정책에 필요합니다. 이 목록이 완전한 Desktop/Browser 의존성 집합임을 보장하지 않으며 실제 설치·사용 검증이 필요합니다.
 
 `file`은 하위 경로 없는 ASCII 파일명이며 대소문자 Alias까지 중복을 금지합니다. Base Image 확장자는 `.qcow2`/`.img`(최대 64 GiB), Browser는 `.zip`(2 GiB), Wheel은 `.whl`(개당 256 MiB), Codex 입력은 최대 1 GiB입니다. `size_bytes`는 양의 정수, `sha256`은 소문자 64자리입니다. 확장자 검사는 내부 형식·Architecture·실행 안전성 검사가 아닙니다.
 
@@ -102,7 +102,7 @@ python3 infra/images/build.py \
 2. 새 cloud-init Seed로 **NIC·VNC·TCP 관리 Port 없는 KVM VM**을 시작합니다. 2 vCPU/4 GiB이며 TCG 대체를 허용하지 않습니다. 전용 DMI 표식과 소유한 QEMU PID/UID에 연결된 Unix Socket을 확인합니다. 이 Offline Smoke는 운영 작업 네트워크 격리 검증이 아닙니다.
 3. [QEMU Guest Agent 계약](https://www.qemu.org/docs/master/interop/qemu-ga-ref.html)에 따라 난수·구분자로 오래된 응답을 제거하고 크기·시간을 제한합니다. `guest-exec`, `guest-exec-status`, `guest-shutdown`이 허용되어야 하며 차단된 RPC를 임의로 활성화하지 않습니다.
 4. Guest는 cloud-init 완료, 봉인 기록/Manifest, 초기화된 ID, Builder 잠금/접근 제거, 알려진 자격증명 Cache 부재, 잠금 APT/Wheel/설치 Inventory, Runner Import·배정 전 비활성, Codex/Browser Version, LightDM/Xfce/X Display를 검사합니다. 전체 Secret Scan이나 인증된 Codex 작업 실행은 아닙니다.
-5. 비특권 `kelpie`의 일회성 Profile로 Chromium Headless를 실행해 `data:` 문서의 JavaScript 실행 후 DOM을 확인합니다. Sandbox 우회·외부 사이트·디버깅 Port를 사용하지 않고 Profile을 정리합니다. [DOM Smoke](https://developer.chrome.com/docs/automation-and-testing/headless-cli)는 **화면의 시각 검토·클릭/키보드·Console 입력 소유권·Computer Use Acceptance를 대체하지 않습니다.**
+5. 비특권 `kelpie`의 일회성 Profile로 Chromium Headless를 실행합니다. [전용 CDP Pipe 검사](../../infra/images/browser_probe.py)는 정확한 Browser Version·`data:` 문서의 JavaScript 계산/DOM·정상 종료를 24초 내에 확인하고 종료 응답 뒤 명령 Pipe를 닫습니다. Sandbox 우회·외부 사이트·디버깅 TCP Port 없이 cgroup 하위 프로세스와 Profile까지 정리합니다. 이 검사는 **화면의 시각 검토·클릭/키보드·Console 입력 소유권·Computer Use Acceptance를 대체하지 않습니다.**
 6. 각 부팅/검사는 300초의 같은 Deadline, 종료는 60초 한도입니다. 종료 RPC에 성공 응답이 없다는 계약에 따라 QEMU Process의 Exit 0을 기다립니다. 실패/Timeout에는 직접 생성한 Process Group만 종료하며 성공 기록을 남기지 않습니다.
 7. 정상 전원 종료 후 같은 Overlay를 다시 시작합니다. 두 Boot ID Hash는 달라야 하고 Machine ID Hash는 같아야 합니다. 원본 ID는 기록하지 않습니다. 이는 두 번의 Cold Boot 검사이지 별도 두 VM 간 ID 격리·실행 중 Reboot·Host 장애 복구 증거가 아닙니다.
 8. 후보 사본의 Hash/크기가 변하지 않았는지 재확인한 뒤 마지막으로 `boot-smoke.json`을 씁니다. 상태는 `boot_smoke_passed_unreleased`, **`release_eligible=false`**이고 두 Guest 보고서·Image/Recipe/검사 도구 Hash를 보존합니다. 서명·SBOM·취약점·실제 GUI·Canary Gate는 별도로 남습니다.
@@ -183,3 +183,17 @@ Mac의 전용 비공개 디렉터리에서 다음 실제 파일을 확보했습�
 표준 `--dump-dom` 검사는 별도 90초 진단에서도 결과를 반환하지 않았고 시작 후 CPU 활동은 적었습니다. GPU·전용 D-Bus 실험도 해결하지 못했습니다. Chrome 153의 [명령 처리 코드](https://github.com/chromium/chromium/blob/153.0.8010.36/components/headless/command_handler/headless_command_handler.cc)는 해당 옵션을 여전히 지원하므로 제거된 옵션이 원인은 아닙니다. 별도 비공개 초안은 디버거 TCP 포트 없이 [CDP Pipe](https://github.com/chromium/chromium/blob/153.0.8010.36/content/browser/devtools/devtools_pipe_handler.cc)로 정확한 Browser Version 확인·페이지 생성·계산된 DOM 검증·정상 종료를 5.11초에 완료했고 cgroup 정리도 통과했습니다. 이는 최종 커밋된 브라우저 검사가 아닌 초안입니다. 시간 제한이 적용된 진단 VM은 이후 종료됐습니다.
 
 로컬 증거는 `arm-browser-cgroup-images-reviewed.log`, `arm-browser-cgroup-linux-reviewed.log`, `arm-browser-cgroup-real-03.log`, `arm-browser-cgroup-gc-real.log`, `arm-browser-headless-timeline-01.log`, `arm-browser-cdp-vm-01.log`와 9월 10일 18:29 KST Computer Use 화면입니다. 승격 전에는 최종 브라우저 검사·정확한 정책·파일 무결성 검사를 구현·테스트하고, 커밋된 Recipe로 재빌드해 두 번의 깨끗한 Cold Boot와 실제 상호작용을 검증해야 합니다. 9월 11일 PR #55는 `f96635c`의 Draft였고 ARM64 후속 `7b46236`까지는 미Push·새 Head CI 미실행 상태였습니다. 진단 결과로 MVP 완료 단계 수를 올리지 않습니다.
+
+### 브라우저 검사와 Sandbox 정책 구현, 9월 11일
+
+`2c52b12`는 CDP 검사를 이미지 설치·Recipe Hash·Boot 검사 도구에 연결했습니다. 비특권 실행 사용자·전용 VM·일회성 디렉터리를 확인하고, 크기·시간이 제한된 응답에서 Version/DOM/종료를 엄격하게 검증합니다. 종료 응답만 받고 명령 Pipe를 열어 둔 상황은 별도 프로세스 회귀로 재현해 EOF 전달로 수정했습니다. 실제 ARM64 진단 Overlay에서 최종 Helper가 **Viewer 연결 시 14.68초, 연결 해제 시 12.01초**에 정상 종료와 cgroup 정리까지 통과했습니다. 앞선 지연·종료 실패 로그도 보존했으며 제한 시간을 늘리거나 Sandbox를 끄지 않았습니다.
+
+`2fa0cdd`는 [Browser 무결성과 AppArmor 정책](../../infra/images/browser_policy.py)을 설치·봉인·부팅 경로에 연결합니다. `/opt/kelpie/browser/`의 모든 파일·디렉터리와 상위 경로의 소유권/권한, 파일 Hash·크기·단일 링크, 아키텍처별 ELF를 검사하고 `browser-inventory.json`을 보존합니다. 정책은 `/etc/apparmor.d/kelpie-image-browser`에 배타적으로 생성하며 **정확한 native Chrome 경로 하나**에만 `userns`를 허용합니다. 기존 파일·로드된 이름·Disable/Complain Override 충돌은 거부합니다. 실행 전 Inventory, 정책 내용, 로드 상태, AppArmor 서비스와 전역 제한을 재확인합니다. 이 `unconfined` 정책은 추가 MAC 격리가 아니며 실행 UID별 정책도 아닙니다.
+
+Ubuntu의 [Noble 정책 설명](https://discourse.ubuntu.com/t/ubuntu-24-04-lts-noble-numbat-release-notes/39890)대로 기본 프로필은 사용자 네임스페이스 생성 자체가 아니라 그 안의 Capability 사용을 제한합니다. 실제 비특권 대조 검사는 기본 `unprivileged_userns` 프로필 진입 후 네트워크 네임스페이스 생성이 `EPERM`으로 거부됨을 확인했습니다. 단순 `unshare --user true`의 실패를 기대했던 초기 진단은 잘못된 기대였으며 제품 정책을 완화하지 않고 진단을 수정했습니다.
+
+`2fa0cdd` 검증은 **Mac 168개 통과/플랫폼 Skip 1개**(6.222초), **Linux 169개 전부 통과**(4.394초), `make lint`, `make test-image-template PACKER=/tmp/kelpie-packer-116.vJqU21/packer`입니다. Linux에서 발견한 테스트 디렉터리의 Umask 차이는 초기 Fixture 권한을 명시해 수정했고 실제 권한 검사는 유지했습니다. 최종 정책 Helper는 실제 이미지의 **316개 항목**과 기존 정책을 5.88초에 재검증했습니다. 증거: `cdp-integrated-real-eof-01.log`, `cdp-integrated-real-eof-disconnected.log`, `browser-policy-real-01.log`, `browser-policy-linux-final.log`, `browser-policy-mac-final.log`, `browser-policy-template.log`.
+
+실제 재빌드에서 새 두 Python 모듈이 Packer의 Guest 전송 목록에 빠진 통합 오류를 발견했습니다. `cea2e53`은 7개 도구를 모두 전송하고 목록 누락을 검출하는 회귀를 추가합니다. 이 회귀는 수정 전 실패했고 수정 후 통과했습니다. 최종 **Mac 169개 통과/Skip 1개**(9.107초), **Linux 170개 전부 통과**(4.493초), Packer 형식/구문과 `make lint`를 확인했습니다. `packer-guest-tooling-red.log`, `packer-guest-tooling-mac.log`, `packer-guest-tooling-linux.log`에 증거가 있습니다. 9월 11일 10:22 KST에 이 커밋의 표준 재빌드를 시작했으며 이전 실패 실행을 성공으로 세지 않습니다.
+
+입력 마이그레이션은 고정 Snapshot에서 `apparmor` Version을 결정하고 새 `image_version`으로 입력을 다시 준비한 뒤 **새 후보를 재빌드**하는 방식입니다. 기존 Manifest/완료 기록이나 후보를 제자리 수정하지 않습니다. 검증한 ARM Snapshot의 `apparmor=4.0.1really4.0.1-0ubuntu0.24.04.7`을 추가한 `20260911-arm64-candidate.1` 입력은 12개 파일·17개 APT 고정값이며 Manifest SHA-256은 `fa46d223c85df43cbf4781d14262e3c4eb1dc69686668bb302b82dfb7f4d8736`입니다. 표준 재빌드를 시작했지만 **새 이미지의 두 Boot와 실제 입력 인수는 아직 완료되지 않았습니다.** 실패한 후보는 승격하지 않으며 롤백 대상은 이전에 별도 승인된 이미지여야 합니다. 보존한 미검증 후보는 롤백 승인 대상이 아닙니다.
