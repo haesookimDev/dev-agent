@@ -4,7 +4,7 @@
 
 ## 이번 범위
 
-[`prepare.py`](../../infra/images/prepare.py)는 입력 검증·별도 사본 준비만 수행합니다. [`build.py`](../../infra/images/build.py)와 [Packer 설정](../../infra/images/ubuntu.pkr.hcl)은 승인한 전용 KVM Host에서 [`guest.py`](../../infra/images/guest.py)의 설치·봉인 후 [`boot.py`](../../infra/images/boot.py)의 두 차례 부팅 검사를 자동 실행하는 후보 Builder입니다. **이 경로의 실제 Image Build/Boot/Desktop 검증과 릴리즈 Gate는 미완료이며 IMG-001도 미완료입니다.** 현재 Worker의 Base Image 설정이나 실행 경로를 바꾸거나 자동 Rollout하지 않습니다.
+[`prepare.py`](../../infra/images/prepare.py)는 입력 검증·별도 사본 준비만 수행합니다. [`build.py`](../../infra/images/build.py)와 [Packer 설정](../../infra/images/ubuntu.pkr.hcl)은 승인한 전용 KVM Host에서 [`guest.py`](../../infra/images/guest.py)의 설치·봉인 후 [`boot.py`](../../infra/images/boot.py)의 두 차례 부팅 검사를 자동 실행하는 후보 Builder입니다. **Mac 내부 ARM64 KVM에서 실제 후보 빌드·봉인·두 Cold Boot와 제한된 Desktop/Browser 입력을 확인했습니다. amd64 실제 실행·전체 인수·릴리즈 Gate 및 IMG-001은 미완료입니다.** 아래 기록은 시점별 실패·수정·재검증을 구분합니다. 현재 Worker의 Base Image 설정이나 실행 경로를 바꾸거나 자동 Rollout하지 않습니다.
 
 검토한 Ubuntu 24.04 **amd64 또는 arm64** 이미지와 같은 Architecture의 Codex 플랫폼 패키지 또는 독립 실행 파일, Linux 브라우저 ZIP, Runner와 전체 Python 의존성 Wheel을 먼저 확보해야 합니다. 공개 배포 입력은 에이전트가 공식 출처에서 확보·검증할 수 있으며 사용자에게 파일 제공을 반드시 요구하지 않습니다. 기대 Hash는 검토한 공식 배포 자료/빌드 증거에서 확인하세요. 출처를 확인하지 않은 파일을 직접 Hash한 것만으로 신뢰할 수 있는 배포물이 되지는 않습니다. 저장소에는 실제 검증하지 않은 Version·Checksum을 릴리즈 Lock으로 넣지 않습니다.
 
@@ -69,7 +69,7 @@ python3 infra/images/prepare.py \
 | `AAVMF_CODE.no-secboot.fd` | 67,108,864 Bytes | `4a4cb7f6d8106bb2a7dd8c763fab14b1810152136fc4304e5b728f0043e84f12` |
 | `AAVMF_VARS.fd` | 67,108,864 Bytes | `b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f` |
 
-ARM64는 `virt`·KVM·Host CPU/GIC, Virtio GPU와 SCSI Seed CD를 사용합니다. 최초 검사는 빌드 중 변경된 NVRAM 대신 고정된 빈 VARS 사본에서 시작하고, 두 Cold Boot는 같은 검사용 VARS와 Disk Overlay를 유지합니다. CODE는 읽기 전용이며 Host 펌웨어·원본 후보는 VM의 쓰기 대상으로 사용하지 않습니다. amd64는 기존 q35 경로를 유지합니다. Worker의 실제 ARM64 VM 수명주기·Console 연결은 별도 통합 검증 대상이며 이 Builder만으로 완료 처리하지 않습니다.
+ARM64는 `virt`·KVM·Host CPU/GIC, Virtio GPU·키보드·절대 좌표 Tablet과 SCSI Seed CD를 사용합니다. 최초 검사는 빌드 중 변경된 NVRAM 대신 고정된 빈 VARS 사본에서 시작하고, 두 Cold Boot는 같은 검사용 VARS와 Disk Overlay를 유지합니다. CODE는 읽기 전용이며 Host 펌웨어·원본 후보는 VM의 쓰기 대상으로 사용하지 않습니다. amd64는 기존 q35 경로를 유지합니다. Worker의 실제 ARM64 VM 수명주기·Console 연결은 별도 통합 검증 대상이며 이 Builder만으로 완료 처리하지 않습니다.
 
 Packer의 `qemuargs`는 기본 `-device` 목록 전체를 교체하므로 ARM Seed CD의 컨트롤러·드라이브를 명시적으로 연결합니다. 전용 DMI 제품명을 사용하는 Builder/Probe는 Manufacturer `KVM`도 유지합니다. ARM64의 [systemd 판별](https://github.com/systemd/systemd/blob/v255/src/basic/virt.c)은 x86 CPUID 대신 DMI를 사용하기 때문입니다. DMI는 설명용 정보이며 가속 증명이 아닙니다. Host의 네이티브 Architecture·`/dev/kvm` 검사와 QEMU의 `accel=kvm` 강제, Guest의 `kvm`·전용 제품명 검사는 그대로 유지합니다. `qemu` 결과를 허용하거나 TCG로 대체하지 않습니다.
 
@@ -196,4 +196,28 @@ Ubuntu의 [Noble 정책 설명](https://discourse.ubuntu.com/t/ubuntu-24-04-lts-
 
 실제 재빌드에서 새 두 Python 모듈이 Packer의 Guest 전송 목록에 빠진 통합 오류를 발견했습니다. `cea2e53`은 7개 도구를 모두 전송하고 목록 누락을 검출하는 회귀를 추가합니다. 이 회귀는 수정 전 실패했고 수정 후 통과했습니다. 최종 **Mac 169개 통과/Skip 1개**(9.107초), **Linux 170개 전부 통과**(4.493초), Packer 형식/구문과 `make lint`를 확인했습니다. `packer-guest-tooling-red.log`, `packer-guest-tooling-mac.log`, `packer-guest-tooling-linux.log`에 증거가 있습니다. 9월 11일 10:22 KST에 이 커밋의 표준 재빌드를 시작했으며 이전 실패 실행을 성공으로 세지 않습니다.
 
-입력 마이그레이션은 고정 Snapshot에서 `apparmor` Version을 결정하고 새 `image_version`으로 입력을 다시 준비한 뒤 **새 후보를 재빌드**하는 방식입니다. 기존 Manifest/완료 기록이나 후보를 제자리 수정하지 않습니다. 검증한 ARM Snapshot의 `apparmor=4.0.1really4.0.1-0ubuntu0.24.04.7`을 추가한 `20260911-arm64-candidate.1` 입력은 12개 파일·17개 APT 고정값이며 Manifest SHA-256은 `fa46d223c85df43cbf4781d14262e3c4eb1dc69686668bb302b82dfb7f4d8736`입니다. 표준 재빌드를 시작했지만 **새 이미지의 두 Boot와 실제 입력 인수는 아직 완료되지 않았습니다.** 실패한 후보는 승격하지 않으며 롤백 대상은 이전에 별도 승인된 이미지여야 합니다. 보존한 미검증 후보는 롤백 승인 대상이 아닙니다.
+입력 마이그레이션은 고정 Snapshot에서 `apparmor` Version을 결정하고 새 `image_version`으로 입력을 다시 준비한 뒤 **새 후보를 재빌드**하는 방식입니다. 기존 Manifest/완료 기록이나 후보를 제자리 수정하지 않습니다. 검증한 ARM Snapshot의 `apparmor=4.0.1really4.0.1-0ubuntu0.24.04.7`을 추가한 `20260911-arm64-candidate.1` 입력은 12개 파일·17개 APT 고정값이며 Manifest SHA-256은 `fa46d223c85df43cbf4781d14262e3c4eb1dc69686668bb302b82dfb7f4d8736`입니다. 이 시점에는 표준 재빌드가 진행 중이었으며 후속 결과는 다음 절에 기록합니다. 실패한 후보는 승격하지 않으며 롤백 대상은 이전에 별도 승인된 이미지여야 합니다. 보존한 미검증 후보는 롤백 승인 대상이 아닙니다.
+
+### ARM64 표준 빌드·두 부팅·입력 장치 수정, 9월 11일
+
+Mac M4 Pro의 전용 Lima/Ubuntu ARM64 KVM에서 정확한 Git Archive `cea2e53`으로 실행한 `run-06`은 설치·봉인과 자동 두 Cold Boot를 모두 통과하고 Exit 0으로 종료했습니다. 두 부팅 모두 8개 Guest 검사가 참이고, 같은 Machine ID Hash·서로 다른 Boot ID Hash·정상 QEMU 종료·후보 Hash 보존을 확인했습니다. 후보는 **5,074,386,944 Bytes**, SHA-256 `b2de98bf1725ede0319b2e50c74d4dc9de3499846cdeb3b7ca880b0bd22963a6`, Recipe SHA-256 `ee18916794636455c847f15d461e212bf71bbd2c717a27ff31ae17b24251e295`입니다. `boot_smoke_passed_unreleased`는 출시 승인이 아니며 `release_eligible=false`를 유지합니다.
+
+이후 실제 GUI 검사에서 Headless 검사가 발견하지 못한 입력 장치 누락을 재현했습니다. 이전 VM의 Linux 입력 목록에는 Power Button만 있었고 `Alt+F2`가 반응하지 않았습니다. `70fd562`는 Packer와 Boot의 ARM64 장치 목록 모두에 `virtio-keyboard-pci`, `virtio-tablet-pci`를 추가합니다. Host 입력 장치 전달이나 amd64 변경은 없습니다. 수정 전 2개 회귀 실패 → 수정 후 관련 48개 통과(1.673초), Packer 형식/구문·`make lint`를 확인했습니다.
+
+수정된 장치 구성의 실제 VM에서 QEMU Virtio Keyboard/Tablet을 확인하고, Mac의 전용 Chrome 창을 Computer Use로 조작했습니다. `Alt+F2`로 Xfce Application Finder 열기 → Chrome for Testing `153.0.8010.36` 실행 → 로컬 검증 페이지 이동 → 빈 필수 입력의 검증 오류 → 대소문자를 유지한 `Mac ARM64` 입력을 실제 Guest 화면에서 확인했습니다. 검증용 HTML은 별도 Overlay의 비특권 파일이며 이미지 원본이나 제품 대시보드를 수정하지 않습니다.
+
+| 수정 전: Desktop은 보이지만 입력 장치 없음 | 수정 후: 실제 Guest 브라우저에 입력됨 |
+| --- | --- |
+| ![입력 장치 수정 전 Xfce 화면](../assets/golden-image-arm64/before-input-devices.png) | ![수정 후 브라우저에 Mac ARM64 입력](../assets/golden-image-arm64/after-keyboard-input.png) |
+
+이미지 회귀는 `70fd562`에서 **Linux 171개 전부 통과**(4.551초)했습니다. Mac 전체 실행 중 EOF 순서 검사의 초기 `Browser.getVersion` 요청이 EOF 단계에 도달하기 전에 0.5초를 넘겨 실패해 `8217967`에서 다른 정상 경로와 같은 2초 한도를 사용하도록 별도 수정했습니다. EOF가 누락되면 여전히 실패하고 실제 Browser의 24초 제한은 바꾸지 않았습니다. 최종 **Mac 170개 통과/플랫폼 Skip 1개**(6.320초)와 `make lint`, Linux의 해당 12개 회귀(1.487초)가 통과했습니다. Linux에는 `make`가 없어 `python3 -m unittest discover -s infra/images/tests -v`로 동일 이미지 Suite를 실행했습니다. 새 의존성·CI Job·Timeout 증가는 없습니다.
+
+이미지 설치 소스는 `cea2e53` 이후 바뀌지 않았습니다. 후속 변경은 Host의 QEMU 입력 장치 연결과 그 회귀 테스트뿐이며, 기존 후보를 새 Boot 도구로 재검사할 때 `source_recipe_sha256`과 `probe_tooling_sha256`을 별도로 보존합니다. `8217967`의 표준 독립 Boot CLI를 새 후보 사본·Seed·Overlay·고정 빈 펌웨어 사본에서 실행한 `boot-final-06`도 **두 부팅의 8개 검사·정상 종료·원본 Hash 보존에 모두 통과**했습니다. [최초 빌드의 부팅 기록](../assets/golden-image-arm64/build-two-boots.json)과 [최종 도구의 재검사 기록](../assets/golden-image-arm64/final-tooling-two-boots.json)은 원문 ID·환경·자격증명 없는 실제 JSON 결과입니다. 기존 이미지가 새 Packer Template으로 다시 설치됐다고 주장하지 않습니다.
+
+private GUI Viewer는 NIC 없는 VM의 Loopback VNC에만 연결하며 **제품 Console 인증·입력 소유권·작업별 네트워크 인수 증거가 아닙니다.** 이 검증 경로에서 긴 문자열의 키 이벤트 전달이 실패했으며 미해결 실패를 성공으로 계산하지 않습니다. `arm-build-06.log`, `boot-final-06.log`, `desktop-06-fixed-inputs.log`, `arm-input-devices-{red,targeted,linux,mac-final}.log`, `browser-eof-linux-final.log`는 전용 로컬 증거 디렉터리에 보존합니다.
+
+추가 `desktop-06-final-gui.log` 실행은 상태 검사 도중 GUI 조작을 함께 진행하다 300초에 실패했습니다. 이 실행을 통과로 계산하거나 표준 두 Boot의 증거와 합치지 않습니다. 정확한 병목 원인은 아직 확정하지 않았으며 후속 GUI 전용 진단은 자동 상태 검사와 분리합니다. Mac Viewer만 별도 Profile과 [공식 도구용 Background Throttling 옵션](https://github.com/GoogleChrome/chrome-launcher/blob/main/docs/chrome-flags-for-tools.md)으로 다시 실행했고 Guest 브라우저·Sandbox·제품 Timeout은 변경하지 않았습니다. 실제 사용 응답성과 제품 경로 통합은 남은 인수 조건입니다.
+
+후속 `desktop-06-gui-only.log`에서는 같은 입력 장치로 Xfce 실행창·브라우저 재실행, 로컬 RFB 포인터로 초기 대화상자 취소를 확인했습니다. 재부팅 후 없어진 `/tmp` 검증 파일을 비특권으로 다시 생성해 페이지를 열었지만 420초의 GUI 전용 진단 창이 끝나 **폼 제출 결과 재확인은 미완료**입니다. 이 시간은 제품 Boot/Browser 제한을 늘린 것이 아니며 자동 Health 통과 증거도 아닙니다. 소유한 VM은 종료됐고 후보 원본 Hash는 유지됐습니다.
+
+원본 후보·실패 로그는 보존했습니다. 공간 확보를 위해 과거 실패 `run-04/boot-check/candidate.qcow2`의 단일 파생 사본만 소유권·전체 Hash·미사용을 확인한 뒤 삭제했습니다. 동일 Hash의 `run-04/image/kelpie.qcow2`에서 정확한 원래 경로로 복원할 수 있습니다. 사용자의 파일이나 운영 이미지는 삭제하지 않았습니다. amd64 실제 빌드/부팅/GUI, 서명·SBOM·취약점·Provenance·Canary, 자격증명 전체 비노출과 실제 Worker 수명주기 Gate는 여전히 남아 있으며 MVP는 **1/7 = 14.3%**를 유지합니다.

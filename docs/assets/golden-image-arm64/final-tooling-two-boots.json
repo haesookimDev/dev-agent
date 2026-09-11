@@ -1,0 +1,63 @@
+{
+  "boots": [
+    {
+      "boot_id_sha256": "1ff2441c39c8044a82bb922e7bba2aff40f3c7da4ee2b1d12112ca8d0d92ca97",
+      "checks": {
+        "browser_dom": true,
+        "builder_access_removed": true,
+        "credential_caches_absent": true,
+        "desktop_session": true,
+        "idle_runner": true,
+        "locked_packages": true,
+        "runner_import": true,
+        "sealed_identity": true
+      },
+      "image_version": "20260911-arm64-candidate.1",
+      "machine_id_sha256": "eb6c79b202fc60482f2b66c2c4cccc6f0ca8e6a7b08570ad3c8b513ada54295b",
+      "manifest_sha256": "fa46d223c85df43cbf4781d14262e3c4eb1dc69686668bb302b82dfb7f4d8736",
+      "release_eligible": false,
+      "schema_version": 1,
+      "status": "guest_smoke_passed"
+    },
+    {
+      "boot_id_sha256": "0656f3808e921b72fccb59c66b7547cee470d889a426e2538c1aed4ec0fe1cab",
+      "checks": {
+        "browser_dom": true,
+        "builder_access_removed": true,
+        "credential_caches_absent": true,
+        "desktop_session": true,
+        "idle_runner": true,
+        "locked_packages": true,
+        "runner_import": true,
+        "sealed_identity": true
+      },
+      "image_version": "20260911-arm64-candidate.1",
+      "machine_id_sha256": "eb6c79b202fc60482f2b66c2c4cccc6f0ca8e6a7b08570ad3c8b513ada54295b",
+      "manifest_sha256": "fa46d223c85df43cbf4781d14262e3c4eb1dc69686668bb302b82dfb7f4d8736",
+      "release_eligible": false,
+      "schema_version": 1,
+      "status": "guest_smoke_passed"
+    }
+  ],
+  "image": {
+    "file": "kelpie.qcow2",
+    "sha256": "b2de98bf1725ede0319b2e50c74d4dc9de3499846cdeb3b7ca880b0bd22963a6",
+    "size_bytes": 5074386944
+  },
+  "image_version": "20260911-arm64-candidate.1",
+  "probe_tooling_sha256": {
+    "boot.py": "1e8ea165f6c5b72d67ee134ed0cc5958cd2866b596506c0ecea241ac16a157d4",
+    "browser_policy.py": "80babbac36c2820ab7db80bad8723d684017872c873c2487480a469d783defaa",
+    "browser_probe.py": "a48833f717f8d7056ceb775408f3a732fc50302d6988cf8cc473760ccf6946d5",
+    "build.py": "b24d7ef57cc11d76fa9bb0df62721e2d0ec7353b94afc722608b02aee2c93c8c",
+    "codex_package.py": "0347f3e487e30622415495f2accf0dd24710b3ec0dc223bf24c8e0840d1a8979",
+    "guest.py": "9232780c755793980327e11a3b2189ba9f559ec6d9b3673dfa00e5a47b7308dd",
+    "health.py": "6ccf023a21179cf257ccd18e04feff959255b6a20497a0e31a2891692ecdf582",
+    "prepare.py": "a1fd07379cd6096c1b43d647b91290a1e286b12e5b4d9d46998058ebc090712f",
+    "qga.py": "5b438d79fa517e7f3f27cd8af48a6621a7d9656abf79dfae7ad98ab5c7c047c9"
+  },
+  "release_eligible": false,
+  "schema_version": 1,
+  "source_recipe_sha256": "ee18916794636455c847f15d461e212bf71bbd2c717a27ff31ae17b24251e295",
+  "status": "boot_smoke_passed_unreleased"
+}
