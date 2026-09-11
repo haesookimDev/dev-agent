@@ -38,7 +38,8 @@ class BuildTests(unittest.TestCase):
         arm_branch = template.split("], local.arm64 ? [", 1)[1].split("] : [])", 1)[0]
         devices = re.findall(r'\["-device", "([^"]+)"\]', arm_branch)
         self.assertEqual(devices, [
-            "virtio-gpu-pci", "virtio-scsi-pci,id=seed-scsi",
+            "virtio-gpu-pci", "virtio-keyboard-pci", "virtio-tablet-pci",
+            "virtio-scsi-pci,id=seed-scsi",
             "scsi-cd,bus=seed-scsi.0,drive=cdrom0",
         ])
         self.assertIn('cdrom_interface  = local.arm64 ? "virtio-scsi" : "virtio"', template)

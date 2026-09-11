@@ -63,6 +63,8 @@ source "qemu" "ubuntu" {
     ["-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"],
     ], local.arm64 ? [
     ["-device", "virtio-gpu-pci"],
+    ["-device", "virtio-keyboard-pci"],
+    ["-device", "virtio-tablet-pci"],
     # qemuargs replaces all default -device values, including the seed CD controller.
     ["-device", "virtio-scsi-pci,id=seed-scsi"],
     ["-device", "scsi-cd,bus=seed-scsi.0,drive=cdrom0"],

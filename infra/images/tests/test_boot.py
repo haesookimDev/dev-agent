@@ -156,6 +156,17 @@ class BootTests(unittest.TestCase):
         with self.assertRaises(prepare.InputError):
             boot.qemu_arguments(self.output, self.output / "qga.sock", "riscv64")
 
+    def test_arm_desktop_has_keyboard_and_absolute_pointer_without_host_input_passthrough(self):
+        args = boot.qemu_arguments(self.output, self.output / "qga.sock", "arm64")
+        devices = [args[index + 1] for index, value in enumerate(args) if value == "-device"]
+        for device in ("virtio-keyboard-pci", "virtio-tablet-pci"):
+            self.assertEqual(devices.count(device), 1)
+        self.assertNotIn("input-linux", " ".join(args))
+        self.assertNotIn("/dev/input", " ".join(args))
+        amd64 = boot.qemu_arguments(self.output, self.output / "qga.sock", "amd64")
+        self.assertNotIn("virtio-keyboard-pci", amd64)
+        self.assertNotIn("virtio-tablet-pci", amd64)
+
     def arm_source(self):
         manifest_path = self.source / "inputs/manifest.json"
         manifest = build.read_json(manifest_path) | {"architecture": "arm64"}

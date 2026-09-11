@@ -119,7 +119,9 @@ def qemu_arguments(output: Path, socket_path: Path, architecture: str = "amd64")
     ]
     if arm:
         args += [
-            "-device", "virtio-gpu-pci", "-device", "virtio-scsi-pci,id=scsi0",
+            "-device", "virtio-gpu-pci",
+            "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci",
+            "-device", "virtio-scsi-pci,id=scsi0",
             "-drive", f"file={output / 'seed.iso'},format=raw,if=none,id=seed,readonly=on",
             "-device", "scsi-cd,drive=seed,bus=scsi0.0",
             "-drive", f"file={output / 'firmware/AAVMF_CODE.no-secboot.fd'},"
