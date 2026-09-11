@@ -113,10 +113,54 @@ func TestRunNetworkQuarantineHasNoExceptions(t *testing.T) {
 func TestRunNetworkXMLRejectsTampering(t *testing.T) {
 	network, _ := allocateRunNetwork(networkTestRun, "10.240.0.0/24", nil, nil)
 	network.Name = "injected'><forward mode='bridge'/><name>"
-	for _, generate := range []func() ([]byte, error){network.definitionXML, network.quarantineXML} {
+	for _, generate := range []func() ([]byte, error){network.definitionXML, network.quarantineXML, network.interfaceXML} {
 		body, err := generate()
 		if !errors.Is(err, errRunNetwork) || body != nil {
 			t.Fatal("generated XML from a noncanonical identity")
 		}
+	}
+}
+
+func TestRunNetworkInterfacePinsQuarantineAndAddress(t *testing.T) {
+	network, _ := allocateRunNetwork(networkTestRun, "10.240.0.0/24", nil, nil)
+	body, err := network.interfaceXML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nic struct {
+		Type  string `xml:"type,attr"`
+		Trust string `xml:"trustGuestRxFilters,attr"`
+		MAC   struct {
+			Address string `xml:"address,attr"`
+		} `xml:"mac"`
+		Source struct {
+			Network string `xml:"network,attr"`
+		} `xml:"source"`
+		Model struct {
+			Type string `xml:"type,attr"`
+		} `xml:"model"`
+		Filter struct {
+			Name       string `xml:"filter,attr"`
+			Parameters []struct {
+				Name  string `xml:"name,attr"`
+				Value string `xml:"value,attr"`
+			} `xml:"parameter"`
+		} `xml:"filterref"`
+	}
+	if xml.Unmarshal(body, &nic) != nil || nic.Type != "network" || nic.Trust != "no" ||
+		nic.MAC.Address != network.GuestMAC || nic.Source.Network != network.Name ||
+		nic.Model.Type != "virtio" || nic.Filter.Name != network.Filter || len(nic.Filter.Parameters) != 2 {
+		t.Fatal("NIC escaped the recorded network/quarantine boundary")
+	}
+	parameters := map[string]string{}
+	for _, parameter := range nic.Filter.Parameters {
+		parameters[parameter.Name] = parameter.Value
+	}
+	if parameters["IP"] != network.Guest || parameters["CTRL_IP_LEARNING"] != "none" {
+		t.Fatal("NIC permits implicit guest IP learning")
+	}
+	again, _ := network.interfaceXML()
+	if !bytes.Equal(body, again) {
+		t.Fatal("NIC XML changed for the same recorded identity")
 	}
 }

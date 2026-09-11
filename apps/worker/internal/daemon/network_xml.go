@@ -45,3 +45,23 @@ func (network runNetwork) quarantineXML() ([]byte, error) {
 </filter>
 `, network.Filter, network.UUID)), nil
 }
+
+// Bind a NIC to exactly the recorded network, MAC and quarantine filter.
+// Explicit IP/disabled learning also prevent a future variable reference from
+// silently selecting an address from an untrusted guest's first packet. This
+// template does not activate a policy or replace pre-launch ownership checks.
+func (network runNetwork) interfaceXML() ([]byte, error) {
+	if !network.valid(network.UUID) {
+		return nil, errRunNetwork
+	}
+	return []byte(fmt.Sprintf(`<interface type='network' trustGuestRxFilters='no'>
+  <mac address='%s'/>
+  <source network='%s'/>
+  <model type='virtio'/>
+  <filterref filter='%s'>
+    <parameter name='IP' value='%s'/>
+    <parameter name='CTRL_IP_LEARNING' value='none'/>
+  </filterref>
+</interface>
+`, network.GuestMAC, network.Name, network.Filter, network.Guest)), nil
+}
