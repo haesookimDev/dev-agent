@@ -120,7 +120,10 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	defer server.Close()
 	d := resourceDaemon(server)
 	d.config.BaseImage, d.config.WorkRoot = image, store.root.Name()
-	d.executor = LibvirtExecutor{config: d.config, logger: d.logger, store: store}
+	// Launch commands and the Linux permission boundary are synthetic in this
+	// cross-platform identity test; the opt-in Linux suite covers real libvirt.
+	d.executor = LibvirtExecutor{config: d.config, logger: d.logger, store: store,
+		prepareAccess: func(*runStore, string) error { return nil }}
 	d.tracker.Reserve(testResources)
 	d.execute(context.Background(), claim)
 	runs, err := store.List()

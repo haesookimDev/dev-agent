@@ -60,7 +60,7 @@ func openRunStore(path string) (*runStore, error) {
 		return nil, errRunStore
 	}
 	before, err := os.Lstat(path)
-	if err != nil || !privateOwned(before, true) {
+	if err != nil || !ownedDirectoryMode(before) {
 		return nil, errRunStore
 	}
 	root, err := os.OpenRoot(path)
@@ -70,6 +70,9 @@ func openRunStore(path string) (*runStore, error) {
 	fail := func() (*runStore, error) { _ = root.Close(); return nil, errRunStore }
 	after, err := root.Stat(".")
 	if err != nil || !os.SameFile(before, after) {
+		return fail()
+	}
+	if !validStoreDirectory(root, ".") {
 		return fail()
 	}
 	lock, err := root.OpenFile(".worker.lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
@@ -102,6 +105,23 @@ func privateOwned(info os.FileInfo, directory bool) bool {
 	return info.Mode().IsRegular() && stat.Nlink == 1 && info.Mode().Perm() == 0600
 }
 
+func ownedDirectoryMode(info os.FileInfo) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && stat.Uid == uint32(os.Geteuid()) && info.IsDir() &&
+		info.Mode()&(os.ModeSymlink|os.ModeSetuid|os.ModeSetgid|os.ModeSticky) == 0 &&
+		(info.Mode().Perm() == 0700 || info.Mode().Perm() == 0710)
+}
+
+func validStoreDirectory(root *os.Root, name string) bool {
+	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	return err == nil && ownedDirectoryMode(info) && (privateOwned(info, true) || validHypervisorSearch(file))
+}
+
 func (s *runStore) Create(workID string, resources Resources) (ownedRun, error) {
 	if !workUUID.MatchString(workID) || resources.CPU < 1 || resources.MemoryMB < 1 || resources.DiskGB < 1 {
 		return ownedRun{}, errRunStore
@@ -131,8 +151,7 @@ func (s *runStore) Load(uuid string) (ownedRun, error) {
 	if !runUUID.MatchString(uuid) {
 		return ownedRun{}, errRunStore
 	}
-	info, err := s.root.Lstat(uuid)
-	if err != nil || !privateOwned(info, true) {
+	if !validStoreDirectory(s.root, uuid) {
 		return ownedRun{}, errRunStore
 	}
 	var record runRecord

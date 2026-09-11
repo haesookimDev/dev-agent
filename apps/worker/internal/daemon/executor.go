@@ -100,9 +100,10 @@ func (MockExecutor) Execute(ctx context.Context, client RunClient, claim Claim) 
 }
 
 type LibvirtExecutor struct {
-	config Config
-	logger *slog.Logger
-	store  *runStore
+	config        Config
+	logger        *slog.Logger
+	store         *runStore
+	prepareAccess func(*runStore, string) error // nil uses the real Linux permission boundary.
 }
 
 func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Claim) error {
@@ -167,6 +168,13 @@ runcmd:
 		return err
 	}
 	if err := privateRunArtifact(e.store, owned.Record.RunID+"/seed.iso"); err != nil {
+		return err
+	}
+	prepareAccess := e.prepareAccess
+	if prepareAccess == nil {
+		prepareAccess = grantHypervisorSearch
+	}
+	if err := prepareAccess(e.store, owned.Record.RunID); err != nil {
 		return err
 	}
 	name := owned.Record.Domain

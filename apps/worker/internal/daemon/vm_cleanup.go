@@ -346,7 +346,11 @@ func (c *vmCleanup) removeArtifacts() error {
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-		if err != nil || !privateOwned(info, false) {
+		// libvirt creates NVRAM and can retain ownership of readonly seeds
+		// after stop. Permit its QEMU UID only for these three exact disk paths,
+		// after domain absence/reference checks; metadata remains Worker-only.
+		disk := artifact == "root.qcow2" || artifact == "seed.iso" || artifact == "nvram.fd"
+		if err != nil || (!privateOwned(info, false) && !(disk && privateHypervisorArtifact(info))) {
 			return errVMCleanup
 		}
 		if err := c.store.root.Remove(path); err != nil {
