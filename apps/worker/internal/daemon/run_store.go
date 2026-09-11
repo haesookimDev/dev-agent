@@ -2,10 +2,8 @@ package daemon
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,6 +21,8 @@ const maxRunRecord = 4096
 
 // Identity is immutable and durable before any VM command. No claim token,
 // assignment, environment, repository or user-supplied path belongs here.
+// Schema 2 binds RunID to the API's immutable lease UUID. Schema 1 used a local
+// random UUID and remains readable for physical cleanup, never API recovery.
 type runRecord struct {
 	Schema    int       `json:"schema"`
 	RunID     string    `json:"run_id"`
@@ -122,22 +122,17 @@ func validStoreDirectory(root *os.Root, name string) bool {
 	return err == nil && ownedDirectoryMode(info) && (privateOwned(info, true) || validHypervisorSearch(file))
 }
 
-func (s *runStore) Create(workID string, resources Resources) (ownedRun, error) {
-	if !workUUID.MatchString(workID) || resources.CPU < 1 || resources.MemoryMB < 1 || resources.DiskGB < 1 {
+func (s *runStore) Create(workID, leaseID string, resources Resources) (ownedRun, error) {
+	if !workUUID.MatchString(workID) || !runUUID.MatchString(leaseID) || resources.CPU < 1 || resources.MemoryMB < 1 || resources.DiskGB < 1 {
 		return ownedRun{}, errRunStore
 	}
-	var id [16]byte
-	if _, err := rand.Read(id[:]); err != nil {
+	// An existing lease directory, even a released one, must never be reused.
+	if err := s.root.Mkdir(leaseID, 0700); err != nil {
 		return ownedRun{}, errRunStore
 	}
-	id[6], id[8] = id[6]&0x0f|0x40, id[8]&0x3f|0x80
-	uuid := fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:])
-	if err := s.root.Mkdir(uuid, 0700); err != nil {
-		return ownedRun{}, errRunStore
-	}
-	record := runRecord{Schema: 1, RunID: uuid, WorkID: workID, Domain: "kelpie-" + uuid,
+	record := runRecord{Schema: 2, RunID: leaseID, WorkID: workID, Domain: "kelpie-" + leaseID,
 		Resources: resources, CreatedAt: time.Now().UTC()}
-	if err := s.writeExclusive(uuid+"/run.json", record); err != nil {
+	if err := s.writeExclusive(leaseID+"/run.json", record); err != nil {
 		// A partial record is preserved and fails recovery closed, never reused.
 		return ownedRun{}, err
 	}
@@ -158,7 +153,7 @@ func (s *runStore) Load(uuid string) (ownedRun, error) {
 	if err := s.readRecord(uuid+"/run.json", &record); err != nil {
 		return ownedRun{}, err
 	}
-	if record.Schema != 1 || record.RunID != uuid || !workUUID.MatchString(record.WorkID) ||
+	if (record.Schema != 1 && record.Schema != 2) || record.RunID != uuid || !workUUID.MatchString(record.WorkID) ||
 		record.Domain != "kelpie-"+uuid || record.Resources.CPU < 1 || record.Resources.MemoryMB < 1 ||
 		record.Resources.DiskGB < 1 || record.CreatedAt.IsZero() || record.CreatedAt.Location() != time.UTC {
 		return ownedRun{}, errRunStore

@@ -89,7 +89,7 @@ func TestWorkerProcessPrivateDiagnostics(t *testing.T) {
 						_, _ = io.WriteString(w, "null")
 					} else {
 						claimed = true
-						_ = json.NewEncoder(w).Encode(daemon.Claim{WorkItem: work, LeaseToken: leaseToken})
+						_ = json.NewEncoder(w).Encode(daemon.Claim{WorkItem: work, LeaseID: "55555555-5555-4555-8555-555555555555", LeaseToken: leaseToken})
 					}
 				case strings.HasSuffix(r.URL.Path, "/events"):
 					var event daemon.AgentEvent

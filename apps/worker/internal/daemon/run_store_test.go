@@ -2,8 +2,10 @@ package daemon
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,9 +29,18 @@ func newTestRunStore(t *testing.T) *runStore {
 
 func createTestRun(t *testing.T, store *runStore) ownedRun {
 	t.Helper()
-	run, err := store.Create(storeTestWork, testResources)
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		t.Fatal(err)
+	}
+	id[6], id[8] = id[6]&0x0f|0x40, id[8]&0x3f|0x80
+	leaseID := fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:])
+	run, err := store.Create(storeTestWork, leaseID, testResources)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if run.Record.Schema != 2 || run.Record.RunID != leaseID {
+		t.Fatal("new run identity does not retain its lease binding")
 	}
 	return run
 }
@@ -47,7 +58,7 @@ func TestRunStoreDurableIdentityAndOrderedPhases(t *testing.T) {
 	}
 	second := createTestRun(t, store)
 	if second.Record.RunID == run.Record.RunID {
-		t.Fatal("a retry reused a prior run identity")
+		t.Fatal("independent leases shared a run identity")
 	}
 	for _, phase := range []string{"running", "cleanup-pending", "cleaned", "released"} {
 		previous := run.At
@@ -116,6 +127,91 @@ func TestRunStoreRejectsUnsafeRoot(t *testing.T) {
 	}
 }
 
+func TestRunStoreNeverReusesLeaseIdentity(t *testing.T) {
+	for _, phase := range []string{"prepared", "released"} {
+		t.Run(phase, func(t *testing.T) {
+			store := newTestRunStore(t)
+			run := createTestRun(t, store)
+			if phase == "released" {
+				for _, next := range []string{"cleanup-pending", "cleaned", "released"} {
+					var err error
+					run, err = store.Advance(run.Record.RunID, next)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			path := filepath.Join(store.root.Name(), run.Record.RunID, "run.json")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, workID := range []string{storeTestWork, "44444444-4444-4444-8444-444444444444"} {
+				if _, err := store.Create(workID, run.Record.RunID, testResources); !errors.Is(err, errRunStore) {
+					t.Fatal("existing lease identity was reused")
+				}
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("duplicate lease changed its ownership record")
+			}
+			retained, err := store.Load(run.Record.RunID)
+			if err != nil || retained != run {
+				t.Fatal("duplicate lease changed its durable phase")
+			}
+		})
+	}
+}
+
+func TestRunStorePreservesLegacyUnboundIdentity(t *testing.T) {
+	store := newTestRunStore(t)
+	run := createTestRun(t, store)
+	// Reproduce the exact old, canonical schema-1 record. Loading and physical
+	// cleanup must not silently upgrade its unrelated random UUID to a lease ID.
+	run.Record.Schema = 1
+	data, err := json.Marshal(run.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	path := filepath.Join(store.root.Name(), run.Record.RunID, "run.json")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(run.Record.RunID)
+	if err != nil || loaded.Record != run.Record {
+		t.Fatal("legacy identity lost its original unbound schema")
+	}
+	for _, phase := range []string{"cleanup-pending", "cleaned"} {
+		loaded, err = store.Advance(run.Record.RunID, phase)
+		if err != nil || loaded.Record.Schema != 1 {
+			t.Fatal("physical cleanup adopted legacy identity as an API lease")
+		}
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(after, data) {
+		t.Fatal("legacy ownership metadata was rewritten")
+	}
+}
+
+func TestRunStoreRequiresCanonicalV4LeaseIdentity(t *testing.T) {
+	store := newTestRunStore(t)
+	for _, leaseID := range []string{
+		"00000000-0000-0000-0000-000000000000",
+		"33333333-3333-1333-8333-333333333333",
+		"33333333-3333-4333-7333-333333333333",
+		"ABCDEFAB-3333-4333-8333-333333333333",
+	} {
+		if _, err := store.Create(storeTestWork, leaseID, testResources); !errors.Is(err, errRunStore) {
+			t.Fatal("noncanonical lease identity accepted")
+		}
+	}
+	runs, err := store.List()
+	if err != nil || len(runs) != 0 {
+		t.Fatal("invalid lease created a durable directory")
+	}
+}
+
 func TestRunStoreExclusiveProcessLock(t *testing.T) {
 	if path := os.Getenv("KELPIE_TEST_LOCK_ROOT"); path != "" {
 		store, err := openRunStore(path)
@@ -140,15 +236,18 @@ func TestRunStoreExclusiveProcessLock(t *testing.T) {
 func TestRunStoreRejectsInvalidIdentityResourcesAndTransitions(t *testing.T) {
 	store := newTestRunStore(t)
 	for _, id := range []string{"", "..", strings.Repeat("-", 36), strings.ToUpper(storeTestWork + "f"), "../" + storeTestWork} {
-		if _, err := store.Create(id, testResources); err == nil {
+		if _, err := store.Create(id, storeTestWork, testResources); err == nil {
 			t.Fatal("unsafe work identity accepted")
+		}
+		if _, err := store.Create(storeTestWork, id, testResources); err == nil {
+			t.Fatal("unsafe lease identity accepted")
 		}
 		if _, err := store.Load(id); err == nil {
 			t.Fatal("unsafe run identity accepted")
 		}
 	}
 	for _, resources := range []Resources{{}, {CPU: -1, MemoryMB: 1, DiskGB: 1}, {CPU: 1, DiskGB: 1}, {CPU: 1, MemoryMB: 1}} {
-		if _, err := store.Create(storeTestWork, resources); err == nil {
+		if _, err := store.Create(storeTestWork, storeTestWork, resources); err == nil {
 			t.Fatal("invalid resources accepted")
 		}
 	}
@@ -169,7 +268,7 @@ func TestRunStoreRejectsInvalidIdentityResourcesAndTransitions(t *testing.T) {
 }
 
 func TestRunStoreRejectsCorruptOrUnownedRecords(t *testing.T) {
-	for _, scenario := range []string{"truncated", "duplicate", "unknown", "mismatch", "oversize", "public", "symlink", "hardlink", "fifo", "directory", "missing", "skipped-phase"} {
+	for _, scenario := range []string{"truncated", "duplicate", "unknown", "schema-zero", "schema-future", "mismatch", "oversize", "public", "symlink", "hardlink", "fifo", "directory", "missing", "skipped-phase"} {
 		t.Run(scenario, func(t *testing.T) {
 			store := newTestRunStore(t)
 			run := createTestRun(t, store)
@@ -186,9 +285,13 @@ func TestRunStoreRejectsCorruptOrUnownedRecords(t *testing.T) {
 			case "truncated":
 				data = []byte("{")
 			case "duplicate":
-				data = bytes.Replace(data, []byte(`"schema":1`), []byte(`"schema":1,"schema":1`), 1)
+				data = bytes.Replace(data, []byte(`"schema":2`), []byte(`"schema":2,"schema":2`), 1)
 			case "unknown":
-				data = bytes.Replace(data, []byte(`"schema":1`), []byte(`"secret":"test-only","schema":1`), 1)
+				data = bytes.Replace(data, []byte(`"schema":2`), []byte(`"secret":"test-only","schema":2`), 1)
+			case "schema-zero":
+				data = bytes.Replace(data, []byte(`"schema":2`), []byte(`"schema":0`), 1)
+			case "schema-future":
+				data = bytes.Replace(data, []byte(`"schema":2`), []byte(`"schema":3`), 1)
 			case "mismatch":
 				run.Record.Domain = "other-domain"
 				data, _ = json.Marshal(run.Record)

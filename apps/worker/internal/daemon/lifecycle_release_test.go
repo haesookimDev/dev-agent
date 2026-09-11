@@ -99,6 +99,7 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	}
 	claim := resourceClaim()
 	claim.WorkItem.ID = storeTestWork
+	claim.LeaseID = "55555555-5555-4555-8555-555555555555"
 	var releasePhase string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -129,6 +130,9 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	runs, err := store.List()
 	if err != nil || len(runs) != 1 || runs[0].Phase != "released" || releasePhase != "cleaned" {
 		t.Fatal("launch failure did not clean and durably release its exact run")
+	}
+	if runs[0].Record.Schema != 2 || runs[0].Record.RunID != claim.LeaseID {
+		t.Fatal("durable run identity is not bound to the claimed API lease")
 	}
 	data, err := os.ReadFile(arguments)
 	if err != nil {

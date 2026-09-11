@@ -116,7 +116,7 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if e.store == nil {
 		return errRunStore
 	}
-	owned, err := e.store.Create(claim.WorkItem.ID, e.config.RunResources)
+	owned, err := e.store.Create(claim.WorkItem.ID, claim.LeaseID, e.config.RunResources)
 	if err != nil {
 		return err
 	}
