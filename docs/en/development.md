@@ -2,6 +2,10 @@
 
 English | [한국어](../ko/development.md)
 
+## Worker physical resource-release verification
+
+[VM ownership and cleanup](worker-lifecycle.md) tests file, state, failure and concurrency boundaries through existing `make test-worker` and Go CI. Real Linux libvirt verification requires explicit disposable-host acknowledgement and a separate build tag; default CI does not create VMs. Distinguish blank-VM force-stop success from full Golden Image/Runner/browser acceptance, and never treat unconfirmed cleanup or a lost API release response as returned capacity.
+
 ## Mac-local KVM development
 
 Verify actual nested KVM on a [dedicated ARM64 Lima host](macos-kvm-lab.md). `make test-lab` checks the template, failure boundaries and QMP protocol in existing `Python` CI/`make test`. Prove real Linux boot/poweroff separately with `kvm_smoke.py`; synthetic tests or Lima's `READY` are not substitutes. No new CI jobs, VM builds or longer timeouts are added. Never transfer this trusted lab administrator's privileges to product work-VM users.

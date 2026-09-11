@@ -14,7 +14,7 @@ fi
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   qemu-kvm libvirt-daemon-system libvirt-clients virtinst qemu-utils \
-  cloud-image-utils ovmf openssh-client wireguard nftables ca-certificates
+  cloud-image-utils ovmf openssh-client wireguard nftables ca-certificates acl
 
 if ! id kelpie >/dev/null 2>&1; then
   useradd --system --create-home --home-dir /var/lib/kelpie --shell /usr/sbin/nologin kelpie

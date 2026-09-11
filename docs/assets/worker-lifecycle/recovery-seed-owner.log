@@ -1,0 +1,4 @@
+=== RUN   TestDedicatedLibvirtRecordedRecovery
+    libvirt_recovery_integration_test.go:52: preserved synthetic artifacts cleaned; journal retained; no API release invented
+--- PASS: TestDedicatedLibvirtRecordedRecovery (0.03s)
+PASS

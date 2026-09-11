@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"time"
 )
 
@@ -18,8 +17,16 @@ type Executor interface {
 	Execute(context.Context, RunClient, Claim) error
 }
 
+// Physical cleanup precedes remote lease release; acknowledgement is recorded
+// before the matching local capacity becomes available again.
+type ResourceLifecycle interface {
+	Cleanup(context.Context) error
+	Released() error
+}
+
 // Executors receive work-scoped operations, including coordinated lease release.
 type RunClient interface {
+	BindResources(ResourceLifecycle) error
 	Event(context.Context, string, string, AgentEvent) error
 	Transition(context.Context, string, string, string, int, string) (WorkItem, error)
 	ReadRun(context.Context, string, string) (WorkItem, error)
@@ -93,23 +100,30 @@ func (MockExecutor) Execute(ctx context.Context, client RunClient, claim Claim) 
 }
 
 type LibvirtExecutor struct {
-	config Config
-	logger *slog.Logger
+	config        Config
+	logger        *slog.Logger
+	store         *runStore
+	prepareAccess func(*runStore, string) error // nil uses the real Linux permission boundary.
 }
 
-var safeID = regexp.MustCompile(`^[a-f0-9-]{36}$`)
-
 func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Claim) error {
-	if !safeID.MatchString(claim.WorkItem.ID) {
+	if !workUUID.MatchString(claim.WorkItem.ID) {
 		return errors.New("unsafe work item id")
 	}
 	if _, err := os.Stat(e.config.BaseImage); err != nil {
 		return privateFailure(err, vmBaseImage)
 	}
-	runDir := filepath.Join(e.config.WorkRoot, claim.WorkItem.ID)
-	if err := os.MkdirAll(runDir, 0700); err != nil {
-		return privateFailure(err, vmRunDirectory)
+	if e.store == nil {
+		return errRunStore
 	}
+	owned, err := e.store.Create(claim.WorkItem.ID, e.config.RunResources)
+	if err != nil {
+		return err
+	}
+	if err := client.BindResources(newVMCleanup(e.store, owned.Record.RunID)); err != nil {
+		return err
+	}
+	runDir := filepath.Join(e.store.root.Name(), owned.Record.RunID)
 	overlay := filepath.Join(runDir, "root.qcow2")
 	seed := filepath.Join(runDir, "seed.iso")
 	meta := filepath.Join(runDir, "meta-data")
@@ -117,7 +131,10 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if err := run(ctx, "qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", e.config.BaseImage, overlay, fmt.Sprintf("%dG", e.config.RunResources.DiskGB)); err != nil {
 		return err
 	}
-	if err := os.WriteFile(meta, []byte("instance-id: kelpie-"+claim.WorkItem.ID+"\nlocal-hostname: kelpie-run\n"), 0600); err != nil {
+	if err := privateRunArtifact(e.store, owned.Record.RunID+"/root.qcow2"); err != nil {
+		return err
+	}
+	if err := os.WriteFile(meta, []byte("instance-id: "+owned.Record.Domain+"\nlocal-hostname: kelpie-run\n"), 0600); err != nil {
 		return privateFailure(err, vmSeedData)
 	}
 	assignmentWork := claim.WorkItem
@@ -150,15 +167,29 @@ runcmd:
 	if err := run(ctx, "cloud-localds", seed, user, meta); err != nil {
 		return err
 	}
-	name := "kelpie-" + claim.WorkItem.ID
+	if err := privateRunArtifact(e.store, owned.Record.RunID+"/seed.iso"); err != nil {
+		return err
+	}
+	prepareAccess := e.prepareAccess
+	if prepareAccess == nil {
+		prepareAccess = grantHypervisorSearch
+	}
+	if err := prepareAccess(e.store, owned.Record.RunID); err != nil {
+		return err
+	}
+	name := owned.Record.Domain
 	args := []string{
-		"--connect", "qemu:///system", "--name", name,
+		"--connect", "qemu:///system", "--name", name, "--uuid", owned.Record.RunID,
+		"--metadata", "description=" + domainOwner(owned.Record),
 		"--memory", fmt.Sprint(e.config.RunResources.MemoryMB), "--vcpus", fmt.Sprint(e.config.RunResources.CPU),
 		"--import", "--noautoconsole", "--os-variant", "ubuntu24.04",
 		"--disk", overlay + ",format=qcow2,bus=virtio", "--disk", seed + ",device=cdrom",
 		"--network", "network=default,model=virtio", "--graphics", "vnc,listen=127.0.0.1",
 	}
 	if err := run(ctx, "virt-install", args...); err != nil {
+		return err
+	}
+	if _, err := e.store.Advance(owned.Record.RunID, "running"); err != nil {
 		return err
 	}
 	work, err := client.Transition(ctx, claim.WorkItem.ID, claim.LeaseToken, "analyzing", claim.WorkItem.Version, "KVM VM provisioned")

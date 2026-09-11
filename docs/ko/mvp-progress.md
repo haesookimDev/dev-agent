@@ -4,7 +4,7 @@
 
 ## 기준과 진행률
 
-제품 기준 코드: `main`의 `fb1f57eab91a9feef031e236d289c8d74ec03942` ([PR #57](https://github.com/haesookimDev/dev-agent/pull/57) 병합). 이번 임대 복구 API는 `feat/worker-lease-reconciliation`의 `f5d9da32c6500c413c4340d914997cda53b4e479`를 검증했으며 API 계약과 남은 Worker 연동은 아래에 구분합니다. 아래 평가는 문서뿐 아니라 코드·테스트·실제 구동 기록을 대조한 시점별 기록입니다. Draft 브랜치나 계획은 완료로 세지 않습니다.
+제품 기준 코드: `main`의 `95aac9d81d4ea5ed7ffb083995dd56ead157c3ac` ([PR #59](https://github.com/haesookimDev/dev-agent/pull/59) 병합). 임대 복구 API의 검증 소스는 `f5d9da32c6500c413c4340d914997cda53b4e479`이며, 이번 `feat/worker-restart-recovery`에는 미병합 Worker 수명주기 PR #58을 함께 통합합니다. 아직 Worker의 재시작 API 연동은 구현 전입니다. 아래 평가는 코드·테스트·실제 구동 기록을 대조한 시점별 기록이며 Draft 브랜치나 계획은 완료로 세지 않습니다.
 
 [바로 다음 Release](roadmap-summary.md#바로-다음-release)에 명시된 7단계를 고정된 분모로 사용합니다. **검증 완료 1/7 = 14.3%**, 부분 완료 3/7, 미완료 3/7입니다. 부분 구현에는 임의 점수를 주지 않습니다. 이 수치는 릴리즈 단계의 검증 완료율이며 코드 작성량·투입 공수·남은 일정의 비율이 아닙니다. 전체 개발 공수의 정확한 완료율은 현재 근거로 산정하지 않습니다.
 
@@ -15,8 +15,8 @@
 | 1. Versioned DB Migration | **완료.** Alembic Head `20260909_0011`, PostgreSQL Migration Lock, 기본 `validate`, 빈 DB·기존 데이터 채택·안전한 Downgrade·실패 Rollback·실제 복원 회귀를 확인했습니다. [운영](operations.md#database-migration), [Migration 테스트](../../apps/api/tests/test_migrations.py), [원자성 회귀](../../apps/api/tests/test_migration_atomicity.py) | 이후 Schema 변경마다 동일 Gate를 다시 통과해야 합니다. 임의 운영 DB 전환까지 위임받은 것은 아닙니다. |
 | 2. OIDC·조직/저장소 권한·감사 | **부분 완료.** OIDC/RBAC, 추가 전용 피드백·승인·대기 취소·전달 감사가 있습니다. [운영](operations.md#oidc-인증), [IAM 테스트](../../apps/api/tests/test_iam.py), [감사](control-action-audit.md) | OIDC Preview Grant의 통합·실제 TLS 경계 검증, 실행 중 관리자 취소와 VM 종료·정리 보장. |
 | 3. Worker Secret·격리 | **부분 완료.** 파일 Provider, 개별 발급·중첩 교체·폐기, 제어 영역 격리, Runner/API/Worker 진단 보호를 검증했습니다. [자격증명](worker-credentials.md), [격리](worker-quarantine.md), [최신 진단 검증](worker-private-diagnostics.md) | 실제 Host/VM/네트워크와 기존 연결 격리, Event/Artifact/Crash Dump/cloud-init 전체 비노출·보존 정책. 제한된 가림을 범용 Secret Scan으로 계산하지 않습니다. |
-| 4. 관측·복구·보존 운영 기반 | **부분 완료.** Correlation·Metric·DB 준비 검사·장애 알림, 실제 PostgreSQL 복원, 일반 산출물 백업·예약 정리가 있습니다. 이번 브랜치의 [종료 임대 복구 API](worker-lease-reconciliation.md)는 실제 DB·HTTP 경합까지 검증했습니다. [관측](execution-monitoring.md), [복원](postgres-restore.md), [예약 정리](scheduled-retention.md) | Worker 재시작과 API 복구의 실제 통합, 외부 의존성 Readiness, 진행 기반 정체 관측·운영 화면, 다른 데이터의 보존/Janitor, 실행 중 취소·재시도·강제 해제의 물리적 안전성, 외부 저장소·운영 복구 검증. |
-| 5. Golden Image·실제 libvirt 실행 | **미완료.** [Worker 실행기](../../apps/worker/internal/daemon/executor.go)는 주어진 Base Image로 VM을 시작하는 초기 구현입니다. [Host 설치 스크립트](../../infra/host/install-ubuntu.sh)는 Image Builder가 아닙니다. | Version 고정 Desktop Image의 재현 가능한 생성·무결성/Boot 검사, Run Metadata·Timeout·Shutdown·재시작/Orphan 복구·정확한 자원 회수·작업별 네트워크·실제 시간 예산 강제. |
+| 4. 관측·복구·보존 운영 기반 | **부분 완료.** Correlation·Metric·DB 준비 검사·장애 알림, 실제 PostgreSQL 복원, 일반 산출물 백업·예약 정리가 있습니다. 병합된 [종료 임대 복구 API](worker-lease-reconciliation.md)는 실제 DB·HTTP 경합까지 검증했습니다. [관측](execution-monitoring.md), [복원](postgres-restore.md), [예약 정리](scheduled-retention.md) | Worker 재시작과 API 복구의 실제 통합, 외부 의존성 Readiness, 진행 기반 정체 관측·운영 화면, 다른 데이터의 보존/Janitor, 실행 중 취소·재시도·강제 해제의 물리적 안전성, 외부 저장소·운영 복구 검증. |
+| 5. Golden Image·실제 libvirt 실행 | **미완료.** Draft 이미지 PR #55에 ARM64 실제 생성·두 번 부팅 증거가 있습니다. 현재 [Worker 수명주기](worker-lifecycle.md)는 영속 소유권·취소 정리·ACL과 실제 빈 VM 두 사례의 정리 후 용량 반환을 검증했지만 미병합입니다. | amd64 실제 이미지 검증과 남은 GUI Gate, 전체 실행기의 Golden Image·Runner 통합·정상 OS 종료, Worker와 API의 재시작/Orphan 복구 통합, 작업별 네트워크·실제 시간 예산 강제. |
 | 6. WireGuard Preview·Console 소유권 | **미완료.** [Gateway](../../apps/gateway/main.go)는 운영 인증이 없으면 503이며 Console 읽기 전용 값을 Header로 전달할 뿐입니다. | 실제 WireGuard Routing·Wildcard TLS·조직/작업/만료/대상 경계, noVNC 입력 필터와 에이전트 입력 중단·반환 Version·Timeout 복구. Header만으로 입력 차단을 증명하지 않습니다. |
 | 7. 실제 Host 동시 2작업 Acceptance | **미완료.** 현재 Mock/HTTP/Chromium 회귀는 이 기준의 대체 증거가 아닙니다. | 서로 다른 저장소 2개를 동시에 Clone→분석→개발→Browser 검증→피드백→재검증→승인→전달→정리하고, Worker 재시작·네트워크 단절 후 복구와 Display/입력/프로필/네트워크/디스크/자격증명 격리를 증명해야 합니다. |
 
@@ -35,7 +35,7 @@
 
 2026-09-10 사용자의 Mac 로컬 개발 승인에 따라 **전용 Linux 머신 부재의 우회 경로를 실제로 검증했습니다**. [Mac KVM Lab](macos-kvm-lab.md)에서 M4 Pro/macOS 15.7.3 → Lima 2.2.0/Ubuntu ARM64 → 실제 KVM Linux 부팅·정상 종료(5.790초), KVM 활성, Timeout 후 프로세스 정리와 기존 증거 보존을 확인했습니다. 이 호스트 검증은 Golden Image/작업 VM의 완료가 아니므로 1/7을 유지합니다. ARM64 로컬 테스트 경로를 추가한 결정이며 기존 amd64 제품 검증을 면제한 결정은 아닙니다.
 
-이전 Host 단계의 전용 PostgreSQL 전체 검증은 API 1270 통과/1 Skip이었습니다. 이번 API 최종 코드의 `make test`는 API 1195 통과/152 Skip, Runner 45, Web 125·타입 검사, Go, Lab 18 통과였으며 `make lint`도 통과했습니다. 새 복구 검사는 일반 API 실행에서 DB 환경 미설정으로 Skip되지만 별도 실제 PostgreSQL에서 46/46, 기존 Worker 검사와 함께 실행한 CI 명령에서 62/62 통과했습니다. [API 증거·한계](worker-lease-reconciliation.md)를 참조합니다. 기존 Python Job에 연결하며 새 Job·VM 빌드는 없습니다. 정확한 최종 Head의 CI·리뷰·머지 결과는 PR에서 확인합니다.
+이전 Host 단계의 전용 PostgreSQL 전체 검증은 API 1270 통과/1 Skip이었습니다. API PR #59 최종 코드의 `make test`는 API 1195 통과/152 Skip, Runner 45, Web 125·타입 검사, Go, Lab 18 통과였으며 `make lint`도 통과했습니다. 새 복구 검사는 일반 API 실행에서 DB 환경 미설정으로 Skip되지만 별도 실제 PostgreSQL에서 46/46, 기존 Worker 검사와 함께 실행한 CI 명령에서 62/62 통과했습니다. [API 증거·한계](worker-lease-reconciliation.md)를 참조합니다. 기존 Python Job에 연결하며 새 Job·VM 빌드는 없습니다. PR #59는 정확한 Head `e3521e1b78369da0a7bb58f609bc73b67f5b88ba`의 [CI 5개](https://github.com/haesookimDev/dev-agent/actions/runs/34563221182)가 첫 실행 5분 47초에 통과했고 미해결 리뷰 없이 일반 Merge Commit으로 병합했습니다. 이 검증을 아직 구현하지 않은 Worker 재시작 연동의 완료로 계산하지 않습니다.
 
 1. **P1 실행 경로를 우선합니다.** Golden Image 재현 → 영속 VM 수명주기·격리 → Preview/Console 강제 → 실제 두 작업·장애 복구 Acceptance의 의존 순서로 구현합니다. 실제 환경이 없어 검증하지 못한 기능 PR은 Draft로 유지합니다.
 2. P0의 남은 Secret·관측·보존·관리자 제어는 위 실행 경로와 연결해 완료합니다. 단위 테스트가 쉬운 부수 개선만 반복해 P1 완료를 대신하지 않습니다.
