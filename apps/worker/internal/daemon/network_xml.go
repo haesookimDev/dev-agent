@@ -17,8 +17,8 @@ func (network runNetwork) definitionXML() ([]byte, error) {
   <forward mode='nat'/>
   <bridge name='%s' stp='off' delay='0'/>
   <mac address='%s'/>
-  <port isolated='yes'/>
   <dns enable='yes' forwardPlainNames='no'/>
+  <port isolated='yes'/>
   <ip family='ipv4' address='%s' prefix='30'>
     <dhcp>
       <host mac='%s' name='kelpie-run' ip='%s'/>
