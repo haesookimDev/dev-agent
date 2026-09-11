@@ -29,6 +29,7 @@ type Worker struct {
 
 type Claim struct {
 	WorkItem     WorkItem  `json:"work_item"`
+	LeaseID      string    `json:"lease_id"`
 	LeaseToken   string    `json:"lease_token"`
 	LeaseExpires time.Time `json:"lease_expires_at"`
 }

@@ -151,6 +151,7 @@ class ClaimRequest(BaseModel):
 
 class ClaimResponse(BaseModel):
     work_item: WorkItemView
+    lease_id: str
     lease_token: str
     lease_expires_at: datetime
 

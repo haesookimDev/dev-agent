@@ -939,7 +939,9 @@ async def claim_work(
     if result is None:
         return None
     item, token, lease = result
-    return ClaimResponse(work_item=item, lease_token=token, lease_expires_at=lease.expires_at)
+    return ClaimResponse(
+        work_item=item, lease_id=lease.id, lease_token=token, lease_expires_at=lease.expires_at,
+    )
 
 
 @app.post("/api/runs/{work_item_id}/events", response_model=EventView)
