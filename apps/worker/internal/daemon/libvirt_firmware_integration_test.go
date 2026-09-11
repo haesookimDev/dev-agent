@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -26,6 +27,9 @@ import (
 func TestDedicatedLibvirtExecutorFirmware(t *testing.T) {
 	if os.Getenv("KELPIE_LIBVIRT_TEST_ACK") != "disposable-host-only" {
 		t.Skip("requires explicit disposable-host acknowledgement")
+	}
+	if runtime.GOARCH != "arm64" {
+		t.Skip("the dedicated UEFI fixture targets the ARM64 image boot contract")
 	}
 	if os.Geteuid() == 0 {
 		t.Fatal("run as the unprivileged Worker user")

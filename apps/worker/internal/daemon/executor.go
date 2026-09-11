@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -124,6 +125,10 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 		return err
 	}
 	runDir := filepath.Join(e.store.root.Name(), owned.Record.RunID)
+	boot, err := libvirtBootArguments(runtime.GOARCH, runDir)
+	if err != nil {
+		return err
+	}
 	overlay := filepath.Join(runDir, "root.qcow2")
 	seed := filepath.Join(runDir, "seed.iso")
 	meta := filepath.Join(runDir, "meta-data")
@@ -178,18 +183,20 @@ runcmd:
 		return err
 	}
 	name := owned.Record.Domain
+	seedDisk := seed + ",device=cdrom"
+	if runtime.GOARCH == "arm64" {
+		seedDisk += ",bus=scsi"
+	}
 	args := []string{
 		"--connect", "qemu:///system", "--name", name, "--uuid", owned.Record.RunID,
 		"--metadata", "description=" + domainOwner(owned.Record),
 		"--virt-type", "kvm",
 		"--memory", fmt.Sprint(e.config.RunResources.MemoryMB), "--vcpus", fmt.Sprint(e.config.RunResources.CPU),
 		"--import", "--noautoconsole", "--os-variant", "ubuntu24.04",
-		// Let the trusted host select compatible firmware, but keep writable
-		// UEFI variables inside the recorded run, never libvirt's shared store.
-		"--boot", "uefi,nvram=" + filepath.Join(runDir, "nvram.fd"),
-		"--disk", overlay + ",format=qcow2,bus=virtio", "--disk", seed + ",device=cdrom,bus=scsi",
+		"--disk", overlay + ",format=qcow2,bus=virtio", "--disk", seedDisk,
 		"--network", "network=default,model=virtio", "--graphics", "vnc,listen=127.0.0.1",
 	}
+	args = append(args, boot...)
 	if err := run(ctx, "virt-install", args...); err != nil {
 		return err
 	}
@@ -225,6 +232,19 @@ runcmd:
 		if current.Status == "completed" || current.Status == "failed" || current.Status == "cancelled" {
 			return client.Release(ctx, work.ID, claim.LeaseToken)
 		}
+	}
+}
+
+func libvirtBootArguments(architecture, runDir string) ([]string, error) {
+	switch architecture {
+	case "arm64":
+		// Match the ARM Golden Image's UEFI boot contract. The trusted host
+		// selects read-only firmware; variables belong to this recorded run.
+		return []string{"--boot", "uefi,nvram=" + filepath.Join(runDir, "nvram.fd")}, nil
+	case "amd64":
+		return nil, nil // Preserve the existing image/host boot selection.
+	default:
+		return nil, errors.New("unsupported VM host architecture")
 	}
 }
 
