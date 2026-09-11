@@ -16,6 +16,15 @@ from infra.images import build, guest, prepare
 
 
 class BuildTests(unittest.TestCase):
+    def test_packer_uploads_all_guest_installation_and_health_tools(self):
+        template = (build.ROOT / "infra/images/ubuntu.pkr.hcl").read_text()
+        names = re.findall(r"for name in (\[[^\]]+\])", template)
+        self.assertEqual(len(names), 1)
+        self.assertEqual(set(json.loads(names[0])), {
+            "guest.py", "prepare.py", "health.py", "codex_package.py", "browser_probe.py",
+            "browser_policy.py", "kelpie-runner.service",
+        })
+
     def test_template_retains_kvm_identity_with_dedicated_product_marker(self):
         template = (build.ROOT / "infra/images/ubuntu.pkr.hcl").read_text()
         self.assertIn('["-smbios", "type=1,manufacturer=KVM,product=KelpieGoldenImageBuild"]',
