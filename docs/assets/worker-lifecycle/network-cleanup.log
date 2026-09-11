@@ -1,0 +1,11 @@
+=== RUN   TestDedicatedLibvirtNetworkCleanup
+=== RUN   TestDedicatedLibvirtNetworkCleanup/defined
+    libvirt_network_cleanup_integration_test.go:97: preserved network ownership journal: /var/tmp/kelpie-network-3798309489/02d2a62b-3edb-4cbc-99ef-ad4ba3ef83dc
+    libvirt_network_cleanup_integration_test.go:153: owned network/filter/bridge absent; pre-existing networks preserved; durable released
+=== RUN   TestDedicatedLibvirtNetworkCleanup/active
+    libvirt_network_cleanup_integration_test.go:97: preserved network ownership journal: /var/tmp/kelpie-network-1555518528/a935ebe0-e428-4e0d-b609-c91919df4f1b
+    libvirt_network_cleanup_integration_test.go:153: owned network/filter/bridge absent; pre-existing networks preserved; durable released
+--- PASS: TestDedicatedLibvirtNetworkCleanup (3.17s)
+    --- PASS: TestDedicatedLibvirtNetworkCleanup/defined (1.35s)
+    --- PASS: TestDedicatedLibvirtNetworkCleanup/active (1.76s)
+PASS

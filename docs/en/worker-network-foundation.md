@@ -4,6 +4,8 @@
 
 This is **unconnected foundation code** at source `50ada438156ea596cb07d317911bf12f715e194b`, verified on 2026-09-11. The Executor's `network=default` is not replaced yet. This does not prove actual packet isolation or MVP completion.
 
+This historical schema-only record is preserved; subsequent durable ownership and actual network cleanup are tracked in [network lifecycle verification](worker-network-lifecycle.md).
+
 - `392d3922b169f42a25e039e3dc930adc3c49ed4f`: derives dedicated names/bridge/MACs from a validated lease UUID and proposes a /30 from an RFC1918 pool. Conflicting existing runs/excluded prefixes, inconsistent inventories and exhaustion fail closed. The caller must collect current host inventory and serialize allocation with durable creation.
 - `6cd8cdc5a380bce696f545e31cdf43b7a11b6520`: generates network XML with a fixed DHCP target, ownership metadata and disabled IPv6, plus filter XML unconditionally dropping Ethernet in both directions. NAT/port isolation alone does not deny host access. [libvirt Network](https://libvirt.org/formatnetwork.html), [Filter](https://libvirt.org/formatnwfilter.html)
 - `50ada438156ea596cb07d317911bf12f715e194b`: opt-in validation against installed libvirt schemas. It does not define/activate networks or filters, run VMs or change firewall rules.
