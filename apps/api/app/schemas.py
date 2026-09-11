@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -154,6 +155,33 @@ class ClaimResponse(BaseModel):
     lease_id: str
     lease_token: str
     lease_expires_at: datetime
+
+
+class WorkerLeaseView(BaseModel):
+    lease_id: str
+    worker_id: str
+    work_item_id: str
+    state: str
+    work_status: WorkStatus
+    work_version: int
+    cpu: int
+    memory_mb: int
+    disk_gb: int
+
+
+class LeaseReconciliationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    work_item_id: UUID
+    expected_version: int = Field(strict=True, ge=1)
+    cleanup_confirmed: bool = Field(strict=True)
+
+    @field_validator("cleanup_confirmed")
+    @classmethod
+    def require_cleanup(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("physical VM and disk cleanup must be confirmed first")
+        return value
 
 
 class ArtifactCreate(BaseModel):

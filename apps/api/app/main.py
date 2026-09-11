@@ -128,11 +128,13 @@ from .schemas import (
     EventCreate,
     EventView,
     FeedbackCreate,
+    LeaseReconciliationRequest,
     PreviewCreate,
     PreviewView,
     TransitionRequest,
     WorkCancellationRequest,
     WorkerHeartbeat,
+    WorkerLeaseView,
     WorkerRegistration,
     WorkerView,
     WorkItemCreate,
@@ -147,6 +149,12 @@ from .service import (
     ensure_feedback_allowed,
     transition_work_item,
     validate_lease,
+)
+from .worker_leases import (
+    lease_view,
+    owned_lease,
+    reconcile_terminal_lease,
+    return_lease_resources,
 )
 from .worker_quarantine import ensure_worker_not_quarantined
 
@@ -944,6 +952,39 @@ async def claim_work(
     )
 
 
+@app.get("/api/workers/{worker_id}/leases/{lease_id}", response_model=WorkerLeaseView)
+async def inspect_worker_lease(
+    worker_id: str,
+    lease_id: uuid.UUID,
+    session: SessionDep,
+    identity: Annotated[WorkerHost | None, Depends(require_worker)],
+) -> WorkerLeaseView:
+    if identity is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "individual worker credential required")
+    worker = await bound_worker(session, worker_id, identity)
+    lease, item = await owned_lease(session, worker, str(lease_id))
+    result = lease_view(lease, item)
+    await session.commit()
+    return result
+
+
+@app.post("/api/workers/{worker_id}/leases/{lease_id}/reconcile",
+          status_code=status.HTTP_204_NO_CONTENT)
+async def reconcile_worker_lease(
+    worker_id: str,
+    lease_id: uuid.UUID,
+    payload: LeaseReconciliationRequest,
+    session: SessionDep,
+    identity: Annotated[WorkerHost | None, Depends(require_worker)],
+) -> Response:
+    if identity is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "individual worker credential required")
+    worker = await bound_worker(session, worker_id, identity)
+    await reconcile_terminal_lease(session, worker, str(lease_id), payload)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @app.post("/api/runs/{work_item_id}/events", response_model=EventView)
 async def ingest_worker_event(
     work_item_id: str,
@@ -1164,12 +1205,7 @@ async def release_run(
         raise HTTPException(status.HTTP_409_CONFLICT, "only terminal work can release its lease")
     worker = await session.get(WorkerHost, lease.worker_id)
     if worker is not None:
-        worker.cpu_available = min(worker.cpu_total, worker.cpu_available + lease.cpu)
-        worker.memory_mb_available = min(
-            worker.memory_mb_total, worker.memory_mb_available + lease.memory_mb
-        )
-        worker.disk_gb_available += lease.disk_gb
-        worker.active_runs = max(0, worker.active_runs - 1)
+        return_lease_resources(worker, lease)
     lease.state = "released"
     await emit_event(
         session,
