@@ -169,3 +169,17 @@ Mac의 전용 비공개 디렉터리에서 다음 실제 파일을 확보했습�
 후속 실제 실행에서 CD 연결 누락과 ARM64 KVM 식별 오류를 재현했습니다. `11518f9`는 Seed CD 연결을, `34ae353`은 전용 제품명과 KVM 식별의 공존을 수정했습니다. 수정 전 실패하는 회귀 검사 후 `34ae353`에서 실제 Linux 이미지 테스트 **127개 전부 통과**(2.894초), Mac **126개 통과/1개 Skip**, Packer 구문 검사와 `make lint`를 확인했습니다. 실패한 VM과 임시 Key가 정리됐고 후보 승인 기록은 생성되지 않았습니다.
 
 `34ae353`의 새 표준 Builder 실행은 실제 SSH에서 `aarch64`·`kvm`·전용 DMI 제품명을 확인했고, 해당 QEMU 프로세스의 `/dev/kvm`·KVM VM/vCPU 핸들도 확인했습니다. 읽기 전용 Framebuffer에는 Ubuntu 24.04.4 로그인 화면이 표시됐습니다. **이 시점은 패키지 설치 중이며 봉인·두 Boot·Desktop/Browser 사용 완료 증거는 아닙니다.** Mac 화면 공유의 연결 실패도 별도로 기록했으며 원격 입력 성공으로 계산하지 않습니다.
+
+### 이후 빌드와 브라우저 진단, 9월 10–11일
+
+같은 표준 실행에서 설치·봉인이 완료됐습니다. 미출시 qcow2 후보는 5,073,272,832 Bytes, SHA-256 `39958a2014b08a753b0295f033cdf4d0243dd033a6f33909e3fa8d8851d5fcdf`이며 기록 상태는 `image_built_unverified`입니다. 첫 자동 Boot 검사에서 시간이 초과됐으므로 **두 Boot 성공 기록이나 출시 승인은 없습니다.** 원본 후보는 보존했고 이후 실험은 별도 진단용 Overlay에서 수행했습니다.
+
+`fabc600`은 실제 Guest Agent 출력 수집 문제를 수정합니다. 고정 Ubuntu QGA `1:8.2.2+ds-0ubuntu1.18`은 자식이 종료돼도 stdout 전용 수집에서 `exited=false`를 계속 반환했고 별도 비루트 Agent로 재현했습니다. Boolean 수집과 실행 전에 stderr를 버리는 고정·정리된 환경의 Wrapper로 정상 결과를 받았으며 Mac/Linux 회귀를 통과했습니다. Guest 오류 원문이나 환경변수 값은 전달하지 않습니다. 이후 진단 VM에서 봉인 식별자·Builder 접근 제거·패키지 Inventory·유휴 Runner·Xfce/X Display 검사는 통과했지만 브라우저 실행은 사용자 네임스페이스 정책에 의해 거부됐습니다.
+
+`7b46236`은 브라우저 시간 초과가 `runuser`만 종료하고 Chrome/보조 프로세스 13개를 남긴 별도 재현 오류를 수정합니다. 검사는 새 비특권 systemd 임시 서비스를 사용하며 독립적인 30초 실행 제한·5초 종료 제한·cgroup 전체 종료·정확한 소유권 검사를 적용합니다. 자동 정리 경합은 서비스가 사라지고 cgroup이 없거나 비었음을 재확인한 경우에만 허용합니다. 실제 Linux 합성 검사는 정상 종료·Exit 7·종료를 거부하는 분리된 이중 Fork 자식·실행 시간 초과·실제 `systemctl` not-found 경합을 다뤘고 살아 있는 하위 프로세스가 남지 않았습니다. [systemd의 cgroup 종료 의미](https://github.com/systemd/systemd/blob/v255/man/systemd.kill.xml)를 프로세스 그룹만 종료하는 방식으로 대체하지 않습니다. 해당 커밋의 `make test-images`는 **Mac 136개 통과/플랫폼 Skip 1개**(2.510초), **Linux 137개 전부 통과**(2.829초)이며 `make lint`도 통과했습니다. 변경하지 않은 Packer 설정은 이전 검증을 유지하며 새 빌드 증거로 표현하지 않습니다.
+
+정확한 실행 경로의 AppArmor 정책 초안은 **진단용 Overlay에서만** 시험했고 전역 사용자 네임스페이스 제한과 Chrome Sandbox를 유지했습니다. Ubuntu의 [앱별 네임스페이스 정책](https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/)에 따른 방식이며 `unconfined` Profile 자체를 추가 MAC 격리로 표현하지 않습니다. 표본 Renderer에서 기대 Profile·`NoNewPrivs`·seccomp 필터·분리된 사용자/PID 네임스페이스를 확인했습니다. Computer Use로 Xfce와 JavaScript 계산 결과 `4`를 표시하는 실제 Chrome 창을 확인했습니다. 전용 Viewer는 읽기 전용이므로 데스크톱 입력이나 제품 Console 권한 검증 증거는 아닙니다.
+
+표준 `--dump-dom` 검사는 별도 90초 진단에서도 결과를 반환하지 않았고 시작 후 CPU 활동은 적었습니다. GPU·전용 D-Bus 실험도 해결하지 못했습니다. Chrome 153의 [명령 처리 코드](https://github.com/chromium/chromium/blob/153.0.8010.36/components/headless/command_handler/headless_command_handler.cc)는 해당 옵션을 여전히 지원하므로 제거된 옵션이 원인은 아닙니다. 별도 비공개 초안은 디버거 TCP 포트 없이 [CDP Pipe](https://github.com/chromium/chromium/blob/153.0.8010.36/content/browser/devtools/devtools_pipe_handler.cc)로 정확한 Browser Version 확인·페이지 생성·계산된 DOM 검증·정상 종료를 5.11초에 완료했고 cgroup 정리도 통과했습니다. 이는 최종 커밋된 브라우저 검사가 아닌 초안입니다. 시간 제한이 적용된 진단 VM은 이후 종료됐습니다.
+
+로컬 증거는 `arm-browser-cgroup-images-reviewed.log`, `arm-browser-cgroup-linux-reviewed.log`, `arm-browser-cgroup-real-03.log`, `arm-browser-cgroup-gc-real.log`, `arm-browser-headless-timeline-01.log`, `arm-browser-cdp-vm-01.log`와 9월 10일 18:29 KST Computer Use 화면입니다. 승격 전에는 최종 브라우저 검사·정확한 정책·파일 무결성 검사를 구현·테스트하고, 커밋된 Recipe로 재빌드해 두 번의 깨끗한 Cold Boot와 실제 상호작용을 검증해야 합니다. 9월 11일 PR #55는 `f96635c`의 Draft였고 ARM64 후속 `7b46236`까지는 미Push·새 Head CI 미실행 상태였습니다. 진단 결과로 MVP 완료 단계 수를 올리지 않습니다.
