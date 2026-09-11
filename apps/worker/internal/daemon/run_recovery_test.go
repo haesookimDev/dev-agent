@@ -25,11 +25,19 @@ func emptyDomainInventory(t *testing.T) {
 	t.Setenv("PATH", dir)
 }
 
-func TestRecoveryCleansRecordedFilesButDoesNotInventRemoteRelease(t *testing.T) {
+func TestRecoveryCleansLegacyFilesButDoesNotInventRemoteRelease(t *testing.T) {
 	emptyDomainInventory(t)
 	store := newTestRunStore(t)
 	run := createTestRun(t, store)
 	path := store.root.Name()
+	run.Record.Schema = 1
+	legacy, err := json.Marshal(run.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, run.Record.RunID, "run.json"), append(legacy, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
 	artifact := filepath.Join(path, run.Record.RunID, "user-data")
 	if err := os.WriteFile(artifact, []byte("synthetic assignment"), 0600); err != nil {
 		t.Fatal(err)
@@ -90,16 +98,14 @@ func TestRemoteActiveRunsBlockNewClaimsAfterLocalStateLoss(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/register") {
 			registrations.Add(1)
-			_ = json.NewEncoder(w).Encode(Worker{ID: "test-worker", ActiveRuns: 1})
+			_ = json.NewEncoder(w).Encode(recoveryWorker(1))
 			return
 		}
 		unexpected.Add(1)
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
-	d := resourceDaemon(server)
-	d.config.Executor, d.config.WorkRoot = "libvirt", filepath.Join(t.TempDir(), "runs")
-	d.config.PollInterval = time.Millisecond
+	d := recoveryDaemon(server, filepath.Join(t.TempDir(), "runs"))
 	if err := d.Run(context.Background()); !errors.Is(err, errRunReconciliation) {
 		t.Fatalf("unaccounted remote run did not stop admission: %v", err)
 	}

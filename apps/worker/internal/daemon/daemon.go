@@ -34,17 +34,25 @@ func New(config Config, logger *slog.Logger) *Daemon {
 }
 
 func (d *Daemon) Run(ctx context.Context) error {
-	closeStore, err := d.prepareVMRecovery(ctx)
+	store, err := d.prepareVMRecovery(ctx)
 	if err != nil {
 		return err
 	}
-	defer closeStore()
-	worker, err := d.client.Register(ctx, d.config)
+	var worker Worker
+	if store != nil {
+		defer store.Close()
+		worker, err = d.client.RegisterRecovery(ctx, d.config)
+	} else {
+		worker, err = d.client.Register(ctx, d.config)
+	}
 	if err != nil {
 		return fmt.Errorf("register worker: %w", err)
 	}
-	if d.config.Executor == "libvirt" && worker.ActiveRuns != 0 {
-		return errRunReconciliation
+	if store != nil {
+		worker, err = d.reconcileVMLeases(ctx, store, worker)
+		if err != nil {
+			return err
+		}
 	}
 	var executions sync.WaitGroup
 	defer executions.Wait() // Keep ownership locked until bounded cleanup/reporting finishes.

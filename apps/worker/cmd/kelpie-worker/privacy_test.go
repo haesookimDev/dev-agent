@@ -82,7 +82,11 @@ func TestWorkerProcessPrivateDiagnostics(t *testing.T) {
 						w.WriteHeader(http.StatusForbidden)
 						_, _ = io.WriteString(w, workerToken)
 					} else {
-						_ = json.NewEncoder(w).Encode(daemon.Worker{ID: "test-worker"})
+						_ = json.NewEncoder(w).Encode(map[string]any{
+							"id": "11111111-1111-4111-8111-111111111111", "name": "privacy-worker", "state": "online",
+							"cpu_total": 4, "cpu_available": 4, "memory_mb_total": 8192, "memory_mb_available": 8192,
+							"disk_gb_available": 60, "active_runs": 0,
+						})
 					}
 				case strings.HasSuffix(r.URL.Path, "/claim"):
 					if claimed {
@@ -126,8 +130,9 @@ func TestWorkerProcessPrivateDiagnostics(t *testing.T) {
 			defer server.Close()
 			process := exec.Command(binary)
 			process.Env = []string{"PATH=" + root, "KELPIE_CONTROL_URL=" + server.URL,
-				"KELPIE_WORKER_TOKEN=" + workerToken, "KELPIE_WORKER_NAME=private-diagnostic-test",
+				"KELPIE_WORKER_TOKEN=" + workerToken, "KELPIE_WORKER_NAME=privacy-worker",
 				"KELPIE_EXECUTOR=libvirt", "KELPIE_BASE_IMAGE=" + image,
+				"KELPIE_CPU_TOTAL=4", "KELPIE_MEMORY_MB_TOTAL=8192", "KELPIE_DISK_GB_TOTAL=60",
 				"KELPIE_WORK_ROOT=" + filepath.Join(root, "runs"), "KELPIE_POLL_SECONDS=1"}
 			var logs bytes.Buffer
 			process.Stdout, process.Stderr = &logs, &logs
