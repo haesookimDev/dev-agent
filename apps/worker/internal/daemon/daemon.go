@@ -34,10 +34,20 @@ func New(config Config, logger *slog.Logger) *Daemon {
 }
 
 func (d *Daemon) Run(ctx context.Context) error {
+	closeStore, err := d.prepareVMRecovery(ctx)
+	if err != nil {
+		return err
+	}
+	defer closeStore()
 	worker, err := d.client.Register(ctx, d.config)
 	if err != nil {
 		return fmt.Errorf("register worker: %w", err)
 	}
+	if d.config.Executor == "libvirt" && worker.ActiveRuns != 0 {
+		return errRunReconciliation
+	}
+	var executions sync.WaitGroup
+	defer executions.Wait() // Keep ownership locked until bounded cleanup/reporting finishes.
 	d.logger.Info("worker registered", "worker_id", worker.ID, "executor", d.config.Executor)
 	heartbeat := time.NewTicker(10 * time.Second)
 	poll := time.NewTicker(d.config.PollInterval)
@@ -60,7 +70,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			if claim == nil {
 				continue
 			}
-			go d.execute(ctx, *claim)
+			executions.Add(1)
+			go func(claim Claim) {
+				defer executions.Done()
+				d.execute(ctx, claim)
+			}(*claim)
 		}
 	}
 }
@@ -73,14 +87,21 @@ func (d *Daemon) execute(ctx context.Context, claim Claim) {
 		"work_id", claim.WorkItem.ID,
 		"correlation_id", claim.WorkItem.CorrelationID,
 	)
-	if err := d.executor.Execute(ctx, client, claim); err != nil {
+	err := d.executor.Execute(ctx, client, claim)
+	if cleanupErr := client.cleanup(ctx); cleanupErr != nil {
+		d.logger.Error("VM cleanup unconfirmed; reservation retained", "work_id", claim.WorkItem.ID, "error", safeDiagnostic(cleanupErr))
+		return
+	}
+	if err != nil {
 		d.logger.Error(
 			"work execution failed",
 			"work_id", claim.WorkItem.ID,
 			"correlation_id", claim.WorkItem.CorrelationID,
 			"error", safeDiagnostic(err),
 		)
-		failureContext := ContextWithCorrelationID(context.Background(), claim.WorkItem.CorrelationID)
+		failureContext, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		failureContext = ContextWithCorrelationID(failureContext, claim.WorkItem.CorrelationID)
 		_ = client.Event(failureContext, claim.WorkItem.ID, claim.LeaseToken, AgentEvent{
 			EventType: "worker.failed", Source: "worker", Level: "error", Message: safeDiagnostic(err), Payload: map[string]any{},
 		})

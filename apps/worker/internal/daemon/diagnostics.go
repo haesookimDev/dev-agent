@@ -73,6 +73,12 @@ func privateFailure(err error, kind diagnosticKind) error {
 // Executors may return arbitrary errors. Never render those in a log or event,
 // even if a future executor forgets to classify its own failure at the source.
 func safeDiagnostic(err error) string {
+	if errors.Is(err, errVMCleanup) {
+		return errVMCleanup.Error()
+	}
+	if errors.Is(err, errRunStore) {
+		return errRunStore.Error()
+	}
 	var diagnostic diagnosticError
 	if errors.As(err, &diagnostic) {
 		return diagnostic.Error()

@@ -49,6 +49,13 @@ func TestWorkerProcessPrivateDiagnostics(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(root, "qemu-img"), []byte(script), 0700); err != nil {
 					t.Fatal(err)
 				}
+				// This fixture fails before VM creation. The lifecycle path must
+				// still obtain a successful empty inventory, not infer absence from
+				// a missing virsh command. No destructive command is accepted here.
+				inventory := "#!/bin/sh\ncase \"$*\" in\n'--connect qemu:///system list --all --uuid'|'--connect qemu:///system list --all --uuid --persistent') exit 0;;\n*) exit 9;;\nesac\n"
+				if err := os.WriteFile(filepath.Join(root, "virsh"), []byte(inventory), 0700); err != nil {
+					t.Fatal(err)
+				}
 			}
 			workerToken, leaseToken := strings.Repeat(runtimePrivate, 2), "synthetic-runtime-lease"
 			work := daemon.WorkItem{ID: "33333333-3333-4333-8333-333333333333",
