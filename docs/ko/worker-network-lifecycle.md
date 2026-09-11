@@ -38,6 +38,28 @@ KELPIE_LIBVIRT_TEST_ACK=disposable-host-only /tmp/worker-network-cleanup.test -t
 - 전용 Host에 `dnsmasq`가 없었습니다. `d947e396d273ce714a89e32aa5b27a703903aba4`는 libvirt DHCP에 필요한 `dnsmasq-base`를 Ubuntu Host 설치기에 추가합니다. Lab에는 해당 패키지(2.91-0ubuntu0.24.04.1, 설치 893kB)만 추가했고 전역 DNS 서비스를 활성화하지 않았습니다. 기존 Host도 Network 활성화 전에 패키지가 필요합니다. Go 의존성이나 환경변수 계약은 바꾸지 않았습니다.
 - 앞서 보존한 비활성·활성 Fixture는 별도 복구 테스트 프로세스로 정리했습니다(0.90/1.43초). 이전 복구 검사는 최종 두 경우의 로그와 구분하며 전체 Worker/API 복구나 VM 패킷 필터링을 입증하지 않습니다.
 
+## 후속: Host 재고와 검증된 생성
+
+소스 `ebb3d8e9f0c58195d075ed1fef614ce6982f607f`의 실제 Linux 읽기 전용 재고 검사가 0.07초에 통과했습니다. 인터페이스 2개, 제외 IPv4 Prefix 8개, 현재·비활성 XML 2개를 확인했습니다. 모든 IPv4 라우팅 테이블·기본 경로 Gateway·Host 주소와 비활성 libvirt Network/Domain 식별자 충돌을 포함합니다. 누락·잘못된 형식·미지원 재고는 거부하고 수집하지 않은 초기값을 사용 가능 증거로 인정하지 않습니다. IPv6 재고 검증이 IPv6 패킷 차단을 의미하지는 않습니다.
+
+소스 `c53fea9ecf6d48d2473550ff0e343311845bfa46`의 Network 생성기는 비공개 `filter.xml`/`network.xml`을 배타적으로 영속 생성하고, 전면 차단 Filter 확인·충돌 재조회·정확한 Network 정의/시작·실제 Bridge MAC/주소 확인을 수행합니다. 기존 자원·파일을 덮어쓰거나 인수하지 않습니다. 호출자는 영속 Run을 수명주기에 연결하고 생성 종료를 기다린 뒤 정리해야 합니다. 이 조회가 외부 관리자의 변경까지 원자적으로 만들지는 않으며 동시 Host 재설정은 지원하지 않습니다.
+
+실제 정상 생성과 활성화 성공 직후 취소 두 경우가 **4.61초**에 통과했습니다. 각각 별도 OS 프로세스가 남은 기록을 열어 자원·XML을 정리하고 합성 로컬 반환을 기록했습니다. 최종 조회에서 소유 Network/Filter/Bridge/Binding/dnsmasq 누수가 없고 기존 inactive default Network를 보존했습니다. 여전히 **Guest NIC·실제 패킷 검사·API/PostgreSQL 확인은 없습니다**. 운영 Executor는 아직 생성기를 호출하지 않습니다.
+
+```sh
+cd apps/worker
+go test -race ./internal/daemon -run '^TestRunNetwork' -count=1
+GOOS=linux GOARCH=arm64 go vet -tags libvirt_integration ./internal/daemon
+GOOS=linux GOARCH=arm64 go test -c -tags libvirt_integration -o /tmp/worker-network-provision.test ./internal/daemon
+# Copy to the dedicated Linux host and run as its unprivileged Worker user:
+KELPIE_LIBVIRT_TEST_ACK=disposable-host-only /tmp/worker-network-provision.test -test.run '^TestDedicatedLibvirtHostNetworkInventory$' -test.v
+KELPIE_LIBVIRT_TEST_ACK=disposable-host-only /tmp/worker-network-provision.test -test.run '^TestDedicatedLibvirtNetworkProvisioning$' -test.v
+```
+
+최근 전체 `make test-worker`가 통과했고(daemon 8.195초), 이후 최종 불변 기록 Guard와 집중 Race(1.989초)를 검증했습니다. `make lint`와 최종 Linux Tag 포함 Vet도 통과했습니다. API/Web 변경, 새 Go 의존성·CI Job·운영 환경변수는 없습니다.
+
+재고 바이너리 SHA256은 `db5785ab442fb54f2a002aabbbac2cd3d06d196bb94f37fc58f4ddb9507997ca`, [재고 로그](../assets/worker-lifecycle/network-inventory.log)는 `fd50c4787085f8ef176892e84b8a1c621211796ad6b1f8e860add7e125cb56cc`입니다. 생성/복구 바이너리는 `d51015e87a2f7dc83fc2c93b73f9bd62ebb7283d2a6d8eea625d35e78218b459`, [생성 로그](../assets/worker-lifecycle/network-provision.log)는 `03c8a3748dafd9e8b8ebf7392c76c64857f0876332290e94b17ccf028f231fe3`입니다. 두 바이너리는 Mac/Linux와 커밋 소스 재빌드에서 바이트 단위로 일치했습니다. 로그는 각 실행을 보존하며 하나의 최종 바이너리 호출에서 두 검사를 함께 수행했다고 주장하지 않습니다.
+
 ## 남은 조건
 
-현재 Host 인터페이스·경로·Network 충돌 재고, 안전한 운영 생성, Executor 연결, Host/Metadata/다른 VM 차단, 허용 송신과 기존 연결 격리가 남았습니다. 실제 동시 VM으로 확인한 뒤 릴리즈합니다. 아직 제출하지 않은 브랜치로 정확한 Head의 GitHub CI 결과는 없으며 미병합 상태를 유지합니다. [MVP 완료율](mvp-progress.md)은 1/7(14.3%)입니다.
+Executor 연결, Host/Metadata/다른 VM 차단, 허용 송신과 기존 연결 격리가 남았습니다. 실제 동시 VM으로 확인한 뒤 릴리즈합니다. 이 검증 기록은 PR 제출 이전으로 정확한 Head의 GitHub CI 결과가 없으며, 미병합 상태를 유지하고 이후 CI는 PR에 기록합니다. [MVP 완료율](mvp-progress.md)은 1/7(14.3%)입니다.

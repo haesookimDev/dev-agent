@@ -1,0 +1,4 @@
+=== RUN   TestDedicatedLibvirtHostNetworkInventory
+    libvirt_network_inventory_integration_test.go:42: read-only host inventory: interfaces=2, excluded IPv4 prefixes=8, live/inactive XML views=2; no resources created
+--- PASS: TestDedicatedLibvirtHostNetworkInventory (0.07s)
+PASS

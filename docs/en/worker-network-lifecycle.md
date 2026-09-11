@@ -38,6 +38,28 @@ Actual failures were retained and corrected, not treated as passes:
 - The dedicated host lacked `dnsmasq`. `d947e396d273ce714a89e32aa5b27a703903aba4` adds `dnsmasq-base` to the Ubuntu host installer, required by libvirt DHCP. Only that package (2.91-0ubuntu0.24.04.1, 893kB installed) was added to the lab; no global DNS service was enabled. Existing hosts need the package before network activation. No Go dependency or environment-variable contract changed.
 - Earlier preserved inactive and active fixtures were successfully cleaned by separate recovery test processes (0.90/1.43 seconds). These earlier recovery checks are distinct from the final two-case log; they do not prove full Worker/API recovery or VM packet filtering.
 
+## Follow-up: host inventory and controlled creation
+
+At source `ebb3d8e9f0c58195d075ed1fef614ce6982f607f`, actual read-only Linux inventory passed in 0.07 seconds: 2 interfaces, 8 excluded IPv4 prefixes and 2 current/inactive XML views. It includes all IPv4 routing tables, default-route gateways, host addresses and inactive libvirt network/domain identity conflicts. Missing/malformed/unsupported inventories fail closed; zero-value snapshots are not evidence of availability. IPv6 inventory validation does not imply IPv6 packet enforcement.
+
+At source `c53fea9ecf6d48d2473550ff0e343311845bfa46`, the network provisioner persists private exclusive `filter.xml`/`network.xml`, verifies quarantine, recollects collision inventory, defines/starts the exact network, and checks its actual bridge MAC/address. Existing resources/files are not overwritten or adopted. Its caller must bind the durable run to the lifecycle and join creation before cleanup. External administrator changes are not made atomic by these snapshots; concurrent host reconfiguration is not supported.
+
+Both actual normal creation and cancellation immediately after successful activation passed in **4.61 seconds**. Each used a separate OS process to reopen the retained journal, physically clean resources/XML, and write a synthetic local release. Final inspection found no owned network/filter/bridge/binding/dnsmasq leak, and preserved the original inactive default network. This is still **no guest NIC, no actual packet test and no API/PostgreSQL acknowledgement**. The production Executor does not call this provisioner yet.
+
+```sh
+cd apps/worker
+go test -race ./internal/daemon -run '^TestRunNetwork' -count=1
+GOOS=linux GOARCH=arm64 go vet -tags libvirt_integration ./internal/daemon
+GOOS=linux GOARCH=arm64 go test -c -tags libvirt_integration -o /tmp/worker-network-provision.test ./internal/daemon
+# Copy to the dedicated Linux host and run as its unprivileged Worker user:
+KELPIE_LIBVIRT_TEST_ACK=disposable-host-only /tmp/worker-network-provision.test -test.run '^TestDedicatedLibvirtHostNetworkInventory$' -test.v
+KELPIE_LIBVIRT_TEST_ACK=disposable-host-only /tmp/worker-network-provision.test -test.run '^TestDedicatedLibvirtNetworkProvisioning$' -test.v
+```
+
+Latest full `make test-worker` passed (daemon 8.195 seconds), followed by the final immutable-record guard and final focused race check (1.989 seconds); `make lint` and final tagged Linux vet passed. No API/Web change, new Go dependency, new CI job or production environment variable was added.
+
+Inventory binary SHA256: `db5785ab442fb54f2a002aabbbac2cd3d06d196bb94f37fc58f4ddb9507997ca`; [inventory log](../assets/worker-lifecycle/network-inventory.log): `fd50c4787085f8ef176892e84b8a1c621211796ad6b1f8e860add7e125cb56cc`. Provisioning/recovery binary: `d51015e87a2f7dc83fc2c93b73f9bd62ebb7283d2a6d8eea625d35e78218b459`; [provisioning log](../assets/worker-lifecycle/network-provision.log): `03c8a3748dafd9e8b8ebf7392c76c64857f0876332290e94b17ccf028f231fe3`. Both binaries matched between Mac/Linux and byte-identical committed-source rebuilds. The logs are preserved from those separate runs, not a claim that both ran in one final binary invocation.
+
 ## Remaining gates
 
-Fresh host interface/route/network collision inventory, safe production creation, Executor attachment, enforced host/metadata/other-VM denial, allowed egress and existing-connection isolation remain. Verify those with actual concurrent VMs before release. This unsubmitted branch has no exact-head GitHub CI result yet; keep it unmerged. [MVP completion](mvp-progress.md) remains 1/7 (14.3%).
+Executor attachment, enforced host/metadata/other-VM denial, allowed egress and existing-connection isolation remain. Verify those with actual concurrent VMs before release. This verification snapshot precedes PR submission and has no exact-head GitHub CI result; keep the work unmerged and record subsequent CI in the PR. [MVP completion](mvp-progress.md) remains 1/7 (14.3%).
