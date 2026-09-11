@@ -76,6 +76,7 @@ class BuildTests(unittest.TestCase):
         recipe = build.read_json(self.output / "recipe.json")
         self.assertIs(recipe["release_eligible"], False)
         self.assertIn("browser_probe.py", recipe["tooling_sha256"])
+        self.assertIn("browser_policy.py", recipe["tooling_sha256"])
         for name, digest in recipe["tooling_sha256"].items():
             self.assertEqual(build.measure(self.output / "tooling" / name)["sha256"], digest)
         config = Path(build.environment(self.output)["PACKER_CONFIG"])

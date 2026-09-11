@@ -242,7 +242,7 @@ def probe(source: Path, output: Path, *, approved=False) -> dict:
             and image["size_bytes"] == receipt["image"]["size_bytes"],
             "candidate changed during boot")
     tooling = ("boot.py", "qga.py", "health.py", "build.py", "prepare.py",
-               "guest.py", "codex_package.py", "browser_probe.py")
+               "guest.py", "codex_package.py", "browser_probe.py", "browser_policy.py")
     result = {
         "schema_version": 1, "status": "boot_smoke_passed_unreleased", "release_eligible": False,
         "image_version": manifest["image_version"], "image": receipt["image"], "boots": reports,

@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from infra.images import codex_package, health, prepare
+from infra.images import browser_policy, codex_package, health, prepare
 from infra.images.tests import test_codex_package
 
 
@@ -104,7 +104,8 @@ class HealthTests(unittest.TestCase):
                         else "Chrome 0.0-fixture")
             return ""
 
-        with patch.object(health, "command", side_effect=command):
+        with patch.object(health, "browser_security"), \
+                patch.object(health, "command", side_effect=command):
             health.installed(self.manifest)
             self.manifest["apt_packages"]["synthetic-package"] = "2.0"
             with self.assertRaisesRegex(prepare.InputError, "APT versions"):
@@ -138,7 +139,8 @@ class HealthTests(unittest.TestCase):
                         else "Chrome 0.0-fixture")
             return ""
 
-        with patch.object(health, "command", side_effect=command):
+        with patch.object(health, "browser_security"), \
+                patch.object(health, "command", side_effect=command):
             health.installed(self.manifest)
             entrypoint.unlink()
             entrypoint.symlink_to("/different/codex")
@@ -150,6 +152,25 @@ class HealthTests(unittest.TestCase):
             helper.write_bytes(b"x" * helper.stat().st_size)
             with self.assertRaisesRegex(prepare.InputError, "installed file changed"):
                 health.installed(self.manifest)
+
+    def test_browser_security_checks_sealed_inventory_and_effective_policy(self):
+        records = {"synthetic": "inventory"}
+        self.put("opt/kelpie/browser-inventory.json", json.dumps(records))
+        for architecture in ("amd64", "arm64"):
+            with self.subTest(architecture=architecture), \
+                    patch.object(browser_policy, "verify_inventory") as inventory, \
+                    patch.object(browser_policy, "verify_policy") as policy:
+                health.browser_security({"architecture": architecture})
+            inventory.assert_called_once_with(architecture, records)
+            policy.assert_called_once_with(architecture)
+
+    def test_invalid_browser_security_prevents_any_installed_binary_execution(self):
+        with patch.object(health, "browser_security",
+                          side_effect=prepare.InputError("synthetic policy failure")), \
+                patch.object(health, "command") as command:
+            with self.assertRaises(prepare.InputError):
+                health.installed(self.manifest)
+        command.assert_not_called()
 
     def test_browser_uses_disposable_unprivileged_profile_and_keeps_sandbox(self):
         paths = []
@@ -199,7 +220,8 @@ class HealthTests(unittest.TestCase):
                         else "Chrome 0.0-fixture")
             return ""
 
-        with patch.object(health, "command", side_effect=command):
+        with patch.object(health, "browser_security"), \
+                patch.object(health, "command", side_effect=command):
             health.installed(self.manifest)
             entrypoint.unlink()
             entrypoint.symlink_to("/opt/kelpie/codex/vendor/x86_64-unknown-linux-musl/bin/codex")

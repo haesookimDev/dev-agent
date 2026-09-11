@@ -143,7 +143,7 @@ def stage(bundle: Path, output: Path) -> dict:
     tooling.mkdir(mode=0o700)
     recipes = [ROOT / "infra/images" / name for name in
                ("build.py", "guest.py", "prepare.py", "health.py", "boot.py", "qga.py",
-                "codex_package.py", "browser_probe.py",
+                "codex_package.py", "browser_probe.py", "browser_policy.py",
                 "ubuntu.pkr.hcl")]
     recipes.append(ROOT / "infra/systemd/kelpie-runner.service")
     hashes = {}

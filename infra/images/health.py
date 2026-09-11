@@ -14,8 +14,9 @@ import uuid
 from pathlib import Path
 
 if __package__:
-    from . import codex_package, guest, prepare
+    from . import browser_policy, codex_package, guest, prepare
 else:
+    import browser_policy
     import codex_package
     import guest
     import prepare
@@ -86,7 +87,15 @@ def access_removed() -> None:
     guest.reject_credentials()  # Known cache paths only; not a general secret scanner.
 
 
+def browser_security(manifest: dict) -> None:
+    architecture = manifest["architecture"]
+    browser_policy.verify_inventory(architecture,
+                                    read_json(ROOT / "opt/kelpie/browser-inventory.json"))
+    browser_policy.verify_policy(architecture)
+
+
 def installed(manifest: dict) -> None:
+    browser_security(manifest)  # Before any browser process, including --version.
     packages = dict(line.split("\t", 1) for line in command(
         "dpkg-query", "-W", "-f=${Package}\t${Version}\n",
     ).splitlines())

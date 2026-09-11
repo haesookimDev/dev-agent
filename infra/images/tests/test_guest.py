@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from infra.images import build, codex_package, guest, prepare
+from infra.images import browser_policy, build, codex_package, guest, prepare
 from infra.images.tests import test_codex_package
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -125,6 +125,54 @@ class GuestTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             guest.extract_browser(source, sentinel)
         self.assertEqual((sentinel / "keep").read_bytes(), b"preserve")
+
+    def test_browser_installation_records_verified_policy_before_executing_chromium(self):
+        records = {"synthetic": "inventory"}
+        binary = Path("/opt/kelpie/browser/chrome-linux-arm64/chrome")
+        events = []
+        with patch.object(guest, "extract_browser", return_value=binary), \
+                patch.object(browser_policy, "inventory", return_value=records), \
+                patch.object(browser_policy, "install_policy",
+                             side_effect=lambda arch: events.append("install")), \
+                patch.object(browser_policy, "verify_policy",
+                             side_effect=lambda arch: events.append("verify")), \
+                patch.object(browser_policy, "verify_inventory") as verify_inventory, \
+                patch.object(guest.prepare, "write_json") as write_json, \
+                patch.object(guest, "write_file") as write_file, \
+                patch.object(guest, "command", side_effect=lambda *args, **kwargs:
+                             events.append("version") or "Chrome 1.2.3.4"):
+            guest.install_browser({"file": "browser.zip", "version": "1.2.3.4"},
+                                  self.root, "arm64")
+        self.assertEqual(events, ["install", "verify", "version"])
+        verify_inventory.assert_called_once_with("arm64", records)
+        write_json.assert_called_once_with(guest.INSTALL_ROOT / "browser-inventory.json", records)
+        write_file.assert_called_once_with(Path("/usr/local/bin/chromium"),
+                                           f'#!/bin/sh\nexec {binary} "$@"\n', 0o755)
+
+    def test_browser_policy_failure_prevents_browser_execution_or_entrypoint_creation(self):
+        with patch.object(guest, "extract_browser"), \
+                patch.object(browser_policy, "inventory", return_value={}), \
+                patch.object(browser_policy, "install_policy",
+                             side_effect=prepare.InputError("synthetic policy failure")), \
+                patch.object(guest, "command") as command, \
+                patch.object(guest, "write_file") as write_file, \
+                patch.object(guest.prepare, "write_json") as write_json:
+            with self.assertRaises(prepare.InputError):
+                guest.install_browser({"file": "browser.zip", "version": "1.2.3.4"},
+                                      self.root, "arm64")
+        command.assert_not_called()
+        write_file.assert_not_called()
+        write_json.assert_not_called()
+
+    def test_apparmor_must_be_explicitly_pinned_before_configuring_apt(self):
+        self.assertIn("apparmor", guest.GUEST_PACKAGES)
+        packages = dict.fromkeys(guest.GUEST_PACKAGES - {"apparmor"}, "1.0-fixture")
+        with patch.object(guest, "write_file") as write_file, \
+                patch.object(guest, "command") as command:
+            with self.assertRaisesRegex(prepare.InputError, "required guest packages"):
+                guest.configure_apt("20260909T000000Z", packages, "arm64")
+        write_file.assert_not_called()
+        command.assert_not_called()
 
     def test_wheel_metadata_must_match_locked_identity(self):
         wheel = self.archive([
@@ -336,7 +384,8 @@ class GuestTests(unittest.TestCase):
         staging = self.root / "staging"
         tooling = staging / "tooling"
         tooling.mkdir(parents=True)
-        names = {"health.py", "prepare.py", "guest.py", "codex_package.py", "browser_probe.py"}
+        names = {"health.py", "prepare.py", "guest.py", "codex_package.py", "browser_probe.py",
+                 "browser_policy.py"}
         for name in names:
             (tooling / name).write_text(f"# synthetic {name}\n")
         with patch.object(guest, "INSTALL_ROOT", installation), \

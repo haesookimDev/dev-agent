@@ -16,8 +16,9 @@ from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
 
 if __package__:
-    from . import codex_package, prepare
+    from . import browser_policy, codex_package, prepare
 else:
+    import browser_policy
     import codex_package
     import prepare
 
@@ -28,7 +29,7 @@ RUNNER_PYTHON = "/opt/kelpie/runner/bin/python"
 BROWSER_ROOT = Path("/opt/kelpie/browser")
 GUEST_PACKAGES = prepare.REQUIRED_PACKAGES | {
     "lightdm", "libnss3", "libgbm1", "libasound2t64", "fonts-liberation",
-    "x11-utils",
+    "x11-utils", "apparmor",
 }
 MAX_EXPANDED_BROWSER_BYTES = 8 * 1024**3
 ARCHITECTURES = {
@@ -224,10 +225,25 @@ def reject_credentials() -> None:
             "build guest must not have a work assignment")
 
 
+def install_browser(item: dict, inputs: Path, architecture: str) -> None:
+    binary = extract_browser(inputs / item["file"], BROWSER_ROOT, architecture)
+    records = browser_policy.inventory(architecture)
+    browser_policy.install_policy(architecture)
+    browser_policy.verify_inventory(architecture, records)
+    browser_policy.verify_policy(architecture)
+    prepare.write_json(INSTALL_ROOT / "browser-inventory.json", records)
+    version = command("runuser", "-u", "kelpie", "--", str(binary), "--version",
+                      timeout=30, capture=True)
+    require(version.split()[-1:] == [item["version"]],
+            "installed browser version differs from lock")
+    write_file(Path("/usr/local/bin/chromium"), f'#!/bin/sh\nexec {binary} "$@"\n', 0o755)
+
+
 def install_health_tools() -> None:
     health_tools = INSTALL_ROOT / "image-health"
     health_tools.mkdir(mode=0o755)
-    for name in ("health.py", "prepare.py", "guest.py", "codex_package.py", "browser_probe.py"):
+    for name in ("health.py", "prepare.py", "guest.py", "codex_package.py", "browser_probe.py",
+                 "browser_policy.py"):
         write_file(health_tools / name, (STAGING / "tooling" / name).read_text())
 
 
@@ -277,13 +293,7 @@ def install() -> None:
     require(command("runuser", "-u", "kelpie", "--", "/usr/local/bin/codex", "--version",
                     timeout=30, capture=True) == f"codex-cli {manifest['codex']['version']}",
             "installed Codex version differs from lock")
-    browser = extract_browser(inputs / manifest["browser"]["file"], BROWSER_ROOT, architecture)
-    browser_version = command("runuser", "-u", "kelpie", "--", str(browser), "--version",
-                              timeout=30, capture=True)
-    require(browser_version.split()[-1:] == [manifest["browser"]["version"]],
-            "installed browser version differs from lock")
-    write_file(Path("/usr/local/bin/chromium"),
-               f'#!/bin/sh\nexec {browser} "$@"\n', 0o755)
+    install_browser(manifest["browser"], inputs, architecture)
     Path("/usr/local/bin/kelpie-runner").symlink_to("/opt/kelpie/runner/bin/kelpie-runner")
     unit = (STAGING / "tooling/kelpie-runner.service").read_text()
     write_file(Path("/etc/systemd/system/kelpie-runner.service"), unit)
@@ -314,8 +324,10 @@ def seal() -> None:
     reject_credentials()
     manifest = prepare.read_manifest(INSTALL_ROOT / "image-manifest.json")
     require((INSTALL_ROOT / "apt-inventory.json").is_file()
-            and (INSTALL_ROOT / "python-inventory.json").is_file(),
+            and (INSTALL_ROOT / "python-inventory.json").is_file()
+            and (INSTALL_ROOT / "browser-inventory.json").is_file(),
             "guest installation is incomplete")
+    browser_policy.verify_policy(manifest["architecture"])
     command("usermod", "--lock", "--shell", "/usr/sbin/nologin", "kelpie-builder")
     Path("/home/kelpie-builder/.ssh/authorized_keys").unlink(missing_ok=True)
     Path("/etc/sudoers.d/kelpie-image-builder").unlink(missing_ok=True)
