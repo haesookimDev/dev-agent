@@ -1,10 +1,10 @@
-# MVP 진행 현황 — 2026-09-10
+# MVP 진행 현황 — 2026-09-11
 
 한국어 | [English](../en/mvp-progress.md) · [개발 요약](roadmap-summary.md) · [상세 기준](roadmap-detailed.md)
 
 ## 기준과 진행률
 
-제품 기준 코드: `main`의 `fb1f57eab91a9feef031e236d289c8d74ec03942` ([PR #57](https://github.com/haesookimDev/dev-agent/pull/57) 병합). Mac 로컬 개발 호스트 검증 기반은 병합됐으며 정확한 Head `ab9378a`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34447949823)는 5개 Job 모두 통과했습니다. 후속 `feat/golden-image-arm64`의 기능·실행 기준은 `34ae353`, 상세 입력·실행 기록은 `6596116`이며 아직 미병합입니다. 아래 평가는 문서뿐 아니라 현재 코드·테스트·실제 구동 기록을 대조한 시점별 기록입니다. Draft 브랜치나 계획은 완료로 세지 않습니다.
+제품 기준 코드: `main`의 `fb1f57eab91a9feef031e236d289c8d74ec03942` ([PR #57](https://github.com/haesookimDev/dev-agent/pull/57) 병합). Mac 로컬 개발 호스트 검증 기반은 병합됐으며 정확한 Head `ab9378a`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34447949823)는 5개 Job 모두 통과했습니다. 미병합 `feat/golden-image-arm64`의 기능 기준은 `7b46236`, 실제 빌드 Recipe는 `34ae353`, 상세 실행 기록은 `90e22dd`입니다. 9월 11일 GitHub `main`과 Draft #55의 Head가 그대로임을 재확인했으며 ARM64 후속은 미Push·새 Head CI 미실행 상태입니다. 커밋된 코드와 비공개 초안을 구분한 기록이며 Draft 브랜치나 계획은 완료로 세지 않습니다.
 
 이전 이미지 작업의 `main` 기준은 문서 PR #54까지 포함한 `1fd999f`이며 [해당 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34423510547)는 통과했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)는 [Golden Image 후보 Builder](golden-image-inputs.md) 작업입니다. 이전 Head `55fa0cc`의 [CI](https://github.com/haesookimDev/dev-agent/actions/runs/34431563173)는 첫 실행 5분 14초에 5개 Job·이미지 85개 모두 통과했지만 이후 코드의 증거는 아닙니다. 당시 기능 검증 기준은 `a73f600`입니다. Guest 설치·봉인/Packer·두 차례 자동 Boot 검사에 이어 `86369b4`는 Codex 플랫폼 패키지 전체 파일 검증, `a73f600`은 보조 파일을 보존하는 설치와 Boot Inventory 검사를 추가했습니다. 기존 ELF 입력도 지원하며 기존 병렬 CI에 Job·Timeout·VM CI를 늘리지 않았습니다.
 
@@ -12,7 +12,7 @@
 
 공식 Ubuntu `20260826`, Codex `0.154.0`, Chrome for Testing `153.0.8010.36`과 고정 Runner 소스의 Wheel·의존 Wheel 8개를 확보했습니다. 실제 Codex/Browser Archive 추출·Codex 설치 Helper와 APT Snapshot `20260909T000000Z`의 16개 필수 패키지 Metadata를 확인했고, **실제 12개 파일의 입력 CLI가 `inputs_verified`·`release_eligible=false`로 통과**했습니다. 출처·Hash·미검증 범위는 [입력 검증 기록](golden-image-inputs.md)에 있습니다. **봉인된 Golden Image의 두 Boot·Desktop/Browser 사용 검증은 미완료이므로 PR #55는 Draft·미병합이며 완료 수는 올리지 않습니다.** 최종 Head의 CI 결과는 PR에서 별도로 확인합니다.
 
-후속 ARM64 입력 12개와 고정 UEFI, Codex 보조 파일·Chrome·Wheel·APT 계약을 통합했습니다. 실제 실행에서 누락된 Host ROM, Seed CD 연결, DMI 기반 KVM 식별 문제를 발견해 각각 보완했습니다. `34ae353`에서 실제 Ubuntu ARM64 이미지 테스트 **127개 전부 통과**(2.894초), Mac 126개 통과/1개 Skip, Packer 구문 검사·`make lint`를 확인했습니다. 새 표준 Builder 실행에서는 실제 SSH의 `aarch64`/`kvm`, QEMU의 KVM VM/vCPU 핸들과 Ubuntu 로그인 화면을 확인했고 패키지 설치를 진행했습니다. 이는 설치·봉인 완료나 제품 Console 입력 검증이 아닙니다. 상세 증거와 실패/미검증 범위는 [Golden Image 기록](golden-image-inputs.md)에 구분합니다.
+후속 ARM64 통합은 `34ae353` Recipe의 실제 표준 빌드·봉인을 완료했지만 자동 Boot 검사 실패로 후보는 `image_built_unverified` 상태입니다. 실제 진단에서 QGA 종료 응답 수집(`fabc600`)과 Browser 하위 프로세스 정리(`7b46236`) 문제를 찾아 수정했습니다. 최신 이미지 테스트는 **Linux 137개 전부 통과**(2.829초), **Mac 136개 통과/플랫폼 Skip 1개**(2.510초)이며 `make lint`와 실제 Linux 수명주기·GC 경합 검사도 통과했습니다. 별도 Overlay에서 Xfce와 계산 결과 `4`를 표시하는 Chrome을 확인했고 비공개 CDP Pipe 초안은 5.11초에 DOM 검증·Browser 정상 종료를 확인했습니다. 이는 최종 검사·깨끗한 두 Boot·데스크톱 입력·제품 Console 인수 검증은 아닙니다. 소스 기준·화면·로그와 남은 정책/무결성 구현은 [Golden Image 기록](golden-image-inputs.md)에 구분합니다.
 
 [바로 다음 Release](roadmap-summary.md#바로-다음-release)에 명시된 7단계를 고정된 분모로 사용합니다. **검증 완료 1/7 = 14.3%**, 부분 완료 3/7, 미완료 3/7입니다. 부분 구현에는 임의 점수를 주지 않습니다. 이 수치는 릴리즈 단계의 검증 완료율이며 코드 작성량·투입 공수·남은 일정의 비율이 아닙니다. 전체 개발 공수의 정확한 완료율은 현재 근거로 산정하지 않습니다.
 
@@ -47,7 +47,7 @@
 
 1. **P1 실행 경로를 우선합니다.** Golden Image 재현 → 영속 VM 수명주기·격리 → Preview/Console 강제 → 실제 두 작업·장애 복구 Acceptance의 의존 순서로 구현합니다. 실제 환경이 없어 검증하지 못한 기능 PR은 Draft로 유지합니다.
 2. P0의 남은 Secret·관측·보존·관리자 제어는 위 실행 경로와 연결해 완료합니다. 단위 테스트가 쉬운 부수 개선만 반복해 P1 완료를 대신하지 않습니다.
-3. 승인된 Mac 내부 ARM64 Linux/KVM 호스트를 확보했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)의 Head `f96635c`와 미병합 ARM64 후속 브랜치를 구분합니다. ARM64 입력·Firmware·Browser·생산자/소비자 계약은 확장했으며, 현재 실제 Guest 설치부터 봉인·두 Cold Boot·Desktop/Browser 검증을 완료하는 단계입니다. 작업별 네트워크·TLS·Console 경계와 동시 2작업 Acceptance는 여전히 남아 있습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
+3. 승인된 Mac 내부 ARM64 Linux/KVM 호스트를 확보했습니다. [Draft PR #55](https://github.com/haesookimDev/dev-agent/pull/55)의 Head `f96635c`와 미병합 ARM64 후속을 구분합니다. 설치·봉인으로 후보를 만들었지만 최종 CDP 브라우저 검사와 정확한 AppArmor/파일 무결성 검사를 구현한 뒤 커밋된 Recipe 재빌드·깨끗한 두 Cold Boot·실제 상호작용을 확인해야 합니다. 작업별 네트워크·TLS·Console 경계와 동시 2작업 Acceptance는 여전히 남아 있습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
 4. [Draft PR #21](https://github.com/haesookimDev/dev-agent/pull/21)의 Preview 작업은 `main`에 포함되지 않았습니다. 오래된 Head의 CI는 현재 Migration·권한 계약과의 통합 검증을 대체하지 않습니다. 실제 TLS·브라우저/Console 검증 전에는 완료로 계산하거나 강제 병합하지 않습니다.
 
 ## 갱신 방법
