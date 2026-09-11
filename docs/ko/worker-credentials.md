@@ -4,6 +4,8 @@
 
 Worker 인증은 기본 `WORKER_AUTH_MODE=scoped`입니다. 등록·Heartbeat·Claim에는 제어 서버에서 발급한 자격증명이 필요하며 Worker 이름과 ID에 묶입니다. 다른 Worker 요청은 `403`, 잘못되거나 만료·폐기된 토큰은 `401`입니다. 작업 VM/Runner에는 Worker 토큰이 아닌 해당 작업의 Lease 토큰만 전달합니다.
 
+작업 Token을 잃은 경우 [종료된 임대의 복구 확인 API](worker-lease-reconciliation.md)를 사용할 수 있습니다. 개별 Worker 인증·소유권·종료 상태·Version과 물리 정리 선언이 필요하며 공유 Token이나 실행 중 작업에는 허용되지 않습니다. 실제 Worker 재시작 연동은 별도입니다.
+
 ## 발급과 최초 전환
 
 1. 기존 Worker는 Drain 후 활성 작업과 VM 정리가 끝났음을 확인하고 유지보수 시간에 중지합니다. 발급 즉시 해당 Worker의 공유 토큰 접근이 차단되므로 최초 전환을 무중단으로 간주하지 않습니다.
