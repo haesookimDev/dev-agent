@@ -4,6 +4,8 @@
 
 Worker authentication defaults to `WORKER_AUTH_MODE=scoped`. Registration, heartbeat, and claim require a control-host-issued credential bound to one Worker name and ID. Another Worker returns `403`; invalid, expired, or revoked tokens return `401`. Task VMs/runners receive only their work lease token, never a Worker credential.
 
+After losing a run token, the [terminal-lease reconciliation API](worker-lease-reconciliation.md) requires individual Worker authentication, matching ownership, terminal status/version and a physical-cleanup declaration. Shared tokens and nonterminal work are not accepted. Actual Worker restart integration is separate work.
+
 ## Issuance and initial migration
 
 1. Drain existing Workers, confirm active work and VM cleanup are finished, and stop them during maintenance. Issuance immediately blocks shared-token access for that Worker; initial migration is not zero-downtime.
