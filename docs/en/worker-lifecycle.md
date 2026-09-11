@@ -4,7 +4,7 @@
 
 ## Enforced ordering
 
-The Worker creates an attempt UUID separate from the work ID and synchronizes a private ownership record before any VM command. Retries never reuse an earlier VM name or disk. The process-wide `.worker.lock` prevents overlapping ownership and remains held until execution cleanup and failure reporting finish.
+The Worker uses the API-issued Claim lease UUID as its run UUID and synchronizes a private schema-2 ownership record before any VM command. An existing lease directory, including a released one, is never reused. This does not introduce a new work-retry protocol. The process-wide `.worker.lock` prevents overlapping ownership and remains held until execution cleanup and failure reporting finish.
 
 `prepared → running(optional) → cleanup-pending → cleaned → released` uses append-only phase JSON files. Records contain work/attempt UUIDs, resource quantities and timestamps, never lease tokens, assignments, environment values or repository URLs.
 
@@ -28,7 +28,9 @@ Administrators must prepare the WorkRoot's parent path and Base Image in dedicat
 
 ## Restart and migration limitations
 
-Before registration, the Worker reads ownership records and physically cleans outstanding runs. It does not accept new work without acknowledgement of their previous API lease release. If local state is lost but registration reports active runs, it does not overwrite reservations with a zero heartbeat. **Worker-authenticated API lease reconciliation is a follow-up; autonomous recovery is not complete.**
+Before registration, the Worker reads ownership records and physically cleans outstanding runs. For schema-2 records with terminal work, individual Worker authentication allows exact lease/work/resource inspection, another physical-absence check, API reconciliation and durable `released` acknowledgement. A fresh registration must confirm the same Worker, zero active runs and full configured capacity before admission. Missing, ambiguous or redirected responses are not accepted as success. See [restart verification](worker-restart-recovery.md).
+
+Schema-1 records used unrelated random run UUIDs. They remain readable for physical cleanup but are never silently adopted as API leases. Nonterminal work, lost Claim responses, unknown records, invalid credentials and unresolved remote reservations still block admission; a zero heartbeat cannot overwrite them. Recovery currently requires an online Worker. This is terminal-lease recovery, not complete autonomous recovery of every interrupted work item.
 
 Legacy `<WorkID>` directories are neither adopted nor deleted automatically. Drain the Worker and verify existing VM, lease and file ownership before rollout. Do not delete records or manually fabricate `released` files to bypass startup guards. No API Schema/Migration changes. Roll back only after a verified stop while preserving running-work state and journals; older versions do not understand the new records and must not immediately reuse the same WorkRoot.
 
@@ -49,7 +51,7 @@ KELPIE_LIBVIRT_TEST_ACK=disposable-host-only go test -tags libvirt_integration .
 
 This test creates a small blank disk, empty cloud-init and a networkless real KVM instead of using an existing image. API responses are synthetic. It tests force-stop after the blank VM does not acknowledge ACPI, and caller cancellation; it does not replace normal OS shutdown, Runner, browser, Console or production API acceptance. Success/failure ownership journals remain under `/var/tmp/kelpie-lifecycle-*`; unconfirmed files are not recursively deleted.
 
-The full Golden Image, per-work networking, actual time-budget enforcement, readiness, restart API reconciliation and concurrent two-work acceptance remain separate completion criteria. Release progress follows the fixed [MVP record](mvp-progress.md).
+The full Golden Image, per-work networking, actual time-budget enforcement, readiness, nonterminal/lost-Claim recovery and concurrent two-work acceptance remain separate completion criteria. Release progress follows the fixed [MVP record](mvp-progress.md).
 
 ### Actual Linux-inside-Mac verification — 2026-09-11
 

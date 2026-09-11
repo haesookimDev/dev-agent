@@ -1,0 +1,23 @@
+Verified dedicated local PostgreSQL 17 container; fresh isolated role/database
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 20260904_0001, Create the initial Kelpie control-plane schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260904_0001 -> 20260904_0002, Persist work correlation identifiers.
+INFO  [alembic.runtime.migration] Running upgrade 20260904_0002 -> 20260904_0003, Persist one-time OIDC login attempts and authenticated sessions.
+INFO  [alembic.runtime.migration] Running upgrade 20260904_0003 -> 20260905_0004, Add organization membership and repository grants; isolate historical work.
+INFO  [alembic.runtime.migration] Running upgrade 20260905_0004 -> 20260905_0005, Add independently revocable worker credentials and quarantine metadata.
+INFO  [alembic.runtime.migration] Running upgrade 20260905_0005 -> 20260906_0006, Add append-only identity and role-decision audit snapshots.
+INFO  [alembic.runtime.migration] Running upgrade 20260906_0006 -> 20260906_0007, Retain bounded, action-specific audit details without rewriting old snapshots.
+INFO  [alembic.runtime.migration] Running upgrade 20260906_0007 -> 20260906_0009, Distinguish background audit actors and retain delivery approval provenance.
+INFO  [alembic.runtime.migration] Running upgrade 20260906_0009 -> 20260906_0010, Retain artifact expiration intent separately from completed file deletion.
+INFO  [alembic.runtime.migration] Running upgrade 20260906_0010 -> 20260909_0011, Persist scoped progress for scheduled ordinary-artifact retention.
+=== RUN   TestDedicatedLibvirtAPIRecovery
+    libvirt_api_recovery_integration_test.go:103: preserved ownership journal: /var/tmp/kelpie-lifecycle-2234943308/e0fec201-cf78-43ce-bc8c-bfe5092bd9e5
+    libvirt_api_recovery_integration_test.go:147: real networkless KVM fixture -> new Worker process without run token -> owned cleanup -> real API ACK -> durable release -> second restart; DB audit checked by controller
+--- PASS: TestDedicatedLibvirtAPIRecovery (22.15s)
+PASS
+
+PostgreSQL verified: full capacity, zero active runs, one release event and one reconciliation audit
+.
+1 passed in 22.88s
+Removed only this invocation's fresh synthetic database and role

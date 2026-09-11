@@ -13,7 +13,7 @@ API는 Worker 재시작으로 작업별 Lease Token을 잃었거나 반환 응�
 - Lease 만료는 필수가 아닙니다. 재시작은 만료 전에도 발생하며, 만료 그 자체도 VM 종료의 증거가 아니기 때문입니다. 만료 시각을 연장하거나 작업 Token을 재발급하지 않습니다.
 - 폐기·만료된 Worker 자격증명과 격리된 Worker는 거부합니다. 개발용 공유 Token도 이 경로에서는 사용할 수 없습니다. 새 환경변수나 인증 완화는 없습니다.
 
-후속 Worker 연동은 API가 발급한 임대 UUID를 VM Run UUID로 사용하고, VM 생성 전에 작업 ID·자원과 함께 영속화해야 합니다. 현재 [Draft PR #58](https://github.com/haesookimDev/dev-agent/pull/58)의 독립 Run UUID 기록을 이 계약에 자동으로 맞는다고 가정하지 않습니다. 기존·불명확한 기록의 자동 채택, 실행 중 작업의 종료 정책, Claim 응답 자체를 잃은 경우의 복구는 별도 작업입니다.
+후속 [Worker 재시작 연동](worker-restart-recovery.md)은 API가 발급한 임대 UUID를 Schema 2 VM Run UUID로 영속화하고 실제 VM·API·PostgreSQL에서 검증했습니다. 기존 Schema 1의 독립 Run UUID를 이 계약에 자동으로 맞는다고 가정하지 않습니다. 기존·불명확한 기록의 자동 채택, 실행 중 작업의 종료 정책, Claim 응답 자체를 잃은 경우의 복구는 별도 작업입니다.
 
 ## API 계약
 
@@ -38,7 +38,7 @@ Authorization: Bearer <individual-worker-credential>
 }
 ```
 
-조회는 Token·해시·사용자 요구사항·저장소 내용을 반환하지 않습니다. 조회한 ID·자원·Version을 영속 기록과 대조하고 실제 정리를 끝낸 뒤에만 다음 요청을 보냅니다.
+조회는 Token·해시·사용자 요구사항·저장소 내용을 반환하지 않습니다. 조회한 ID·자원을 영속 기록과 대조하고 실제 정리를 끝낸 뒤, 조회 응답의 현재 Version으로 다음 요청을 보냅니다.
 
 ```http
 POST /api/workers/33333333-3333-4333-8333-333333333333/leases/11111111-1111-4111-8111-111111111111/reconcile
@@ -80,4 +80,4 @@ make test
 make lint
 ```
 
-URL이 없으면 PostgreSQL 검사는 Skip하며 통과로 계산하지 않습니다. Worker의 실제 재시작/VM 정리 통합, 작업별 네트워크·시간 예산, Preview/Console와 동시 두 작업 Acceptance는 여전히 남아 있습니다.
+URL이 없으면 PostgreSQL 검사는 Skip하며 통과로 계산하지 않습니다. 후속 종료 임대의 실제 Worker/VM 복구 증거는 [별도 기록](worker-restart-recovery.md)에 있습니다. 실행 중 작업·Claim 유실 복구, 작업별 네트워크·시간 예산, Preview/Console와 동시 두 작업 Acceptance는 여전히 남아 있습니다.

@@ -4,7 +4,7 @@
 
 ## 보장하는 순서
 
-Worker는 작업 ID와 별개인 실행 시도 UUID를 만들고, VM 명령 전에 비공개 소유권 기록을 디스크에 동기화합니다. 같은 작업의 재시도도 이전 VM 이름이나 디스크를 재사용하지 않습니다. 실행 디렉터리의 `.worker.lock`은 프로세스 간 중복 소유를 차단하며 실행 정리와 실패 보고가 끝날 때까지 유지합니다.
+Worker는 API가 Claim에 발급한 임대 UUID를 Run UUID로 사용하고, VM 명령 전에 비공개 Schema 2 소유권 기록을 디스크에 동기화합니다. 이미 존재하는 임대 디렉터리는 `released` 상태여도 재사용하지 않으며 새로운 작업 재시도 프로토콜을 추가하는 것은 아닙니다. 실행 디렉터리의 `.worker.lock`은 프로세스 간 중복 소유를 차단하며 실행 정리와 실패 보고가 끝날 때까지 유지합니다.
 
 `prepared → running(선택) → cleanup-pending → cleaned → released`는 덮어쓰지 않는 단계별 JSON 기록입니다. 기록에는 작업·실행 UUID, 자원 수량, 생성 시각만 들어가고 임대 토큰·할당 내용·환경변수·저장소 주소는 저장하지 않습니다.
 
@@ -28,7 +28,9 @@ WorkRoot 상위 경로와 Base Image는 관리자가 hypervisor에서 접근 가
 
 ## 재시작과 마이그레이션 제한
 
-등록 전에 소유권 기록을 읽고 남은 실행을 물리적으로 정리합니다. 하지만 이전 임대의 API 해제 확인이 없으면 새 작업을 받지 않습니다. 로컬 기록이 사라졌는데 등록 응답에 실행 중 임대가 있어도 Heartbeat로 0을 덮어쓰지 않습니다. **Worker 인증 기반 API 임대 재조정은 후속 작업이며 현재 자동 복구가 완료됐다는 의미가 아닙니다.**
+등록 전에 소유권 기록을 읽고 남은 실행을 물리적으로 정리합니다. 종료된 작업의 Schema 2 기록은 개별 Worker 인증으로 정확한 임대·작업·자원을 대조하고, 물리적 부재를 다시 확인한 뒤 API 복구 확인과 `released` 기록을 마칩니다. 다시 등록해 동일 Worker·실행 수 0·설정된 전체 가용 자원을 확인해야 새 작업을 받습니다. 누락·모호한 응답·Redirect를 성공으로 인정하지 않습니다. [재시작 검증](worker-restart-recovery.md)을 참고하세요.
+
+Schema 1의 독립적인 임의 Run UUID는 물리 정리를 위해 읽을 수 있지만 API 임대로 자동 채택하지 않습니다. 실행 중 작업·Claim 응답 유실·알 수 없는 기록·유효하지 않은 자격증명·서버의 미해결 예약은 여전히 새 작업 수락을 차단하며 Heartbeat로 0을 덮어쓰지 않습니다. 현재 복구에는 `online` Worker가 필요합니다. 종료 임대 복구이지 모든 중단 작업의 완전 자동 복구는 아닙니다.
 
 이전 `<WorkID>` 디렉터리는 새 UUID 기록으로 자동 채택하거나 삭제하지 않습니다. 운영 적용 전 해당 Worker를 Drain하고 기존 VM·임대·파일의 소유권을 확인해야 합니다. 기록을 지우거나 `released` 파일을 수동 생성해서 시작 제한을 우회하지 마세요. API Schema/Migration은 변경하지 않습니다. 롤백은 실행 중 작업과 기록을 보존한 채 검증된 중지 절차 뒤에 수행하며, 구버전은 새 기록을 이해하지 못하므로 같은 WorkRoot에서 바로 재실행하지 않습니다.
 
@@ -49,7 +51,7 @@ KELPIE_LIBVIRT_TEST_ACK=disposable-host-only go test -tags libvirt_integration .
 
 이 검사는 기존 이미지 대신 작은 빈 디스크, 빈 cloud-init, 네트워크 없는 실제 KVM을 만듭니다. API 응답은 합성입니다. 빈 VM의 ACPI 미응답에 따른 강제 종료와 호출자 취소를 검사하며 OS 정상 종료·Runner·브라우저·Console·운영 API Acceptance를 대신하지 않습니다. 성공·실패의 소유권 기록을 `/var/tmp/kelpie-lifecycle-*`에 보존하고 정리가 확인되지 않은 파일을 재귀 삭제하지 않습니다.
 
-전체 Golden Image·작업별 네트워크·실제 시간 예산 강제·Readiness·재시작 API 재조정·동시 두 작업 Acceptance는 여전히 별도 완료 조건입니다. 현재 릴리즈 진행률은 [MVP 기록](mvp-progress.md)의 고정 기준을 따릅니다.
+전체 Golden Image·작업별 네트워크·실제 시간 예산 강제·Readiness·실행 중 작업/Claim 유실 복구·동시 두 작업 Acceptance는 여전히 별도 완료 조건입니다. 현재 릴리즈 진행률은 [MVP 기록](mvp-progress.md)의 고정 기준을 따릅니다.
 
 ### 실제 Mac 내부 Linux 검증 — 2026-09-11
 
