@@ -28,4 +28,6 @@ KELPIE_LIBVIRT_TEST_ACK=disposable-host-only go test -tags libvirt_integration .
 
 Firmware Fixture는 NIC/Graphics를 `none`으로 교체하고 빈 디스크·모의 HTTP·가짜 임대를 사용합니다. 명령 취소 사례에서는 실제 `virt-install` 성공 뒤 테스트 Wrapper를 대기시켜 취소합니다. 실제 libvirt 내부 RPC가 처리 중인 시점의 강제 중단·Golden Image/Runner·정상 OS 종료·전체 VM 시간 예산·네트워크/GUI·동시 두 작업은 검증하지 않았습니다. UI 변경이 없어 화면/키보드 검사는 해당하지 않습니다.
 
-선행 PR #60/#58과 최종 Head CI/통합 조건이 필요하므로 Draft를 유지합니다. 적용/롤백 모두 검증된 중지 후 수행하고, 미확인 정리의 기록·예약은 보존합니다. 느린 Host가 45초를 초과하면 작업 실패/정리 경로로 들어가며 제한을 자동 연장하거나 증거를 성공으로 바꾸지 않습니다. MVP 고정 완료율은 1/7(14.3%)입니다.
+선행 PR #58/#60은 `main`에 병합됐으며 PR #61은 `main`을 Base로 명령 제한 변경만 비교합니다. 이 기능의 정상·실패·취소 경로는 위 실제 증거로 검증됐습니다. 전체 Golden Image/Runner·네트워크·GUI·VM 시간 예산은 별도 기능과 MVP 출시 조건이지 이 PR의 Draft 유지 사유가 아닙니다. 최종 Head CI·리뷰·병합 상태는 [PR #61](https://github.com/haesookimDev/dev-agent/pull/61)에 기록합니다. 적용/롤백 모두 검증된 중지 후 수행하고, 미확인 정리의 기록·예약은 보존합니다. 느린 Host가 45초를 초과하면 작업 실패/정리 경로로 들어가며 제한을 자동 연장하거나 증거를 성공으로 바꾸지 않습니다. MVP 고정 완료율은 1/7(14.3%)입니다.
+
+2026-09-13 선행 변경을 통합한 `ec30f6a`에서 `make test-worker`(daemon 7.873초), `make lint`와 Diff 검사가 통과했습니다. 실제 검증 Commit 이후 실행 코드·테스트·설정은 동일하며, 충돌은 한·영 진행 기록에서만 해결했습니다. 원본 실제 로그 Hash와 검증 범위를 대조했으며 같은 VM 검사를 새로 실행했다고 표현하지 않습니다. 문서 전용 후속이므로 로컬 전체 `make test`와 실제 VM 검사는 반복하지 않습니다.
