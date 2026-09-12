@@ -1,0 +1,9 @@
+=== RUN   TestDedicatedLibvirtQuarantinePackets
+    libvirt_network_packet_integration_test.go:50: anchored fixture image: QEMU read-only ACL; original SHA256 b2de98bf1725ede0319b2e50c74d4dc9de3499846cdeb3b7ca880b0bd22963a6
+    libvirt_network_packet_integration_test.go:78: preserved packet-test journal: /var/tmp/kelpie-network-2769806878/0957fadf-4379-4f3a-8e4b-5b3685559eec
+    libvirt_network_packet_integration_test.go:191: out: 12 guest/bridge frames sent; exact TAP DROP counter 5 -> 17
+    libvirt_network_packet_integration_test.go:191: in: 12 guest/bridge frames sent; exact TAP DROP counter 6 -> 18
+    libvirt_network_packet_integration_test.go:204: actual Golden Image boot and bidirectional Ethernet quarantine verified; owned VM/network/filter/bridge/disks absent; synthetic local release only
+    libvirt_packet_image_integration_test.go:83: base image owner/private ACL restored; unchanged SHA256 b2de98bf1725ede0319b2e50c74d4dc9de3499846cdeb3b7ca880b0bd22963a6
+--- PASS: TestDedicatedLibvirtQuarantinePackets (109.96s)
+PASS
