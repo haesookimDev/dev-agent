@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -143,6 +144,14 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 		!strings.Contains(args, "--name\n"+runs[0].Record.Domain+"\n") ||
 		!strings.Contains(args, "description="+domainOwner(runs[0].Record)+"\n") || strings.Contains(args, claim.LeaseToken) {
 		t.Fatal("launch lost ownership metadata or leaked a lease argument")
+	}
+	nvram := filepath.Join(store.root.Name(), runs[0].Record.RunID, "nvram.fd")
+	if runtime.GOARCH == "arm64" && !strings.Contains(args, "--boot\nuefi,nvram="+nvram+"\n") ||
+		runtime.GOARCH == "amd64" && strings.Contains(args, "--boot\n") ||
+		!strings.Contains(args, "--virt-type\nkvm\n") ||
+		runtime.GOARCH == "arm64" && !strings.Contains(args, "/seed.iso,device=cdrom,bus=scsi\n") ||
+		runtime.GOARCH == "amd64" && !strings.Contains(args, "/seed.iso,device=cdrom\n") {
+		t.Fatal("launch did not require KVM, owned UEFI variables and an ARM-compatible seed bus")
 	}
 	for _, artifact := range runArtifacts {
 		if _, err := os.Stat(filepath.Join(store.root.Name(), runs[0].Record.RunID, artifact)); !errors.Is(err, os.ErrNotExist) {
