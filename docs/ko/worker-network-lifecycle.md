@@ -62,4 +62,23 @@ KELPIE_LIBVIRT_TEST_ACK=disposable-host-only /tmp/worker-network-provision.test 
 
 ## 남은 조건
 
-Executor 연결, Host/Metadata/다른 VM 차단, 허용 송신과 기존 연결 격리가 남았습니다. 실제 동시 VM으로 확인한 뒤 릴리즈합니다. 이 검증 기록은 PR 제출 이전으로 정확한 Head의 GitHub CI 결과가 없으며, 미병합 상태를 유지하고 이후 CI는 PR에 기록합니다. [MVP 완료율](mvp-progress.md)은 1/7(14.3%)입니다.
+Executor 연결, Host/Metadata/다른 VM 차단, 허용 송신과 기존 연결 격리는 별도 기능·MVP 출시 조건입니다. 이 PR의 네트워크 생성·충돌 거부·정리·복구 검증을 대신하지도, 검증된 기반 PR의 Draft 유지 사유가 되지도 않습니다. 선행 #61은 병합됐으며 [PR #62](https://github.com/haesookimDev/dev-agent/pull/62)에 최종 Head CI·리뷰·병합 상태를 기록합니다. [MVP 완료율](mvp-progress.md)은 1/7(14.3%)입니다.
+
+## 병합 전 회귀 수정과 실제 재검증 — 2026-09-13
+
+`487a337`은 생성 전부터 존재한 동일 식별자 Filter를 생성기가 거부한 뒤, 정리기가 예약 기록만으로 인수하던 문제를 수정합니다. `TestRunNetworkRejectedFilterCannotBecomeCleanupOwnership`가 수정 전 실패했고 수정 후 통과했습니다. Network/Filter 변경 전 비공개 `network.xml`/`filter.xml` 두 생성 기록의 정확한 바이트·일반 파일·소유자·단일 링크·권한을 확인합니다. 기록 누락·일부 생성·변조·공개 권한·심볼릭/하드 링크·디렉터리는 반환과 외부 자원 변경을 막습니다. 자원이 이미 없으면 부분 파일 정리와 정상 복구를 계속할 수 있습니다.
+
+실제 검사까지 포함한 최종 소스는 `d5547cb3e8499f35d7b0c1f59335071d17efa697`입니다. `make test-worker`(daemon 9.090초), `make lint`, 네트워크·동시 기록·재시작 집중 Race(3.490초), Linux ARM64 `libvirt_integration` Tag 포함 Vet가 통과했습니다. 기존과 같은 전용 Mac/Lima/libvirt 환경의 비특권 Worker에서 실제 정의/활성 Network 정리 두 경우 3.33초, 기존 Filter 충돌 보존 1.47초, 정상 생성/활성화 직후 취소와 별도 OS 프로세스 복구 두 경우 4.67초가 통과했습니다. 같은 Linux 실행에서 새 단위 회귀도 통과했습니다.
+
+기존 Filter 충돌 검사는 Worker 외부에 테스트 소유 Filter를 먼저 정의한 뒤 생성·정리 거부와 예약 유지, Filter 불변을 확인합니다. 이후 테스트가 자체 소유권을 재확인해 그 Fixture만 제거하고 부재 확인·합성 로컬 반환을 기록합니다. 이는 Worker가 기존 자원을 인수한 것도, 실제 API/PostgreSQL 반환도 아닙니다. 마지막 조회에서 Domain·소유 Network/Filter/Bridge/Binding·dnsmasq 누수는 없고 기존 비활성 `default` Network와 기본 Filter 목록을 보존했습니다. 테스트 자원·XML은 제거됐고 재생성 가능하며, 비공개 저널·바이너리·기존 Image는 보존했습니다.
+
+Go 1.24.1 Linux ARM64 바이너리 SHA256 `37bb442367ca68fa11826d90d0a35a56bfa7f32e49accc0a01b1a14a6163d252`는 Mac/실행 Host와 최종 Commit 재빌드에서 바이트가 일치합니다. [원본 실제 로그](../assets/worker-lifecycle/network-ownership.log) SHA256은 `d66ecb26a77dcfc0d939047a9b945d8ab2e3a3229f4cb51f9d9fd5a97bb8251c`입니다. 위의 이전 실행 증거와 구분합니다.
+
+```sh
+cd apps/worker
+GOOS=linux GOARCH=arm64 go test -c -tags libvirt_integration -o /tmp/worker-network-ownership.test ./internal/daemon
+# Copy to the dedicated Linux host and run as its unprivileged Worker user:
+KELPIE_LIBVIRT_TEST_ACK=disposable-host-only /tmp/worker-network-ownership.test -test.run '^(TestDedicatedLibvirtNetworkCleanup|TestDedicatedLibvirtNetworkProvisioning|TestDedicatedLibvirtExistingFilterIsNotAdopted|TestRunNetworkRejectedFilterCannotBecomeCleanupOwnership|TestRunNetworkCleanupRequiresPrivateCreationIntent)$' -test.count=1 -test.v
+```
+
+Schema 3 형식은 바꾸지 않습니다. 이전 생산 생성기의 정상 기록은 이미 두 XML을 먼저 영속 저장했으므로 호환됩니다. 외부 자원이 남았는데 생성 기록이 없거나 손상되면 자동 정리를 거부하고 기록·예약을 보존합니다. 기록을 수동 생성하거나 삭제하여 우회하지 않습니다. 롤백은 호환 Worker로 물리 정리·API 확인 후 수행하며 이번 거부 경계를 모르는 이전 바이너리로 미해결 충돌을 복구하지 않습니다. 읽기 전용 보안 리뷰가 제기한 동시 관리자 재설정의 확인/변경 경쟁은 기존 미지원 Host 계약의 한계로 유지합니다. 이번 수정은 동시 관리자 변경 없이 재현된 기존 Filter 인수만 해결하며 Host 전역 원자성을 주장하지 않습니다. 새 의존성·환경변수·CI Job은 없습니다. Worker 한정 변경이라 로컬 전체 `make test`는 반복하지 않았고, UI/Guest NIC 변경이 없어 브라우저·GUI·패킷 검사는 해당하지 않습니다.

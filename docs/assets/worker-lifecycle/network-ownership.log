@@ -1,0 +1,51 @@
+=== RUN   TestDedicatedLibvirtNetworkCleanup
+=== RUN   TestDedicatedLibvirtNetworkCleanup/defined
+    libvirt_network_cleanup_integration_test.go:97: preserved network ownership journal: /var/tmp/kelpie-network-735724334/7cc5fb4e-d411-4722-8cca-cce3f1073111
+    libvirt_network_cleanup_integration_test.go:156: owned network/filter/bridge absent; pre-existing networks preserved; durable released
+=== RUN   TestDedicatedLibvirtNetworkCleanup/active
+    libvirt_network_cleanup_integration_test.go:97: preserved network ownership journal: /var/tmp/kelpie-network-1923399854/1879905e-0b02-46af-9fe1-dae626acdffa
+    libvirt_network_cleanup_integration_test.go:156: owned network/filter/bridge absent; pre-existing networks preserved; durable released
+--- PASS: TestDedicatedLibvirtNetworkCleanup (3.33s)
+    --- PASS: TestDedicatedLibvirtNetworkCleanup/defined (1.42s)
+    --- PASS: TestDedicatedLibvirtNetworkCleanup/active (1.91s)
+=== RUN   TestDedicatedLibvirtExistingFilterIsNotAdopted
+    libvirt_network_collision_integration_test.go:58: preserved collision journal: /var/tmp/kelpie-network-1606579732/6aabcdba-b0c8-407f-95b3-b55a65fa2982
+    libvirt_network_collision_integration_test.go:121: actual pre-existing exact-match filter preserved after provisioning/cleanup rejection; reservation retained
+--- PASS: TestDedicatedLibvirtExistingFilterIsNotAdopted (1.47s)
+=== RUN   TestDedicatedLibvirtNetworkProvisioning
+=== RUN   TestDedicatedLibvirtNetworkProvisioning/normal
+    libvirt_network_provision_integration_test.go:68: preserved provisioned network journal: /var/tmp/kelpie-network-2494114814/d5d8e237-d596-45f5-852c-4a0832701fef
+    libvirt_network_provision_integration_test.go:121: === RUN   TestDedicatedLibvirtNetworkRecovery
+            libvirt_network_cleanup_integration_test.go:71: new process recovered recorded network/filter/bridge cleanup; synthetic release acknowledged
+        --- PASS: TestDedicatedLibvirtNetworkRecovery (1.34s)
+        PASS
+    libvirt_network_provision_integration_test.go:135: production network provisioner verified; new process confirmed network/filter/bridge/XML cleanup
+=== RUN   TestDedicatedLibvirtNetworkProvisioning/cancel-after-activation
+    libvirt_network_provision_integration_test.go:68: preserved provisioned network journal: /var/tmp/kelpie-network-3693809788/7679f9db-2256-4e89-8ee8-9069a5a70565
+    libvirt_network_provision_integration_test.go:121: === RUN   TestDedicatedLibvirtNetworkRecovery
+            libvirt_network_cleanup_integration_test.go:71: new process recovered recorded network/filter/bridge cleanup; synthetic release acknowledged
+        --- PASS: TestDedicatedLibvirtNetworkRecovery (1.34s)
+        PASS
+    libvirt_network_provision_integration_test.go:135: production network provisioner verified; new process confirmed network/filter/bridge/XML cleanup
+--- PASS: TestDedicatedLibvirtNetworkProvisioning (4.67s)
+    --- PASS: TestDedicatedLibvirtNetworkProvisioning/normal (2.35s)
+    --- PASS: TestDedicatedLibvirtNetworkProvisioning/cancel-after-activation (2.32s)
+=== RUN   TestRunNetworkCleanupRequiresPrivateCreationIntent
+=== RUN   TestRunNetworkCleanupRequiresPrivateCreationIntent/absent
+=== RUN   TestRunNetworkCleanupRequiresPrivateCreationIntent/partial
+=== RUN   TestRunNetworkCleanupRequiresPrivateCreationIntent/tampered
+=== RUN   TestRunNetworkCleanupRequiresPrivateCreationIntent/public
+=== RUN   TestRunNetworkCleanupRequiresPrivateCreationIntent/symlink
+=== RUN   TestRunNetworkCleanupRequiresPrivateCreationIntent/hardlink
+=== RUN   TestRunNetworkCleanupRequiresPrivateCreationIntent/directory
+--- PASS: TestRunNetworkCleanupRequiresPrivateCreationIntent (0.03s)
+    --- PASS: TestRunNetworkCleanupRequiresPrivateCreationIntent/absent (0.00s)
+    --- PASS: TestRunNetworkCleanupRequiresPrivateCreationIntent/partial (0.01s)
+    --- PASS: TestRunNetworkCleanupRequiresPrivateCreationIntent/tampered (0.00s)
+    --- PASS: TestRunNetworkCleanupRequiresPrivateCreationIntent/public (0.00s)
+    --- PASS: TestRunNetworkCleanupRequiresPrivateCreationIntent/symlink (0.00s)
+    --- PASS: TestRunNetworkCleanupRequiresPrivateCreationIntent/hardlink (0.00s)
+    --- PASS: TestRunNetworkCleanupRequiresPrivateCreationIntent/directory (0.00s)
+=== RUN   TestRunNetworkRejectedFilterCannotBecomeCleanupOwnership
+--- PASS: TestRunNetworkRejectedFilterCannotBecomeCleanupOwnership (0.00s)
+PASS
