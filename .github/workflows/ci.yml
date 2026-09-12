@@ -154,11 +154,18 @@ jobs:
           make test-worker test-gateway
           (cd apps/worker && go vet ./...)
           (cd apps/gateway && go vet ./...)
-      - name: Compile and vet opt-in libvirt fixtures
-        working-directory: apps/worker
+      - name: Install isolated kernel-test dependency
         run: |
-          go test -tags libvirt_integration -run '^$' ./internal/daemon
-          go vet -tags libvirt_integration ./internal/daemon
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends nftables
+      - name: Compile, vet and check isolated kernel logging
+        run: |
+          log_test_dir="$(mktemp -d "$RUNNER_TEMP/kelpie-network-log.XXXXXX")"
+          (cd apps/worker && CGO_ENABLED=0 go test -tags libvirt_integration -c -o "$log_test_dir/test" ./internal/daemon)
+          (cd apps/worker && go vet -tags libvirt_integration ./internal/daemon)
+          sudo /usr/bin/unshare --net /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C \
+            KELPIE_NETWORK_LOG_TEST_ACK=disposable-isolated-netns-only \
+            "$log_test_dir/test" -test.timeout=30s -test.run='^TestIsolatedKernelNetworkLog' -test.v
       - name: Cache pinned promtool archive
         id: promtool-cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
