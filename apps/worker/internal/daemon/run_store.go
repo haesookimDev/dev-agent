@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -23,13 +25,16 @@ const maxRunRecord = 4096
 // assignment, environment, repository or user-supplied path belongs here.
 // Schema 2 binds RunID to the API's immutable lease UUID. Schema 1 used a local
 // random UUID and remains readable for physical cleanup, never API recovery.
+// Schema 3 additionally owns the per-run network; older schemas cannot acquire
+// that authority by appending a network field.
 type runRecord struct {
-	Schema    int       `json:"schema"`
-	RunID     string    `json:"run_id"`
-	WorkID    string    `json:"work_id"`
-	Domain    string    `json:"domain"`
-	Resources Resources `json:"resources"`
-	CreatedAt time.Time `json:"created_at"`
+	Schema    int         `json:"schema"`
+	RunID     string      `json:"run_id"`
+	WorkID    string      `json:"work_id"`
+	Domain    string      `json:"domain"`
+	Resources Resources   `json:"resources"`
+	CreatedAt time.Time   `json:"created_at"`
+	Network   *runNetwork `json:"network,omitempty"`
 }
 
 type runPhase struct {
@@ -48,6 +53,7 @@ type ownedRun struct {
 // operations cannot escape it through a replaced path component. The lock is
 // never unlinked: removing a locked file would permit two owners on two inodes.
 type runStore struct {
+	mu   sync.Mutex
 	root *os.Root
 	lock *os.File
 }
@@ -89,6 +95,8 @@ func openRunStore(path string) (*runStore, error) {
 }
 
 func (s *runStore) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_ = s.lock.Close()
 	_ = s.root.Close()
 }
@@ -123,6 +131,41 @@ func validStoreDirectory(root *os.Root, name string) bool {
 }
 
 func (s *runStore) Create(workID, leaseID string, resources Resources) (ownedRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.create(workID, leaseID, resources, nil)
+}
+
+// CreateNetworked atomically reserves an address and persists its ownership.
+// The caller must also supply a freshly verified host exclusion inventory;
+// this operation neither creates libvirt resources nor certifies isolation.
+func (s *runStore) CreateNetworked(workID, leaseID string, resources Resources, pool string, excluded []netip.Prefix) (ownedRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	runs, err := s.list()
+	if err != nil || len(runs) >= 4095 {
+		return ownedRun{}, errRunStore
+	}
+	var occupied []runNetwork
+	for _, run := range runs {
+		if run.Phase == "released" {
+			continue
+		}
+		if run.Record.Network == nil {
+			return ownedRun{}, errRunNetwork // unresolved legacy networking is not an empty pool
+		}
+		occupied = append(occupied, *run.Record.Network)
+	}
+	network, err := allocateRunNetwork(leaseID, pool, occupied, excluded)
+	if err != nil {
+		return ownedRun{}, err
+	}
+	return s.create(workID, leaseID, resources, &network)
+}
+
+// Internal operations below run under mu. Public readers cannot observe the
+// directory between mkdir and its durable initial record.
+func (s *runStore) create(workID, leaseID string, resources Resources, network *runNetwork) (ownedRun, error) {
 	if !workUUID.MatchString(workID) || !runUUID.MatchString(leaseID) || resources.CPU < 1 || resources.MemoryMB < 1 || resources.DiskGB < 1 {
 		return ownedRun{}, errRunStore
 	}
@@ -132,6 +175,9 @@ func (s *runStore) Create(workID, leaseID string, resources Resources) (ownedRun
 	}
 	record := runRecord{Schema: 2, RunID: leaseID, WorkID: workID, Domain: "kelpie-" + leaseID,
 		Resources: resources, CreatedAt: time.Now().UTC()}
+	if network != nil {
+		record.Schema, record.Network = 3, network
+	}
 	if err := s.writeExclusive(leaseID+"/run.json", record); err != nil {
 		// A partial record is preserved and fails recovery closed, never reused.
 		return ownedRun{}, err
@@ -143,6 +189,12 @@ func (s *runStore) Create(workID, leaseID string, resources Resources) (ownedRun
 }
 
 func (s *runStore) Load(uuid string) (ownedRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.load(uuid)
+}
+
+func (s *runStore) load(uuid string) (ownedRun, error) {
 	if !runUUID.MatchString(uuid) {
 		return ownedRun{}, errRunStore
 	}
@@ -153,9 +205,12 @@ func (s *runStore) Load(uuid string) (ownedRun, error) {
 	if err := s.readRecord(uuid+"/run.json", &record); err != nil {
 		return ownedRun{}, err
 	}
-	if (record.Schema != 1 && record.Schema != 2) || record.RunID != uuid || !workUUID.MatchString(record.WorkID) ||
+	if (record.Schema != 1 && record.Schema != 2 && record.Schema != 3) || record.RunID != uuid || !workUUID.MatchString(record.WorkID) ||
 		record.Domain != "kelpie-"+uuid || record.Resources.CPU < 1 || record.Resources.MemoryMB < 1 ||
 		record.Resources.DiskGB < 1 || record.CreatedAt.IsZero() || record.CreatedAt.Location() != time.UTC {
+		return ownedRun{}, errRunStore
+	}
+	if record.Schema == 3 && (record.Network == nil || !record.Network.valid(uuid)) || record.Schema != 3 && record.Network != nil {
 		return ownedRun{}, errRunStore
 	}
 	result := ownedRun{Record: record, Phase: "prepared", At: record.CreatedAt}
@@ -182,7 +237,9 @@ func nextRunPhase(current, next string) bool {
 }
 
 func (s *runStore) Advance(uuid, phase string) (ownedRun, error) {
-	run, err := s.Load(uuid)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	run, err := s.load(uuid)
 	if err != nil {
 		return ownedRun{}, err
 	}
@@ -199,10 +256,16 @@ func (s *runStore) Advance(uuid, phase string) (ownedRun, error) {
 	if err := s.writeExclusive(uuid+"/"+phase+".json", runPhase{RunID: uuid, Phase: phase, At: at}); err != nil {
 		return ownedRun{}, err
 	}
-	return s.Load(uuid)
+	return s.load(uuid)
 }
 
 func (s *runStore) List() ([]ownedRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.list()
+}
+
+func (s *runStore) list() ([]ownedRun, error) {
 	dir, err := s.root.Open(".")
 	if err != nil {
 		return nil, errRunStore
@@ -218,7 +281,7 @@ func (s *runStore) List() ([]ownedRun, error) {
 		if entry.Name() == ".worker.lock" {
 			continue
 		}
-		run, err := s.Load(entry.Name())
+		run, err := s.load(entry.Name())
 		if err != nil {
 			// Unknown/legacy directories are not evidence of ownership.
 			return nil, err

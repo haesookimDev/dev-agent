@@ -1,0 +1,19 @@
+=== RUN   TestDedicatedLibvirtNetworkProvisioning
+=== RUN   TestDedicatedLibvirtNetworkProvisioning/normal
+    libvirt_network_provision_integration_test.go:68: preserved provisioned network journal: /var/tmp/kelpie-network-2661318240/0fa5624a-529b-4383-8ac6-5dc74d078ccd
+    libvirt_network_provision_integration_test.go:121: === RUN   TestDedicatedLibvirtNetworkRecovery
+            libvirt_network_cleanup_integration_test.go:71: new process recovered recorded network/filter/bridge cleanup; synthetic release acknowledged
+        --- PASS: TestDedicatedLibvirtNetworkRecovery (1.31s)
+        PASS
+    libvirt_network_provision_integration_test.go:135: production network provisioner verified; new process confirmed network/filter/bridge/XML cleanup
+=== RUN   TestDedicatedLibvirtNetworkProvisioning/cancel-after-activation
+    libvirt_network_provision_integration_test.go:68: preserved provisioned network journal: /var/tmp/kelpie-network-1299698436/605ee993-98a1-4854-ae4a-a8ce10c83e8e
+    libvirt_network_provision_integration_test.go:121: === RUN   TestDedicatedLibvirtNetworkRecovery
+            libvirt_network_cleanup_integration_test.go:71: new process recovered recorded network/filter/bridge cleanup; synthetic release acknowledged
+        --- PASS: TestDedicatedLibvirtNetworkRecovery (1.30s)
+        PASS
+    libvirt_network_provision_integration_test.go:135: production network provisioner verified; new process confirmed network/filter/bridge/XML cleanup
+--- PASS: TestDedicatedLibvirtNetworkProvisioning (4.61s)
+    --- PASS: TestDedicatedLibvirtNetworkProvisioning/normal (2.37s)
+    --- PASS: TestDedicatedLibvirtNetworkProvisioning/cancel-after-activation (2.24s)
+PASS

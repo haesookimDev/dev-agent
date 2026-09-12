@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -34,11 +35,22 @@ func recoveryDaemon(server *httptest.Server, path string) *Daemon {
 }
 
 func TestRestartReconcilesTerminalLeaseBeforeAdmission(t *testing.T) {
-	for _, state := range []string{"active", "released"} {
+	for _, state := range []string{"active", "released", "network-active", "network-released"} {
 		t.Run(state, func(t *testing.T) {
 			emptyDomainInventory(t)
 			store := newTestRunStore(t)
-			run := createTestRun(t, store)
+			leaseState := strings.TrimPrefix(state, "network-")
+			var run ownedRun
+			if leaseState != state {
+				emptyNetworkInventory(t)
+				var err error
+				run, err = store.CreateNetworked(storeTestWork, networkTestRun, testResources, "10.240.0.0/30", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				run = createTestRun(t, store)
+			}
 			path := store.root.Name()
 			artifact := filepath.Join(path, run.Record.RunID, "user-data")
 			if err := os.WriteFile(artifact, []byte("synthetic assignment"), 0600); err != nil {
@@ -59,7 +71,7 @@ func TestRestartReconcilesTerminalLeaseBeforeAdmission(t *testing.T) {
 						t.Error("registration preceded physical cleanup")
 					}
 					active := 0
-					if count == 1 && state == "active" {
+					if count == 1 && leaseState == "active" {
 						active = 1
 					}
 					if count > 1 && reconciliations.Load() != 1 {
@@ -69,7 +81,7 @@ func TestRestartReconcilesTerminalLeaseBeforeAdmission(t *testing.T) {
 				case r.Method == http.MethodGet:
 					inspections.Add(1)
 					snapshot := leaseClientSnapshot()
-					snapshot.LeaseID, snapshot.State = run.Record.RunID, state
+					snapshot.LeaseID, snapshot.State = run.Record.RunID, leaseState
 					_ = json.NewEncoder(w).Encode(snapshot)
 				case strings.HasSuffix(r.URL.Path, "/reconcile"):
 					reconciliations.Add(1)
@@ -109,7 +121,7 @@ func TestRestartReconcilesTerminalLeaseBeforeAdmission(t *testing.T) {
 			}
 			defer reopened.Close()
 			final, err := reopened.Load(run.Record.RunID)
-			if err != nil || final.Phase != "released" || final.Record != run.Record {
+			if err != nil || final.Phase != "released" || !reflect.DeepEqual(final.Record, run.Record) {
 				t.Fatal("recovery did not retain identity with a durable release")
 			}
 		})

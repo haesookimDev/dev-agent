@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,11 +47,12 @@ func queryVirsh(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 type vmCleanup struct {
-	store *runStore
-	runID string
-	query vmQuery
-	grace time.Duration
-	poll  time.Duration
+	store      *runStore
+	runID      string
+	query      vmQuery
+	grace      time.Duration
+	poll       time.Duration
+	interfaces func() ([]net.Interface, error)
 }
 
 func newVMCleanup(store *runStore, runID string) *vmCleanup {
@@ -322,7 +324,7 @@ func (c *vmCleanup) verifyXMLReferences(data []byte) error {
 	return nil
 }
 
-var runArtifacts = []string{"root.qcow2", "seed.iso", "meta-data", "user-data", "nvram.fd"}
+var runArtifacts = []string{"root.qcow2", "seed.iso", "meta-data", "user-data", "nvram.fd", "network.xml", "filter.xml"}
 
 func (c *vmCleanup) removeArtifacts() error {
 	dir, err := c.store.root.Open(c.runID)
@@ -387,6 +389,9 @@ func (c *vmCleanup) Cleanup(ctx context.Context) error {
 		return err
 	}
 	if err := c.verifyNoReferences(ctx, ids); err != nil {
+		return err
+	}
+	if err := c.cleanupNetwork(ctx, run); err != nil {
 		return err
 	}
 	if run.Phase == "cleaned" || run.Phase == "released" {

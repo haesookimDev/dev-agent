@@ -28,7 +28,7 @@ func (d *Daemon) prepareVMRecovery(ctx context.Context) (*runStore, error) {
 		if run.Phase == "released" {
 			continue
 		}
-		unbound = unbound || run.Record.Schema != 2
+		unbound = unbound || run.Record.Schema == 1
 		if err := newVMCleanup(store, run.Record.RunID).Cleanup(ctx); err != nil {
 			return fail(err)
 		}
@@ -54,7 +54,7 @@ func (d *Daemon) reconcileVMLeases(ctx context.Context, store *runStore, worker 
 		if run.Phase == "released" {
 			continue
 		}
-		if run.Record.Schema != 2 || run.Phase != "cleaned" {
+		if run.Record.Schema == 1 || run.Phase != "cleaned" {
 			return Worker{}, errRunReconciliation
 		}
 		snapshot, err := d.client.InspectLease(ctx, worker.ID, run.Record.RunID)
