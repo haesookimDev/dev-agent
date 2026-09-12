@@ -71,7 +71,9 @@ ARTIFACT_ROOT="$restore_root" .venv/bin/python -m app.artifact_backup_admin veri
 
 ## 회귀·CI·실제 확인
 
-`make test-api`에 기존 파일 경계 50개·CLI 11개와 `test_artifact_backup_retention.py`의 V1/V2·만료·재백업 회귀 29개를 포함합니다. 같은 테스트용 PostgreSQL 서버를 지정한 `KELPIE_TEST_POSTGRES_URL`·`KELPIE_TEST_POSTGRES_CONTAINER`가 있으면 아래 실제 복원 8개도 실행합니다. 없으면 PostgreSQL 관련 검증은 Skip되며 성공 증거가 아닙니다.
+`make test-api`에 파일 경계 51개·CLI 11개와 `test_artifact_backup_retention.py`의 V1/V2·만료·재백업 회귀 29개를 포함합니다. 같은 테스트용 PostgreSQL 서버를 지정한 `KELPIE_TEST_POSTGRES_URL`·`KELPIE_TEST_POSTGRES_CONTAINER`가 있으면 아래 실제 복원 8개도 실행합니다. 없으면 PostgreSQL 관련 검증은 Skip되며 성공 증거가 아닙니다.
+
+2026-09-13 수정 `dd35a8e26c9cf4953984015c344a6d6827860d14`는 기존 대상 링크를 거부하기 전에 해석하여 접근 시간을 바꾸던 문제를 막습니다. 파일·디렉터리·정상/끊어진 링크를 `lstat()`로 먼저 거부하고, 새 경로의 원본 내부 배치 검사·배타적 생성은 유지합니다. 수정 전 4개 집중 회귀 실패 → 수정 후 파일 경계 51개 통과, `make test-api` 1196 통과/153 조건부 Skip(156.72초), `make lint` 통과입니다. Mac의 격리된 합성 SQLite DB/파일에서 실제 별도 CLI 프로세스로 생성→검증→복원과 바이트 일치, 네 종류 기존 대상의 생성/복원 거부·접근 시간을 포함한 메타데이터 불변, 원본 DB/파일 불변을 확인했습니다. 테스트용 임시 데이터만 정리했습니다. HTTP/UI/DB Schema/Manifest/환경변수 변경은 없으며 새 PostgreSQL·브라우저·운영 복구 증거는 아닙니다. 최종 Head CI와 병합 상태는 수정 PR에 기록합니다.
 
 ```sh
 .venv/bin/python -m pytest -q apps/api/tests/test_postgres_restore.py \
