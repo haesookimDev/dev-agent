@@ -52,3 +52,35 @@ func TestLibvirtConfigRejectsUnsafeNetworkPool(t *testing.T) {
 		}
 	}
 }
+
+func TestLibvirtInternetEnvironmentRequiresCompleteExplicitOptIn(t *testing.T) {
+	t.Setenv("KELPIE_WORKER_TOKEN_FILE", "")
+	t.Setenv("KELPIE_WORKER_TOKEN", "12345678901234567890123456789012")
+	t.Setenv("KELPIE_EXECUTOR", "libvirt")
+	t.Setenv("KELPIE_GUEST_CONTROL_URL", "https://control.example.test")
+	t.Setenv("KELPIE_GUEST_CONTROL_IPV4", "192.0.2.7")
+	t.Setenv("KELPIE_GUEST_CONTROL_CA_FILE", "")
+	t.Setenv("KELPIE_NETWORK_POOL", "10.240.0.0/16")
+	for _, scenario := range []struct {
+		mode, dns, denied string
+		valid             bool
+	}{
+		{"", "", "", true}, {"disabled", "", "", true},
+		{"logged-public-ipv4", "1.1.1.1", "203.0.113.0/24", true},
+		{"", "1.1.1.1", "", false}, {"disabled", "", "203.0.113.0/24", false},
+		{"logged-public-ipv4", "1.1.1.1", "", false},
+		{"logged-public-ipv4", "192.168.1.1", "203.0.113.0/24", false},
+		{"public", "1.1.1.1", "203.0.113.0/24", false},
+	} {
+		t.Setenv("KELPIE_GUEST_INTERNET", scenario.mode)
+		t.Setenv("KELPIE_GUEST_DNS_IPV4", scenario.dns)
+		t.Setenv("KELPIE_GUEST_DENIED_IPV4", scenario.denied)
+		config, err := ConfigFromEnv()
+		if (err == nil) != scenario.valid {
+			t.Fatalf("unexpected opt-in validity for mode %q", scenario.mode)
+		}
+		if err == nil && (config.GuestInternet != scenario.mode || config.GuestDNSIPv4 != scenario.dns || config.GuestDeniedIPv4 != scenario.denied) {
+			t.Fatal("explicit settings changed while loading environment")
+		}
+	}
+}

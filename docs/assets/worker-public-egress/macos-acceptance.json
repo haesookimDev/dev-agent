@@ -1,0 +1,88 @@
+{
+  "verified_on": "2026-09-13",
+  "environment": "Acknowledged disposable Ubuntu ARM64 libvirt/KVM guest on the local Mac Lima lab",
+  "production_commit": "727ae082ca8efee7f73668acf5d7cf07b4b2ba44",
+  "fixture_commit": "0596ba2cad3dbb1ff45b66148f084234779409a1",
+  "test_binary_sha256": "8cb61cc02ecc50faca5b132e38ec83c0bc1f4b126bbafc247e870b7330c55e0e",
+  "hook_binary_sha256": "7c65bd13212b1b3e847e5757edbe8ee5b7354614f981732fe99e1da9a92d78ed",
+  "hook_build": {
+    "go": "go1.24.1",
+    "target": "linux/arm64",
+    "vcs_revision": "727ae082ca8efee7f73668acf5d7cf07b4b2ba44",
+    "vcs_modified": true,
+    "difference": "Only concurrent integration-test edits were uncommitted at hook build; production source is unchanged from the recorded commit."
+  },
+  "run_id": "396aa022-a0bd-4d3d-a708-10b5cbb7eee7",
+  "boot_id": "b75ce2fc-241b-4558-8f15-f764b4413e19",
+  "test": "TestDedicatedLibvirtInternetClone",
+  "result": "PASS",
+  "duration_seconds": 47.83,
+  "private_test_log_sha256": "21600304ffdf25fd5a2ce98576ad5b979910fdbf780f1b5845f337334326b708",
+  "configuration": {
+    "mode": "logged-public-ipv4",
+    "dns_ipv4": "1.1.1.1",
+    "test_management_cidr": "203.0.113.0/24",
+    "control_transport_fixture": "https://example.com",
+    "control_ipv4": "104.20.23.154",
+    "production_api": false,
+    "repository": "https://github.com/octocat/Hello-World.git",
+    "clone_depth": 1,
+    "credentials_used": false,
+    "repository_code_executed": false,
+    "tls_hostname_verification": true,
+    "clone_destination": "Pinned to this Guest DNS response and matched exactly against kernel journal; independent public HTTPS traffic is not substitute evidence."
+  },
+  "packet_results": {
+    "guest_loopback_positive_control": "PASS",
+    "public_dns_and_https_clone": "PASS",
+    "outbound_ip_mac_metadata_vlan_ipv6_arp_frames": 6,
+    "outbound_drop_before_after": [0, 6],
+    "inbound_ip_mac_metadata_vlan_ipv6_arp_frames": 6,
+    "inbound_drop_before_after": [4, 10],
+    "external_ingress_receive_positive_control": "PASS",
+    "unsolicited_udp_reject_before_after": [0, 1],
+    "unsolicited_rejecting_component": "Exact owned NAT bridge rule in LIBVIRT_FWI, not NWFilter-only connection tracking",
+    "forbidden_tcp_connections": 8,
+    "tcp_drop_before_after": [6, 14],
+    "control_dns_exact_clone_journal_matching": "PASS"
+  },
+  "root_receipts": {
+    "pending_sha256": "df7f3404322106246cc958ade041d3e265b9e175f2ac1eb12024348727048359",
+    "active_sha256": "0921ea89dc7fc069b98d12ab28a8f4651bc8f4995e9db08cebc661075a803362",
+    "stopped_sha256": "0da137d2155b3a505606a04de17f486f2764184a01fc0a6b3a73c6c0660e367d",
+    "kernel_handle": 55,
+    "kernel_fingerprint": "cd62519c2c6168715282c2405d31d0ec6aefcea83b54997bba2e519089933c94",
+    "owner_group_mode": "root:root 0644, single link",
+    "stopped_receipt_before_local_release": true
+  },
+  "cleanup": {
+    "domains_remaining": 0,
+    "active_networks_remaining": 0,
+    "kelpie_logging_tables_remaining": 0,
+    "owned_filter_bridge_disks_removed": true,
+    "temporary_veth_namespace_removed": true,
+    "original_network_inventory_preserved": true,
+    "image_sha256_before_after": "2fc312a6335a5919f5a0d4e3cfe2e40eae6915cce47b79801f559afc251035d8",
+    "image_owner_group_mode_restored": "1000:1000 0600",
+    "four_ancestor_acls_restored": true,
+    "original_hook_inode_owner_mode_restored": true,
+    "original_hook_sha256_restored": "348cd4a7e67cf780b784e978a47ad096670a69bd2463d0dfe3255177c9b1b74f",
+    "original_root_receipts_preserved": true,
+    "new_audit_evidence_retained": true,
+    "release": "Synthetic local lifecycle only, not real API lease return"
+  },
+  "local_verification": {
+    "make_test_worker": "PASS; final daemon package 11.628s",
+    "make_lint": "PASS",
+    "focused_race": "PASS; 1.936s at production integration",
+    "linux_arm64_amd64_tagged_build_and_vet": "PASS",
+    "exact_destination_regression": "Replacing exact destination matching with any-public-IP matching failed in 0.371s; restored checks passed locally and in the actual Linux test binary."
+  },
+  "limitations": [
+    "No lossless audit or runtime logger/journald loss/overload monitoring claim; stopped proves cleanup only.",
+    "No automatic recovery of intent-before-hook or pending-before-active crash gaps; uncertain reservations remain retained.",
+    "Administrators must drain work before changing Host addressing/routing/firewalls; no runtime Host-configuration monitor.",
+    "No full sealed-image Runner/model, GUI, amd64 VM, simultaneous two-work or physical total-budget acceptance.",
+    "Fixture-only root observation and temporary veth creation do not grant production Worker privileges."
+  ]
+}

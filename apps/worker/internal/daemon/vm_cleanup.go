@@ -53,6 +53,7 @@ type vmCleanup struct {
 	grace      time.Duration
 	poll       time.Duration
 	interfaces func() ([]net.Interface, error)
+	logReceipt networkReceiptCheck
 }
 
 func newVMCleanup(store *runStore, runID string) *vmCleanup {
@@ -336,7 +337,14 @@ func (c *vmCleanup) removeArtifacts() error {
 	if readErr != nil && !errors.Is(readErr, io.EOF) || len(entries) >= 32 {
 		return errVMCleanup
 	}
+	run, err := c.store.Load(c.runID)
+	if err != nil {
+		return errVMCleanup
+	}
 	for _, entry := range entries {
+		if entry.Name() == "network-start.json" && run.Record.Schema == 5 {
+			continue // retained, validated by the mandatory logging cleanup gate
+		}
 		if !slices.Contains(runArtifacts, entry.Name()) &&
 			!slices.Contains([]string{"run.json", "running.json", "cleanup-pending.json", "cleaned.json", "released.json"}, entry.Name()) {
 			return errVMCleanup

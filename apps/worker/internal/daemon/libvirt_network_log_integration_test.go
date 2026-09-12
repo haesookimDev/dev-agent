@@ -5,6 +5,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -110,14 +111,18 @@ func TestDedicatedLibvirtLoggedControlPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dedicatedNetworkPackets(t, &control, true)
+	dedicatedNetworkPackets(t, &control, true, nil)
 }
 
-func packetVerifyNetworkLog(t *testing.T, ctx context.Context, network runNetwork, control *guestControl, stopped bool) {
+func packetVerifyNetworkLog(t *testing.T, ctx context.Context, network runNetwork, control *guestControl, cloneIPv4 string, stopped bool) {
 	t.Helper()
-	// The root hook owns the network definition, not the Worker's HTTPS
-	// exception. Normalize only those fields before reading its receipt.
-	network.Version, network.ControlOrigin, network.ControlIPv4 = 1, "", ""
+	dnsIPv4 := network.DNSIPv4
+	// The root hook owns only the immutable network definition. Reconstructing
+	// it avoids treating control or public-egress policy fields as receipt data.
+	network, err := networkAt(network.UUID, netip.MustParsePrefix(network.CIDR))
+	if err != nil {
+		t.Fatal(err)
+	}
 	root, err := os.OpenRoot(networkLogDirectory)
 	if err != nil {
 		t.Fatal("root logging receipt directory is unavailable")
@@ -151,7 +156,7 @@ func packetVerifyNetworkLog(t *testing.T, ctx context.Context, network runNetwor
 	}
 	packetHostQuery(t, ctx, "/usr/bin/sudo", "-n", "/usr/bin/journalctl", "--sync")
 	data := packetHostQuery(t, ctx, "/usr/bin/sudo", "-n", "/usr/bin/journalctl", "--dmesg", "--no-pager", "--output=json", "--lines=50", "--grep=^kelpie-egress:"+network.UUID+" ")
-	matched := false
+	controlMatched, dnsMatched, publicHTTPSMatched := false, false, false
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		var row struct {
 			Message string `json:"MESSAGE"`
@@ -159,14 +164,25 @@ func packetVerifyNetworkLog(t *testing.T, ctx context.Context, network runNetwor
 		if json.Unmarshal([]byte(line), &row) != nil || !strings.HasPrefix(row.Message, "kelpie-egress:"+network.UUID+" ") {
 			t.Fatal("kernel journal response is not scoped to this test run")
 		}
-		fields := " " + row.Message + " "
-		if strings.Contains(fields, " IN="+network.Bridge+" ") && strings.Contains(fields, " SRC="+network.Guest+" ") &&
-			strings.Contains(fields, " DST="+control.IPv4+" ") && strings.Contains(fields, " PROTO=TCP ") && strings.Contains(fields, " DPT="+strconv.Itoa(int(control.Port))+" ") {
-			matched = true
+		if packetFlowMatches(row.Message, network, control.IPv4, "TCP", strconv.Itoa(int(control.Port))) {
+			controlMatched = true
+		}
+		if cloneIPv4 != "" && packetFlowMatches(row.Message, network, dnsIPv4, "UDP", "53") {
+			dnsMatched = true
+		}
+		if cloneIPv4 != "" && packetFlowMatches(row.Message, network, cloneIPv4, "TCP", "443") {
+			publicHTTPSMatched = true
 		}
 	}
-	if !matched {
+	if !controlMatched {
 		t.Fatal("successful guest TLS connection has no matching kernel flow record")
 	}
-	t.Log("actual guest TLS flow recorded in the kernel journal with exact run UUID, bridge, source, destination, protocol and port; no payload published")
+	if cloneIPv4 != "" && (!dnsMatched || !publicHTTPSMatched) {
+		t.Fatal("public DNS or shallow-clone HTTPS flow has no matching kernel record")
+	}
+	if cloneIPv4 != "" {
+		t.Log("actual control TLS, public DNS UDP/53, and public clone TCP/443 flows recorded with exact IP/protocol/port journal fields; no payload published")
+	} else {
+		t.Log("actual guest TLS flow recorded in the kernel journal with exact run UUID, bridge, source, destination, protocol and port; no payload published")
+	}
 }

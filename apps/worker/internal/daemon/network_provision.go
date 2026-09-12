@@ -12,8 +12,9 @@ import (
 )
 
 type networkProvisioner struct {
-	store  *runStore
-	reader networkInventoryReader
+	store      *runStore
+	reader     networkInventoryReader
+	logReceipt networkReceiptCheck
 }
 
 // The caller must bind this recorded run to its lifecycle before invoking
@@ -21,6 +22,8 @@ type networkProvisioner struct {
 // that cleanup; no resource is adopted or automatically redefined on retry.
 // Version 1 stays deny-all; version 2 installs the recorded control-only policy
 // before any NIC may attach. Neither version grants general internet access.
+// Version 3 additionally requires fresh root logging admission and a durable
+// start intent; missing post-start confirmation never authorizes a guest NIC.
 func (p networkProvisioner) create(ctx context.Context, runID string) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -29,6 +32,20 @@ func (p networkProvisioner) create(ctx context.Context, runID string) error {
 		return errRunNetwork
 	}
 	network := *run.Record.Network
+	checkReceipt := p.logReceipt
+	if checkReceipt == nil {
+		checkReceipt = checkNetworkLogReceipt
+	}
+	var logBoot string
+	if network.Version == 3 {
+		if _, exists, err := p.store.networkIntent(runID); err != nil || exists {
+			return errRunNetwork
+		}
+		logBoot, err = checkReceipt(network, "absent", "")
+		if err != nil || !workUUID.MatchString(logBoot) {
+			return errRunNetwork
+		}
+	}
 	cleanup := newVMCleanup(p.store, runID)
 	cleanup.query = p.reader.query
 	guard := func() error {
@@ -86,6 +103,11 @@ func (p networkProvisioner) create(ctx context.Context, runID string) error {
 	if err := guard(); err != nil {
 		return err
 	}
+	if network.Version == 3 {
+		if err := p.store.beginNetwork(runID, logBoot); err != nil {
+			return err
+		}
+	}
 	if _, err := cleanup.command(ctx, "net-start", network.UUID); err != nil {
 		return errRunNetwork
 	}
@@ -95,6 +117,11 @@ func (p networkProvisioner) create(ctx context.Context, runID string) error {
 	inactive, err := cleanup.networkIDs(ctx, "--inactive")
 	if err != nil || slices.Contains(inactive, network.UUID) || p.bridgeReady(network) != nil {
 		return errRunNetwork
+	}
+	if network.Version == 3 {
+		if _, err := checkReceipt(network, "active", logBoot); err != nil {
+			return err
+		}
 	}
 	return guard()
 }

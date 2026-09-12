@@ -144,7 +144,22 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if err != nil {
 		return err
 	}
-	owned, err := e.store.CreateControlled(claim.WorkItem.ID, claim.LeaseID, e.config.RunResources, e.config.NetworkPool, inventory.excluded, control)
+	internet, err := e.config.internetPolicy()
+	if err != nil {
+		return err
+	}
+	var owned ownedRun
+	if internet == nil {
+		owned, err = e.store.CreateControlled(claim.WorkItem.ID, claim.LeaseID, e.config.RunResources, e.config.NetworkPool, inventory.excluded, control)
+	} else {
+		// Check installation before reserving or creating private artifacts.
+		reader, checkErr := openNetworkLogReceipts(true)
+		if checkErr != nil {
+			return checkErr
+		}
+		_ = reader.root.Close()
+		owned, err = e.store.CreateInternet(claim.WorkItem.ID, claim.LeaseID, e.config.RunResources, e.config.NetworkPool, inventory, control, *internet)
+	}
 	if err != nil {
 		return err
 	}

@@ -16,6 +16,9 @@ func (network runNetwork) policyXML() ([]byte, error) {
 	if network.Version == 1 {
 		return network.quarantineXML()
 	}
+	if network.Version == 3 {
+		return network.internetPolicyXML()
+	}
 	control, err := parseGuestControl(network.ControlOrigin, network.ControlIPv4)
 	if err != nil {
 		return nil, err
@@ -45,8 +48,12 @@ func (network runNetwork) policyXML() ([]byte, error) {
 }
 
 func (network runNetwork) guestNetworkConfig() ([]byte, error) {
-	if !network.valid(network.UUID) || network.Version != 2 {
+	if !network.valid(network.UUID) || (network.Version != 2 && network.Version != 3) {
 		return nil, errRunNetwork
 	}
-	return []byte(fmt.Sprintf("version: 2\nethernets:\n  run:\n    match:\n      macaddress: '%s'\n    set-name: kelpie0\n    dhcp4: false\n    dhcp6: false\n    accept-ra: false\n    link-local: []\n    addresses: ['%s/30']\n    routes:\n      - to: default\n        via: '%s'\n", network.GuestMAC, network.Guest, network.Gateway)), nil
+	config := fmt.Sprintf("version: 2\nethernets:\n  run:\n    match:\n      macaddress: '%s'\n    set-name: kelpie0\n    dhcp4: false\n    dhcp6: false\n    accept-ra: false\n    link-local: []\n    addresses: ['%s/30']\n    routes:\n      - to: default\n        via: '%s'\n", network.GuestMAC, network.Guest, network.Gateway)
+	if network.Version == 3 {
+		config += fmt.Sprintf("    nameservers:\n      addresses: ['%s']\n", network.DNSIPv4)
+	}
+	return []byte(config), nil
 }
