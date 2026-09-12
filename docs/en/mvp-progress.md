@@ -51,4 +51,6 @@ Follow-up Worker `make test` passed API 1195/153 skips (155.48 seconds), Runner 
 
 ## Updating this record
 
+On 2026-09-13, [network PR #62 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34712642565) exposed an access-time mutation of an existing backup destination link. Merging stopped and separate fix `dd35a8e26c9cf4953984015c344a6d6827860d14` was created from synchronized baseline `294dbbb7c633d1cfe999e649d97f99487115c828`. [Backup evidence](artifact-backup.md) records the pre-fix regression failure, API 1196 passes/153 conditional skips, static checks and actual Mac CLI normal/rejected-destination paths with source preservation. After the fix PR passes final CI and merges, integrate it into #62 and verify its latest checks. This prerequisite regression repair does not change remaining Executor/network/GUI/concurrent-work conditions or 1/7 (14.3%).
+
 For subsequent completion reports, update the baseline SHA, PR/CI/actual-use evidence and remaining conditions. Increment the numerator only when every condition of a stage is proven. Regressions reopen its status with a reason. Do not change the denominator/scope to inflate the percentage; record user-approved scope changes and differences from the previous baseline. Update Korean and English together.

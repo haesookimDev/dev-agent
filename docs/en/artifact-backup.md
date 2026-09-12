@@ -71,7 +71,9 @@ This contract preserves expiration evidence in the connected recovery database. 
 
 ## Regression, CI and actual use
 
-`make test-api` includes the existing 50 file-boundary and 11 CLI tests plus 29 V1/V2, expiration and rebackup cases in `test_artifact_backup_retention.py`. The eight real restore tests below also run when `KELPIE_TEST_POSTGRES_URL` and `KELPIE_TEST_POSTGRES_CONTAINER` point to the same dedicated test server. Missing settings skip PostgreSQL coverage and are not success evidence.
+`make test-api` includes 51 file-boundary and 11 CLI tests plus 29 V1/V2, expiration and rebackup cases in `test_artifact_backup_retention.py`. The eight real restore tests below also run when `KELPIE_TEST_POSTGRES_URL` and `KELPIE_TEST_POSTGRES_CONTAINER` point to the same dedicated test server. Missing settings skip PostgreSQL coverage and are not success evidence.
+
+The 2026-09-13 fix `dd35a8e26c9cf4953984015c344a6d6827860d14` prevents resolving an existing destination link before rejection, which changed its access time. Files, directories and normal/dangling links are rejected first with `lstat()`; source-containment checks and exclusive creation for new paths remain. Four focused regressions failed before the fix; afterward, 51 file-boundary tests passed, `make test-api` passed 1196/153 conditional skips (156.72 seconds), and `make lint` passed. Actual separate CLI processes on Mac with isolated synthetic SQLite/files verified create→verify→restore and matching bytes, create/restore rejection of all four existing destination types with metadata including access time unchanged, and unchanged source database/files. Only temporary drill data was cleaned up. HTTP/UI/DB schema/manifest/environment contracts are unchanged; this is not new PostgreSQL, browser or operational recovery evidence. The fix PR records final-head CI and merge status.
 
 ```sh
 .venv/bin/python -m pytest -q apps/api/tests/test_postgres_restore.py \
