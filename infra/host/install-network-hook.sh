@@ -86,6 +86,83 @@ stage_hook_binary() {
   printf '%s\n' "$staged_binary"
 }
 
+worker_quiescence_state() {
+  local data="$1" line load_seen="" active_seen="" unit_file_seen="" pid_seen=""
+  ((${#data} <= 1024)) && [[ "$data" != *$'\r'* ]] || return 1
+  while IFS= read -r line; do
+    case "$line" in
+      LoadState=masked)
+        [[ -z "$load_seen" ]] || return 1
+        load_seen=1
+        ;;
+      ActiveState=inactive)
+        [[ -z "$active_seen" ]] || return 1
+        active_seen=1
+        ;;
+      UnitFileState=masked-runtime)
+        [[ -z "$unit_file_seen" ]] || return 1
+        unit_file_seen=1
+        ;;
+      MainPID=0)
+        [[ -z "$pid_seen" ]] || return 1
+        pid_seen=1
+        ;;
+      *) return 1 ;;
+    esac
+  done <<<"$data"
+  [[ "$load_seen" == 1 && "$active_seen" == 1 && "$unit_file_seen" == 1 && "$pid_seen" == 1 ]]
+}
+
+read_worker_service_state() {
+  /usr/bin/systemctl show --no-pager \
+    --property=LoadState --property=ActiveState --property=UnitFileState --property=MainPID \
+    kelpie-worker.service 2>/dev/null
+}
+
+install_conditions_safe() {
+  local before="$1" domains="$2" networks="$3" after="$4"
+  worker_quiescence_state "$before" && [[ -z "$domains" && -z "$networks" ]] &&
+    worker_quiescence_state "$after"
+}
+
+install_host_quiescent() {
+  local before domains networks after
+  before="$(read_worker_service_state)" || return 1
+  domains="$(/usr/bin/virsh -c qemu:///system list --all --uuid 2>/dev/null)" || return 1
+  networks="$(/usr/bin/virsh -c qemu:///system net-list --uuid 2>/dev/null)" || return 1
+  after="$(read_worker_service_state)" || return 1
+  install_conditions_safe "$before" "$domains" "$networks" "$after"
+}
+
+install_network_hook_files() {
+  local staged_binary="$1" approved_sha256="$2" installed_binary
+  /usr/bin/install -d -o root -g root -m 0755 /var/lib/kelpie-network-guard /etc/libvirt/hooks/network.d || return 1
+  /usr/bin/install -o root -g root -m 0755 "$staged_binary" /etc/libvirt/hooks/network.d/50-kelpie-egress || return 1
+  installed_binary=/etc/libvirt/hooks/network.d/50-kelpie-egress
+  if ! trusted_hook_source "$installed_binary" 0 || [[ "$(hook_sha256 "$installed_binary")" != "$approved_sha256" ]]; then
+    echo "installed network hook does not match its approved source" >&2
+    return 1
+  fi
+}
+
+restart_libvirt_for_hook() {
+  /usr/bin/systemctl restart libvirtd.service || return 1
+  /usr/bin/systemctl is-active --quiet libvirtd.service
+}
+
+guarded_network_hook_install() {
+  if ! install_host_quiescent; then
+    echo "Worker runtime mask or empty libvirt inventory changed before hook installation" >&2
+    return 1
+  fi
+  install_network_hook_files "$@" || return 1
+  if ! install_host_quiescent; then
+    echo "Worker runtime mask or empty libvirt inventory changed before libvirt restart" >&2
+    return 1
+  fi
+  restart_libvirt_for_hook
+}
+
 main() {
 # First installation only. A logging-policy upgrade requires a separate
 # maintenance/rollback procedure, not overwriting a live privileged hook.
@@ -111,10 +188,8 @@ for target in /etc/libvirt/hooks/network /etc/libvirt/hooks/network.d /var/lib/k
     exit 1
   fi
 done
-hook_domains="$(/usr/bin/virsh -c qemu:///system list --all --uuid)"
-hook_networks="$(/usr/bin/virsh -c qemu:///system net-list --uuid)"
-if [[ -n "$hook_domains" || -n "$hook_networks" ]]; then
-  echo "requires no domains and no active networks before restarting libvirt" >&2
+if ! install_host_quiescent; then
+  echo "requires an inactive runtime-masked kelpie-worker service, no domains and no active networks" >&2
   exit 1
 fi
 /usr/sbin/nft --version >/dev/null
@@ -131,17 +206,9 @@ cleanup_staging() {
 }
 trap cleanup_staging EXIT
 
-/usr/bin/install -d -o root -g root -m 0755 /var/lib/kelpie-network-guard /etc/libvirt/hooks/network.d
-/usr/bin/install -o root -g root -m 0755 "$staged_binary" /etc/libvirt/hooks/network.d/50-kelpie-egress
-installed_binary=/etc/libvirt/hooks/network.d/50-kelpie-egress
-if ! trusted_hook_source "$installed_binary" 0 || [[ "$(hook_sha256 "$installed_binary")" != "$approved_sha256" ]]; then
-  echo "installed network hook does not match its approved source" >&2
-  exit 1
-fi
 # libvirt discovers hooks at daemon startup. Never invoke libvirt inside the
 # hook itself: that synchronous callback would deadlock the daemon.
-/usr/bin/systemctl restart libvirtd.service
-/usr/bin/systemctl is-active --quiet libvirtd.service
+guarded_network_hook_install "$staged_binary" "$approved_sha256" || exit 1
 echo "Installed the scoped network logging hook; internet egress is not enabled by this installer."
 }
 
