@@ -12,6 +12,15 @@ import (
 )
 
 func TestDedicatedLibvirtExistingFilterIsNotAdopted(t *testing.T) {
+	dedicatedExistingFilter(t, false)
+}
+
+func TestDedicatedLibvirtExistingControlFilterIsNotAdopted(t *testing.T) {
+	dedicatedExistingFilter(t, true)
+}
+
+func dedicatedExistingFilter(t *testing.T, controlled bool) {
+	t.Helper()
 	if os.Getenv("KELPIE_LIBVIRT_TEST_ACK") != "disposable-host-only" {
 		t.Skip("requires explicit disposable-host acknowledgement")
 	}
@@ -46,7 +55,16 @@ func TestDedicatedLibvirtExistingFilterIsNotAdopted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := store.CreateNetworked(storeTestWork, strings.TrimSpace(string(identity)), testResources, "10.240.0.0/24", inventory.excluded)
+	var run ownedRun
+	if controlled {
+		control, err := parseGuestControl("https://control.example.test:8443", "192.0.2.7")
+		if err != nil {
+			t.Fatal(err)
+		}
+		run, err = store.CreateControlled(storeTestWork, strings.TrimSpace(string(identity)), testResources, "10.240.0.0/24", inventory.excluded, control)
+	} else {
+		run, err = store.CreateNetworked(storeTestWork, strings.TrimSpace(string(identity)), testResources, "10.240.0.0/24", inventory.excluded)
+	}
 	if err != nil || !inventory.available(*run.Record.Network) {
 		t.Fatal("could not reserve an available fixture identity")
 	}
@@ -58,7 +76,7 @@ func TestDedicatedLibvirtExistingFilterIsNotAdopted(t *testing.T) {
 	t.Logf("preserved collision journal: %s/%s", root, run.Record.RunID)
 	// The test, not the Worker provisioner, owns this deliberately pre-existing
 	// filter. Its external definition must never count as Worker creation intent.
-	body, err := network.quarantineXML()
+	body, err := network.policyXML()
 	if err != nil {
 		t.Fatal(err)
 	}
