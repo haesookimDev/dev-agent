@@ -137,6 +137,13 @@ def encode(value: dict) -> bytes:
 
 
 def new_destination(source: Path, destination: Path) -> None:
+    # Do not traverse an existing link, even to reject it: readlink can change atime.
+    try:
+        destination.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        raise ArtifactBackupError("snapshot destination must not exist")
     if destination.resolve().is_relative_to(source.resolve()):
         raise ArtifactBackupError("snapshot source and destination must be separate")
     destination.mkdir(mode=0o700)  # Never adopt an existing directory or link.

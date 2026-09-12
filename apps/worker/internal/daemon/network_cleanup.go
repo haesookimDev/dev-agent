@@ -1,10 +1,14 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net"
+	"os"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 func networkUUIDInventory(data []byte) ([]string, error) {
@@ -203,6 +207,37 @@ func (c *vmCleanup) bridgeAbsent(network runNetwork) error {
 	return nil
 }
 
+func (c *vmCleanup) networkCreationRecorded(network runNetwork) bool {
+	// A reservation alone does not authorize adopting an existing resource.
+	// Provisioning durably writes both exact definitions only after rejecting
+	// existing resources, and before its first host mutation. Keep that intent
+	// through partial failures; absence/tampering must retain the reservation.
+	for _, definition := range []struct {
+		name string
+		body func() ([]byte, error)
+	}{{"network.xml", network.definitionXML}, {"filter.xml", network.quarantineXML}} {
+		expected, err := definition.body()
+		if err != nil {
+			return false
+		}
+		file, err := c.store.root.OpenFile(c.runID+"/"+definition.name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+		if err != nil {
+			return false
+		}
+		info, statErr := file.Stat()
+		if statErr != nil || !privateOwned(info, false) || info.Size() != int64(len(expected)) {
+			_ = file.Close()
+			return false
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, int64(len(expected))+1))
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil || !bytes.Equal(data, expected) {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *vmCleanup) cleanupNetwork(ctx context.Context, run ownedRun) error {
 	if run.Record.Network == nil {
 		return nil // legacy records never authorize changes to shared networking
@@ -228,6 +263,9 @@ func (c *vmCleanup) cleanupNetwork(ctx context.Context, run ownedRun) error {
 			return errVMCleanup // do not delete resources reappearing after cleanup
 		}
 		return c.bridgeAbsent(network)
+	}
+	if (netExists || filterExists) && !c.networkCreationRecorded(network) {
+		return errVMCleanup
 	}
 	if netExists {
 		inactive, err := c.networkIDs(ctx, "--inactive")

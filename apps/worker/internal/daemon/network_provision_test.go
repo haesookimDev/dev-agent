@@ -12,7 +12,7 @@ import (
 
 func provisionFixture(t *testing.T) (networkProvisioner, *networkCleanupFixture) {
 	t.Helper()
-	f := newNetworkCleanupFixture(t)
+	f := networkCleanupReservationFixture(t)
 	f.defined, f.active, f.filter, f.bridge = false, false, false, false
 	network := f.run.Record.Network
 	reader := inventoryFixture(t)
@@ -171,5 +171,26 @@ func TestRunNetworkProvisionNeverOverwritesExistingResources(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRunNetworkRejectedFilterCannotBecomeCleanupOwnership(t *testing.T) {
+	p, f := provisionFixture(t)
+	// A pre-existing exact-match filter can survive without any network/route,
+	// so address inventory cannot exclude it. No concurrent host mutation is
+	// needed: provisioning must reject it, and later cleanup must not adopt it.
+	f.filter = true
+	if err := p.create(context.Background(), f.run.Record.RunID); err == nil {
+		t.Fatal("provisioning adopted an existing filter")
+	}
+	f.calls = nil
+	if err := f.cleanup.Cleanup(context.Background()); err == nil {
+		t.Fatal("cleanup adopted a filter rejected before any creation intent")
+	}
+	if !f.filter || slices.Contains(f.calls, "nwfilter-undefine") || slices.Contains(f.calls, "net-destroy") || slices.Contains(f.calls, "net-undefine") {
+		t.Fatal("cleanup mutated a pre-existing resource")
+	}
+	if err := f.cleanup.Released(); err == nil {
+		t.Fatal("released an unresolved existing-filter collision")
 	}
 }
