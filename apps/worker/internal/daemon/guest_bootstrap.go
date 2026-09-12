@@ -34,7 +34,7 @@ func waitGuestBootstrap(ctx context.Context, client RunClient, claim Claim, clea
 			return work, nil
 		}
 		ready := work.Status == "analyzing" && work.Version == claim.WorkItem.Version+1 ||
-			slices.Contains([]string{"implementing", "verifying", "awaiting_approval", "committing", "pr_created"}, work.Status) && work.Version > claim.WorkItem.Version+1
+			slices.Contains([]string{"implementing", "verifying", "awaiting_approval", "awaiting_input", "awaiting_feedback", "budget_exhausted", "committing", "pr_created"}, work.Status) && work.Version > claim.WorkItem.Version+1
 		if !ready && (work.Status != "provisioning" || work.Version != claim.WorkItem.Version) {
 			return WorkItem{}, failure
 		}

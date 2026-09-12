@@ -33,7 +33,7 @@ func bootstrapFixture(t *testing.T) (*cleanupFixture, Claim) {
 }
 
 func TestGuestBootstrapObservesAuthenticatedStateWithoutWorkerTransition(t *testing.T) {
-	for _, status := range []string{"analyzing", "implementing", "verifying", "awaiting_approval", "committing", "pr_created", "failed", "cancelled", "completed"} {
+	for _, status := range []string{"analyzing", "implementing", "verifying", "awaiting_approval", "awaiting_input", "awaiting_feedback", "budget_exhausted", "committing", "pr_created", "failed", "cancelled", "completed"} {
 		t.Run(status, func(t *testing.T) {
 			f, claim := bootstrapFixture(t)
 			reads := 0
