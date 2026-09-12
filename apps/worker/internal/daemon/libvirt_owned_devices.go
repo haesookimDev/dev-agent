@@ -10,7 +10,7 @@ import (
 // the VM and its writable overlay retain the normal DAC/AppArmor boundary.
 // Operators must provision QEMU read-only access to the immutable image.
 func libvirtOwnedDeviceArguments(network runNetwork, base string) ([]string, error) {
-	if !network.valid(network.UUID) || network.Version != 2 || !filepath.IsAbs(base) || filepath.Clean(base) != base || strings.ContainsAny(base, ",=\r\n\x00") {
+	if !network.valid(network.UUID) || (network.Version != 2 && network.Version != 3) || !filepath.IsAbs(base) || filepath.Clean(base) != base || strings.ContainsAny(base, ",=\r\n\x00") {
 		return nil, errRunNetwork
 	}
 	args := []string{"--network", "network=" + network.Name + ",model=virtio,mac=" + network.GuestMAC + ",filterref.filter=" + network.Filter + ",trustGuestRxFilters=no"}

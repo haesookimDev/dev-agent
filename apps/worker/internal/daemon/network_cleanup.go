@@ -262,7 +262,10 @@ func (c *vmCleanup) cleanupNetwork(ctx context.Context, run ownedRun) error {
 		if netExists || filterExists {
 			return errVMCleanup // do not delete resources reappearing after cleanup
 		}
-		return c.bridgeAbsent(network)
+		if err := c.bridgeAbsent(network); err != nil {
+			return err
+		}
+		return c.loggingStopped(network)
 	}
 	if (netExists || filterExists) && !c.networkCreationRecorded(network) {
 		return errVMCleanup
@@ -315,5 +318,8 @@ func (c *vmCleanup) cleanupNetwork(ctx context.Context, run ownedRun) error {
 	if err != nil || netExists || filterExists {
 		return errVMCleanup
 	}
-	return c.bridgeAbsent(network)
+	if err := c.bridgeAbsent(network); err != nil {
+		return err
+	}
+	return c.loggingStopped(network)
 }

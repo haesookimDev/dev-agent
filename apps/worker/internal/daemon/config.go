@@ -13,6 +13,9 @@ type Config struct {
 	GuestControlURL    string
 	GuestControlIPv4   string
 	GuestControlCAFile string
+	GuestInternet      string
+	GuestDNSIPv4       string
+	GuestDeniedIPv4    string
 	NetworkPool        string
 	WorkerToken        string
 	WorkerTokenFile    string
@@ -33,6 +36,9 @@ func ConfigFromEnv() (Config, error) {
 		GuestControlURL:    os.Getenv("KELPIE_GUEST_CONTROL_URL"),
 		GuestControlIPv4:   os.Getenv("KELPIE_GUEST_CONTROL_IPV4"),
 		GuestControlCAFile: os.Getenv("KELPIE_GUEST_CONTROL_CA_FILE"),
+		GuestInternet:      os.Getenv("KELPIE_GUEST_INTERNET"),
+		GuestDNSIPv4:       os.Getenv("KELPIE_GUEST_DNS_IPV4"),
+		GuestDeniedIPv4:    os.Getenv("KELPIE_GUEST_DENIED_IPV4"),
 		NetworkPool:        env("KELPIE_NETWORK_POOL", "10.240.0.0/16"),
 		WorkerToken:        os.Getenv("KELPIE_WORKER_TOKEN"),
 		WorkerTokenFile:    os.Getenv("KELPIE_WORKER_TOKEN_FILE"),
@@ -60,6 +66,9 @@ func ConfigFromEnv() (Config, error) {
 		return Config{}, errors.New("KELPIE_EXECUTOR must be mock or libvirt")
 	}
 	if config.Executor == "libvirt" {
+		if _, err := config.internetPolicy(); err != nil {
+			return Config{}, err
+		}
 		if _, err := parseGuestControl(config.GuestControlURL, config.GuestControlIPv4); err != nil {
 			return Config{}, err
 		}
@@ -71,6 +80,23 @@ func ConfigFromEnv() (Config, error) {
 		}
 	}
 	return config, nil
+}
+
+func (config Config) internetPolicy() (*guestInternet, error) {
+	if config.GuestInternet == "" || config.GuestInternet == "disabled" {
+		if config.GuestDNSIPv4 != "" || config.GuestDeniedIPv4 != "" {
+			return nil, errRunNetwork
+		}
+		return nil, nil
+	}
+	if config.GuestInternet != "logged-public-ipv4" {
+		return nil, errRunNetwork
+	}
+	policy, err := parseGuestInternet(config.GuestDNSIPv4, config.GuestDeniedIPv4)
+	if err != nil {
+		return nil, err
+	}
+	return &policy, nil
 }
 
 func env(name, fallback string) string {

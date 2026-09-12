@@ -56,8 +56,18 @@ func (inventory networkHostInventory) available(network runNetwork) bool {
 	if !inventory.complete || !network.valid(network.UUID) {
 		return false
 	}
-	if network.Version == 2 && slices.Contains(inventory.hostIPv4, netip.MustParseAddr(network.ControlIPv4)) {
+	if network.Version >= 2 && slices.Contains(inventory.hostIPv4, netip.MustParseAddr(network.ControlIPv4)) {
 		return false // An explicit endpoint never grants access to the Worker host.
+	}
+	if network.Version == 3 {
+		if len(inventory.hostIPv4) == 0 {
+			return false
+		}
+		for _, ip := range inventory.hostIPv4 {
+			if !slices.Contains(strings.Split(network.DeniedIPv4, ","), ip.String()+"/32") {
+				return false
+			}
+		}
 	}
 	subnet, _ := netip.ParsePrefix(network.CIDR)
 	for _, prefix := range inventory.excluded {
