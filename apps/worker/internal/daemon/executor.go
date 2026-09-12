@@ -122,6 +122,10 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if err != nil {
 		return err
 	}
+	ca, err := readGuestControlCA(e.config.GuestControlCAFile)
+	if err != nil {
+		return err
+	}
 	// Validate the backing image without changing it before creating resources.
 	if err := run(ctx, "qemu-img", "check", "-f", "qcow2", e.config.BaseImage); err != nil {
 		return err
@@ -163,7 +167,7 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if err := os.WriteFile(meta, []byte("instance-id: "+owned.Record.Domain+"\nlocal-hostname: kelpie-run\n"), 0600); err != nil {
 		return privateFailure(err, vmSeedData)
 	}
-	cloudConfig, err := guestUserData(control, claim)
+	cloudConfig, err := guestUserData(control, claim, ca)
 	if err != nil {
 		return err
 	}

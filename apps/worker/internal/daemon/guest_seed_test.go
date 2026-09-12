@@ -15,7 +15,7 @@ func TestGuestSeedUsesSeparatePinnedControlEndpoint(t *testing.T) {
 	claim := resourceClaim()
 	claim.WorkItem.Status, claim.WorkItem.Version = "provisioning", 2
 	claim.WorkItem.Requirement = "untrusted requirement\nKELPIE_CONTROL_URL=http://localhost:8000"
-	body, err := guestUserData(control, claim)
+	body, err := guestUserData(control, claim, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestGuestSeedRejectsEnvironmentInjectionAndAlteredPin(t *testing.T) {
 		case "pin":
 			current.Host = "other.example.test"
 		}
-		if data, err := guestUserData(current, claim); err == nil || data != nil {
+		if data, err := guestUserData(current, claim, nil); err == nil || data != nil {
 			t.Errorf("unsafe seed accepted for %s", field)
 		}
 	}
