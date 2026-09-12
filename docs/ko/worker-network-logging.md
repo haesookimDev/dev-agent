@@ -4,7 +4,7 @@
 
 ## 범위와 보안 경계
 
-Root 소유 `kelpie-network-hook`은 정확히 재구성한 Kelpie 네트워크의 새 송신 연결을 기록합니다. 인터넷 송신을 허용하거나 기존 제어 IP:Port 예외를 넓히지 않으며, Guest의 기본 차단 NWFilter를 대체하지 않습니다. 일반 저장소/모델 송신은 별도 기능입니다.
+Root 소유 `kelpie-network-hook`은 정확히 재구성한 Kelpie 네트워크의 새 송신 연결을 기록합니다. 인터넷 송신을 허용하거나 기존 제어 IP:Port 예외를 넓히지 않으며, Guest의 기본 차단 NWFilter를 대체하지 않습니다. 일반 저장소/모델 송신은 별도 [명시적 공개 송신 기능](worker-public-egress.md)입니다.
 
 [libvirt Network Hook](https://libvirt.org/hooks.html)은 네트워크 UUID·Bridge·사설 대역·소유 Metadata를 검증합니다. 활성화 전에 Journal 준비 확인, 영속 `pending` 기록, 작업별 nftables Table 생성, 실제 정책/Handle 대조, `active` 기록을 수행합니다. 네트워크 활성화와 NIC 연결/갱신 때 실제 식별자를 재검증하며, Table 유실·변경·재생성을 거부합니다. Hook 안에서 libvirt를 재호출하거나 Worker 자격증명을 읽거나 입력 명령을 실행하지 않습니다.
 

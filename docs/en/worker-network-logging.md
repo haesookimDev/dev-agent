@@ -4,7 +4,7 @@
 
 ## Scope and security boundary
 
-The root-owned `kelpie-network-hook` records new outbound connections for an exactly reconstructed Kelpie network. It does **not** enable internet egress, broaden the existing control IP:port exception or replace the Guest's deny-by-default NWFilter. General repository/model egress remains a separate feature.
+The root-owned `kelpie-network-hook` records new outbound connections for an exactly reconstructed Kelpie network. It does **not** enable internet egress, broaden the existing control IP:port exception or replace the Guest's deny-by-default NWFilter. General repository/model egress is a separate [explicit public-egress feature](worker-public-egress.md).
 
 The [libvirt network hook](https://libvirt.org/hooks.html) validates the network UUID, bridge, private subnet and ownership metadata. Before activation, it requires journal readiness, writes a durable `pending` receipt, creates a scoped nftables table, reads its exact live policy/handle and writes `active`. Network activation and NIC attachment/update recheck the live identity. Missing, changed or recreated tables are refused. The hook never calls libvirt recursively, reads Worker credentials or executes a supplied command.
 
