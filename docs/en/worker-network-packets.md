@@ -51,8 +51,18 @@ All passed. After NIC implementation the full Worker daemon tests took 8.846 sec
 
 Binary SHA256 `bab5a1fcf355e355acf4f96310ae1e56ea7eb2592e7da5b0040350ae7f2ac5a4` matched on Mac/Linux and a committed-source rebuild was byte-identical. [Unaltered final log](../assets/worker-lifecycle/network-packets.log) SHA256: `9265b3e144cb9a5742aecb5fbc27064dc8be3600ce5da635ce9d35f8aaab4fc4`. No new dependency, CI job or production environment variable was added; this actual-host fixture does not run in ordinary CI.
 
+## 2026-09-13 final-image revalidation after prerequisite merge
+
+Predecessor [PR #62](https://github.com/haesookimDev/dev-agent/pull/62) merged at `2b7e76d84ea56416c39f00dde1ee2bfa298f3b27` after final head `ff6036c0c1d9318db21eea25768cb400c194aad2` passed [all five CI checks](https://github.com/haesookimDev/dev-agent/actions/runs/34713928147), actual verification and review. This separate NIC feature branch integrated those fixes; final actual verification source is `fdd2e08b0f21447f7d9b32cec063c82ce5d69a84`. Compatibility with cleanup's new creation-intent requirement was rerun instead of inferred solely from old logs.
+
+The unprivileged Worker on the same Mac/Lima/libvirt passed **1 actual test/79.80 seconds** with the new ARM64 image candidate. The guest loopback control and 12 frames in each direction passed; exact TAP DROP counters again rose guest→Host 5→17 and owned bridge→guest 6→18. Synthetic local release followed VM stop/undefine and Network/Filter/Bridge/Disk/NVRAM/XML removal. Independent final queries confirmed no domains, bindings, owned bridges or dnsmasq, preserved inactive `default` and standard filters, and only five private single-link journal records.
+
+Image SHA256 is `2fc312a6335a5919f5a0d4e3cfe2e40eae6915cce47b79801f559afc251035d8`, size 5,095,489,536 bytes. Only a small overlay was created, starting with 2.6GiB free. Original inode/owner/hash and restored 0600 ACL were verified; after domain absence, all four ancestor ACLs recorded in a new dedicated receipt were restored. The image, binaries and private ownership journals/receipt remain; only reproducible VM resources created by this test were removed. This does not pass the image candidate's full GUI or release gates.
+
+`make test-worker` (Daemon 8.898 seconds), `make lint`, Linux ARM64 tagged vet/build passed. Binary SHA256 `1bbce2449440107abdc2570c5ed2694f253520197364dbeb2481fb4d0ca28a42` matches Mac/execution Host/committed-source rebuild. The [new original log](../assets/worker-lifecycle/network-packets-run09.log) has SHA256 `9563634028f6e98606af828b1a7509b8af97c28d0e706a4b60a74a5b204856be`. Earlier 109.96-second evidence for the previous image remains separate above. UI/full Executor/API release were not changed or executed; full `make test` and browser checks were not repeated for this Worker-only integration.
+
 ## Remaining gates
 
 Verify allowed HTTPS/DNS/DHCP alongside host/metadata/other-VM denial, established-connection quarantine, two concurrent VMs, production Executor guest-reachable control URL/image access/Runner/whole-run budget, and actual API/PostgreSQL release and failure recovery. Do not extrapolate raw deny-all results into TCP-connection, allow-policy or service-isolation acceptance. Never reinterpret Version 1 as an allow policy.
 
-This is a pre-PR verification snapshot. Record exact final-head CI/review state in the PR and retain Draft status for the remaining gates. [MVP progress](mvp-progress.md) stays at the fixed **1/7 (14.3%)**.
+This NIC-foundation PR merges after normal/failure paths, actual packet enforcement/cleanup/image preservation, final-head CI and review are verified. Unrelated production-Executor/allowed-egress/whole-MVP release gates do not keep it Draft, and its own feature verification is not waived. [MVP progress](mvp-progress.md) remains the fixed **1/7 (14.3%)**.

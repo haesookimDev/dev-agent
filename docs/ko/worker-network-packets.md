@@ -51,8 +51,18 @@ KELPIE_LIBVIRT_PACKET_IMAGE=/approved/private/golden-image.qcow2 \
 
 바이너리 SHA256 `bab5a1fcf355e355acf4f96310ae1e56ea7eb2592e7da5b0040350ae7f2ac5a4`는 Mac/Linux가 일치했고 커밋된 소스로 재빌드한 결과도 바이트 단위로 동일했습니다. [원본 최종 로그](../assets/worker-lifecycle/network-packets.log)의 SHA256은 `9265b3e144cb9a5742aecb5fbc27064dc8be3600ce5da635ce9d35f8aaab4fc4`입니다. 새 의존성·CI Job·운영 환경변수는 없으며 이 실제 Host 검사는 일반 CI에서 실행하지 않습니다.
 
+## 2026-09-13 선행 병합 후 최종 이미지 재검증
+
+선행 [PR #62](https://github.com/haesookimDev/dev-agent/pull/62)는 최종 Head `ff6036c0c1d9318db21eea25768cb400c194aad2`의 [CI 5개](https://github.com/haesookimDev/dev-agent/actions/runs/34713928147)·실제 검증·리뷰 확인 후 `2b7e76d84ea56416c39f00dde1ee2bfa298f3b27`로 병합됐습니다. 이 PR은 별도 NIC 기능 브랜치에서 선행 수정을 통합했고, 최종 실제 검증 소스는 `fdd2e08b0f21447f7d9b32cec063c82ce5d69a84`입니다. 생성 의도 기록을 요구하는 새 정리 로직과 NIC의 호환성을 이전 로그만으로 판단하지 않고 다시 실행했습니다.
+
+같은 Mac/Lima/libvirt의 비특권 Worker에서 새 ARM64 이미지 후보로 실제 검사 **1개/79.80초 통과**입니다. 게스트 Loopback 대조군과 양방향 12개 프레임이 통과했고 정확한 TAP DROP 카운터는 다시 게스트→Host 5→17, 소유 Bridge→게스트 6→18이었습니다. 새 VM의 종료·정의 해제·Network/Filter/Bridge·Disk/NVRAM/XML 제거 후에만 합성 로컬 반환을 기록했습니다. 별도 최종 조회에서 Domain·Binding·소유 Bridge·dnsmasq 잔여 없음, 기존 비활성 `default`와 기본 Filter 목록 보존, 비공개 단일 링크 저널 5개만 남음을 확인했습니다.
+
+이미지 SHA256 `2fc312a6335a5919f5a0d4e3cfe2e40eae6915cce47b79801f559afc251035d8`, 크기 5,095,489,536바이트입니다. 기존 이미지의 작은 Overlay만 만들었고 여유 공간 2.6GiB에서 시작했습니다. 원본 Inode/소유자/해시 불변과 0600 ACL 복원을 검사했고, VM 부재 확인 후 새 전용 Receipt에 기록한 네 상위 디렉터리 ACL도 원복했습니다. 이미지·바이너리·비공개 소유권 저널/Receipt는 보존하고 이번 테스트가 만든 재생성 가능한 VM 자원만 제거했습니다. 이미지 후보의 전체 GUI·출시 Gate를 통과한 증거는 아닙니다.
+
+`make test-worker`(Daemon 8.898초), `make lint`, Linux ARM64 Tag Vet/빌드가 통과했습니다. 바이너리 SHA256 `1bbce2449440107abdc2570c5ed2694f253520197364dbeb2481fb4d0ca28a42`는 Mac/실행 Host/커밋 소스 재빌드가 일치합니다. [새 원본 로그](../assets/worker-lifecycle/network-packets-run09.log) SHA256은 `9563634028f6e98606af828b1a7509b8af97c28d0e706a4b60a74a5b204856be`입니다. 이전 이미지의 109.96초 증거는 위에 별도로 보존합니다. UI/전체 실행기/API 반환은 변경·실행하지 않았으며 전체 `make test`·브라우저 검사를 이번 Worker 한정 통합에서 반복하지 않았습니다.
+
 ## 남은 Gate
 
 허용 HTTPS/DNS/DHCP와 Host·Metadata·다른 VM 거부의 공존, 기존 연결 차단, 실제 동시 두 VM, 운영 Executor의 Guest 접근 가능 Control URL·이미지 접근·Runner·전체 시간 예산, 실제 API/PostgreSQL 반환·장애 복구를 검증해야 합니다. Raw 전면 차단을 TCP 연결·허용 정책 또는 서비스별 격리 증거로 확대하지 않습니다. 기존 Version 1을 허용 정책으로 재해석하지 않습니다.
 
-이 문서는 PR 제출 이전 검증 기록입니다. 정확한 최종 Head의 CI·리뷰 상태는 PR에 추가하며 남은 Gate 때문에 Draft를 유지합니다. [MVP 진행률](mvp-progress.md)은 고정 기준 **1/7(14.3%)** 그대로입니다.
+이 NIC 기반 PR은 정상·실패 경로, 실제 패킷 차단·정리·이미지 보존과 최종 Head CI·리뷰를 확인해 병합합니다. 범위 밖의 운영 실행기·허용 송신·전체 MVP 출시 조건 때문에 Draft를 유지하지 않으며, 해당 기능의 검증은 생략하지 않습니다. [MVP 진행률](mvp-progress.md)은 고정 기준 **1/7(14.3%)** 그대로입니다.
