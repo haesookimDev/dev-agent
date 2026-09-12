@@ -8,6 +8,9 @@ import (
 )
 
 func guestUserData(control guestControl, claim Claim, ca []byte) ([]byte, error) {
+	if !validGuestBootstrapClaim(claim.WorkItem) {
+		return nil, diagnosticError{kind: vmControlBootstrap}
+	}
 	verified, err := parseGuestControl(control.Origin, control.IPv4)
 	if err != nil || verified != control || strings.ContainsAny(claim.LeaseToken+claim.WorkItem.CorrelationID, "\r\n\x00") {
 		return nil, privateFailure(errGuestControl, vmAssignment)

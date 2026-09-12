@@ -10,12 +10,16 @@ import (
 
 const guestBootstrapTimeout = 180 * time.Second
 
+func validGuestBootstrapClaim(work WorkItem) bool {
+	return work.Status == "provisioning" && work.Version >= 1 && work.Version < math.MaxInt
+}
+
 // The guest, not virt-install or the Worker, performs the authenticated
 // provisioning -> analyzing transition. One deadline covers OS boot and the
 // first control connection. There is no second unbounded readiness wait.
 func waitGuestBootstrap(ctx context.Context, client RunClient, claim Claim, cleanup *vmCleanup, limit, poll time.Duration) (WorkItem, error) {
 	failure := diagnosticError{kind: vmControlBootstrap}
-	if claim.WorkItem.Status != "provisioning" || claim.WorkItem.Version < 1 || claim.WorkItem.Version == math.MaxInt ||
+	if !validGuestBootstrapClaim(claim.WorkItem) ||
 		cleanup == nil || cleanup.runID != claim.LeaseID || limit <= 0 || poll <= 0 {
 		return WorkItem{}, failure
 	}

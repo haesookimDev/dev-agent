@@ -112,6 +112,9 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if !workUUID.MatchString(claim.WorkItem.ID) {
 		return errors.New("unsafe work item id")
 	}
+	if !validGuestBootstrapClaim(claim.WorkItem) {
+		return diagnosticError{kind: vmControlBootstrap}
+	}
 	if _, err := os.Stat(e.config.BaseImage); err != nil {
 		return privateFailure(err, vmBaseImage)
 	}

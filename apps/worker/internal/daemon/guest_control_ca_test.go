@@ -106,7 +106,9 @@ func TestGuestControlCARejectsUnsafeFileAndNonCertificateData(t *testing.T) {
 func TestGuestSeedScopesCustomTrustToControlClient(t *testing.T) {
 	ca := guestTestCA(t, true)
 	control, _ := parseGuestControl("https://control.example.test", "192.0.2.7")
-	body, err := guestUserData(control, resourceClaim(), ca)
+	claim := resourceClaim()
+	claim.WorkItem.Status, claim.WorkItem.Version = "provisioning", 2
+	body, err := guestUserData(control, claim, ca)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +125,7 @@ func TestGuestSeedScopesCustomTrustToControlClient(t *testing.T) {
 	if err != nil || !bytes.Contains(environment, []byte("KELPIE_CONTROL_CA_FILE=/run/kelpie/control-ca.pem\n")) {
 		t.Fatal("CA not passed to Runner")
 	}
-	if body, err := guestUserData(control, resourceClaim(), []byte("private-key-canary")); err == nil || body != nil {
+	if body, err := guestUserData(control, claim, []byte("private-key-canary")); err == nil || body != nil {
 		t.Fatal("unsafe CA encoded into guest seed")
 	}
 }

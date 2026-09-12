@@ -100,6 +100,7 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	}
 	claim := resourceClaim()
 	claim.WorkItem.ID = storeTestWork
+	claim.WorkItem.Status, claim.WorkItem.Version = "provisioning", 2
 	claim.LeaseID = "55555555-5555-4555-8555-555555555555"
 	var releasePhase string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

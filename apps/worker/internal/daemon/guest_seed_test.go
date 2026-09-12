@@ -55,6 +55,7 @@ func TestGuestSeedRejectsEnvironmentInjectionAndAlteredPin(t *testing.T) {
 	control, _ := parseGuestControl("https://control.example.test", "192.0.2.7")
 	for _, field := range []string{"lease", "correlation", "pin"} {
 		claim, current := resourceClaim(), control
+		claim.WorkItem.Status, claim.WorkItem.Version = "provisioning", 2
 		switch field {
 		case "lease":
 			claim.LeaseToken += "\nINJECTED=1"

@@ -66,6 +66,7 @@ esac
 	}}
 	claim := resourceClaim()
 	claim.WorkItem.ID = storeTestWork
+	claim.WorkItem.Status, claim.WorkItem.Version = "provisioning", 2
 	err := executor.Execute(context.Background(), &reservedRunClient{}, claim)
 	runs, listErr := store.List()
 	if err == nil || err.Error() != "VM disk reservation is smaller than the base image" || listErr != nil || len(runs) != 0 {
