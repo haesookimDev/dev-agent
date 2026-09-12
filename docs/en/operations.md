@@ -178,7 +178,7 @@ KELPIE_WORK_ROOT=/var/lib/kelpie/runs
 
 The golden image must have a `kelpie` user, Codex, `kelpie-runner`, Git, language toolchains, a desktop/browser stack, qemu-guest-agent, and the runner systemd unit. Perform ChatGPT device login on a sealed template, copy its credential material into per-VM tmpfs at boot, and ensure it is not present in screenshots, cloud-init logs, or retained artifacts.
 
-For a Runner connecting to an HTTPS control API using a private CA, set optional `KELPIE_CONTROL_CA_FILE` **in the Runner process only**. See [Runner-specific CA trust](runner-control-tls.md) for defaults, guest paths, failure behavior, rollback and actual TLS evidence. Worker-to-guest delivery is a separate follow-up feature.
+`libvirt` requires separate `KELPIE_GUEST_CONTROL_URL` and `KELPIE_GUEST_CONTROL_IPV4` values, not the host endpoint. Optional Worker input `KELPIE_GUEST_CONTROL_CA_FILE` supplies generated guest `KELPIE_CONTROL_CA_FILE`, scoped to ControlClient. See [guest control bootstrap](guest-control-bootstrap.md) for the exclusive API listener, address pool, seed/bootstrap, drained rollout and Schema 4 rollback contract. Default public PKI and TLS checks from [Runner-specific CA trust](runner-control-tls.md) remain unchanged.
 
 ## Incident controls
 
