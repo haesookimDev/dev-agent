@@ -122,6 +122,7 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	defer server.Close()
 	d := resourceDaemon(server)
 	d.config.BaseImage, d.config.WorkRoot = image, store.root.Name()
+	d.config.GuestControlURL, d.config.GuestControlIPv4 = "https://control.example.test", "192.0.2.7"
 	// Launch commands and the Linux permission boundary are synthetic in this
 	// cross-platform identity test; the opt-in Linux suite covers real libvirt.
 	d.executor = LibvirtExecutor{config: d.config, logger: d.logger, store: store,

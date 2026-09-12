@@ -202,6 +202,7 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 	defer server.Close()
 	d := resourceDaemon(server)
 	d.config.BaseImage, d.config.WorkRoot, d.config.ControlURL = basePath, root, server.URL
+	d.config.GuestControlURL, d.config.GuestControlIPv4 = "https://control.example.test", "192.0.2.7"
 	d.config.RunResources = Resources{CPU: 1, MemoryMB: 512, DiskGB: 1}
 	d.tracker = NewTracker(d.config.RunResources)
 	d.tracker.Reserve(d.config.RunResources)

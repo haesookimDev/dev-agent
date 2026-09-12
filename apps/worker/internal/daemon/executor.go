@@ -2,8 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -118,6 +116,10 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if e.store == nil {
 		return errRunStore
 	}
+	control, err := parseGuestControl(e.config.GuestControlURL, e.config.GuestControlIPv4)
+	if err != nil {
+		return err
+	}
 	owned, err := e.store.Create(claim.WorkItem.ID, claim.LeaseID, e.config.RunResources)
 	if err != nil {
 		return err
@@ -143,31 +145,11 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if err := os.WriteFile(meta, []byte("instance-id: "+owned.Record.Domain+"\nlocal-hostname: kelpie-run\n"), 0600); err != nil {
 		return privateFailure(err, vmSeedData)
 	}
-	assignmentWork := claim.WorkItem
-	assignmentWork.Status = "analyzing"
-	assignmentWork.Version++
-	assignment, err := json.Marshal(assignmentWork)
+	cloudConfig, err := guestUserData(control, claim)
 	if err != nil {
-		return privateFailure(err, vmAssignment)
+		return err
 	}
-	assignmentEncoded := base64.URLEncoding.EncodeToString(assignment)
-	environment := fmt.Sprintf(
-		"KELPIE_CONTROL_URL=%s\nKELPIE_LEASE_TOKEN=%s\nKELPIE_CORRELATION_ID=%s\nKELPIE_ASSIGNMENT=%s\nKELPIE_WORK_ROOT=/workspace\n",
-		e.config.ControlURL, claim.LeaseToken, claim.WorkItem.CorrelationID, assignmentEncoded,
-	)
-	environmentEncoded := base64.StdEncoding.EncodeToString([]byte(environment))
-	cloudConfig := fmt.Sprintf(`#cloud-config
-ssh_pwauth: false
-write_files:
-  - path: /run/kelpie/assignment.env
-    owner: kelpie:kelpie
-    permissions: '0600'
-    encoding: b64
-    content: %s
-runcmd:
-  - [ systemctl, start, kelpie-runner.service ]
-`, environmentEncoded)
-	if err := os.WriteFile(user, []byte(cloudConfig), 0600); err != nil {
+	if err := os.WriteFile(user, cloudConfig, 0600); err != nil {
 		return privateFailure(err, vmSeedData)
 	}
 	if err := run(ctx, "cloud-localds", seed, user, meta); err != nil {

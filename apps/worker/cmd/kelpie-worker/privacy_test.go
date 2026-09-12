@@ -132,6 +132,7 @@ func TestWorkerProcessPrivateDiagnostics(t *testing.T) {
 			process.Env = []string{"PATH=" + root, "KELPIE_CONTROL_URL=" + server.URL,
 				"KELPIE_WORKER_TOKEN=" + workerToken, "KELPIE_WORKER_NAME=privacy-worker",
 				"KELPIE_EXECUTOR=libvirt", "KELPIE_BASE_IMAGE=" + image,
+				"KELPIE_GUEST_CONTROL_URL=https://control.example.test", "KELPIE_GUEST_CONTROL_IPV4=192.0.2.7",
 				"KELPIE_CPU_TOTAL=4", "KELPIE_MEMORY_MB_TOTAL=8192", "KELPIE_DISK_GB_TOTAL=60",
 				"KELPIE_WORK_ROOT=" + filepath.Join(root, "runs"), "KELPIE_POLL_SECONDS=1"}
 			var logs bytes.Buffer
