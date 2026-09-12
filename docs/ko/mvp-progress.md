@@ -4,7 +4,7 @@
 
 ## 기준과 진행률
 
-제품 기준 코드: `main`의 `474ba82246cacf9be82c22f4a714317e0c1ebcb4` ([PR #66](https://github.com/haesookimDev/dev-agent/pull/66) 병합). 선행 PR #58/#59/#60/#61/#62/#63/#65와 기능별 완료 지침 PR #64도 포함합니다. 임대 복구 API의 검증 소스는 `f5d9da32c6500c413c4340d914997cda53b4e479`입니다. 병합된 Worker 수명주기 PR #58의 후속 코드 `b9fdd484f4d7777345e89694c0c2a00b42f87816`에서 종료 임대의 실제 VM·새 Worker 프로세스·API·PostgreSQL 복구까지 검증했습니다. 전체 Executor와 실행 중 작업 복구는 남아 있습니다. 아래 평가는 코드·테스트·실제 구동 기록을 대조한 시점별 기록이며 Draft 브랜치나 계획은 완료로 세지 않습니다.
+제품 기준 코드: `main`의 `17ccfb772afabaa6437bebb9529edbecfb676ea6` ([PR #67](https://github.com/haesookimDev/dev-agent/pull/67) 병합). 선행 PR #58/#59/#60/#61/#62/#63/#65/#66와 기능별 완료 지침 PR #64도 포함합니다. 임대 복구 API의 검증 소스는 `f5d9da32c6500c413c4340d914997cda53b4e479`입니다. 병합된 Worker 수명주기 PR #58의 후속 코드 `b9fdd484f4d7777345e89694c0c2a00b42f87816`에서 종료 임대의 실제 VM·새 Worker 프로세스·API·PostgreSQL 복구까지 검증했습니다. 전체 Executor와 실행 중 작업 복구는 남아 있습니다. 아래 평가는 코드·테스트·실제 구동 기록을 대조한 시점별 기록이며 Draft 브랜치나 계획은 완료로 세지 않습니다.
 
 [바로 다음 Release](roadmap-summary.md#바로-다음-release)에 명시된 7단계를 고정된 분모로 사용합니다. **검증 완료 1/7 = 14.3%**, 부분 완료 3/7, 미완료 3/7입니다. 부분 구현에는 임의 점수를 주지 않습니다. 이 수치는 릴리즈 단계의 검증 완료율이며 코드 작성량·투입 공수·남은 일정의 비율이 아닙니다. 전체 개발 공수의 정확한 완료율은 현재 근거로 산정하지 않습니다.
 
@@ -51,6 +51,8 @@ Worker 후속 코드의 `make test`는 API 1195 통과/153 Skip(155.48초), Runn
 10. [Guest 제어 연결](guest-control-bootstrap.md)은 생산 Executor의 작업 소유 NIC·Seed와 실제 Runner/API에서 정상 TLS·잘못된 CA·호스트명·취소 4경로를 통과했습니다. 제어 IP:포트 외 Host·Metadata·다른 작업·사설/공용 목적지의 TCP 차단도 확인했습니다. 다음은 일반 저장소·모델 송신 정책과 전체 Golden Image/Runner·GUI 경로, VM 시간 예산입니다. 실행 중 작업의 복구 정책과 Claim 응답 유실도 별도 검증합니다. [Draft PR #21](https://github.com/haesookimDev/dev-agent/pull/21)의 Preview는 아직 `main`에 없습니다. Console·동시 두 작업까지 입증되기 전에는 전체 MVP 완료로 계산하거나 강제 병합하지 않습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
 
 ## 갱신 방법
+
+Guest 제어 연결 [PR #67](https://github.com/haesookimDev/dev-agent/pull/67)은 논리적 커밋 18개를 유지해 `17ccfb772afabaa6437bebb9529edbecfb676ea6`로 정상 병합했습니다. 최종 Head `0f76b05e855588ded1d7d671665e798a2a548d7a`의 [CI 5개](https://github.com/haesookimDev/dev-agent/actions/runs/34721500626)는 첫 실행 5분 43초에, [병합된 main CI](https://github.com/haesookimDev/dev-agent/actions/runs/34721814844)도 5개 모두 통과했습니다. 실제 사용 증거와 독립 리뷰를 확인한 뒤 병합했습니다. 후속 [작업별 네트워크 기록](worker-network-logging.md)은 실제 Kernel·libvirt 수명주기·Guest TLS/Journal/정리 증거를 확보했으며 최종 Head CI·머지는 별도 기능 단위로 추적합니다. 일반 송신, 운영 Log 유실/보존/복구, 전체 이미지/Runner/GUI, Preview/Console, 동시 두 작업 검증이 남습니다. **1/7(14.3%)**은 그대로입니다.
 
 후속 [Guest 제어 연결의 실제 검증](guest-control-bootstrap.md#실제-수용-검증--2026-09-13)은 생산 소스 `9d1c56f798837a2543756eb7f2049a62d6233231`, 테스트 `f6bfdff11761a3d69e80515c683838796ca344cd` 기준입니다. 실제 4경로에서 정리 전 API 반환 금지와 단일 ACK, 원본·기존 자원 보존 및 임시 권한 복원을 확인했습니다. 전체 테스트/정적 검사와 후속 API 1199개, 상태·Claim·ACK·진단 회귀가 통과했습니다. [증거 JSON](../assets/guest-control-bootstrap/macos-acceptance.json)에 바이너리·Fixture 차이와 한계를 고정했습니다. 현재 Runner는 임시 Guest Override이며 봉인 이미지·GUI·일반 모델 실행·동시 두 작업·실행 중 자동 복구의 완료가 아니므로 **1/7(14.3%)**을 유지합니다. 이 기능의 병합은 최신 Head CI·리뷰와 별도로 확인하며 Draft 제출만으로 완료하지 않습니다.
 

@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-09-13",
+  "purpose": "Per-work kernel connection logging and exact lifecycle ownership, not general internet egress",
+  "base_main_commit": "17ccfb772afabaa6437bebb9529edbecfb676ea6",
+  "production_hook_commit": "f24cf2de932b13884bce0948fb4ae003e16504c6",
+  "test_commit": "16613e21936affe09f944ced55aade5fe77c0e32",
+  "build_checkout_commit": "b6dda4287e1d655f1c7cdfd3ff7f375fdb3d73d9",
+  "build_checkout_modified": true,
+  "build_difference": "The two libvirt fixture changes were uncommitted at build time and subsequently committed unchanged as test_commit; production hook source was unchanged.",
+  "environment": "Dedicated macOS 15.7.3 M4 Pro / Lima Ubuntu 24.04 ARM64 / nested KVM / libvirt 10 / nftables 1.0.9",
+  "artifacts_sha256": {
+    "hook_linux_arm64": "4b92133deb92e3f65daa32ff0c7e4799558c83157ca4d44e3d5b48f88685d50a",
+    "test_linux_arm64": "4876edfee1522f3c9392cd1f0c8ce22d8bc683838bf82c158d8efc46c0d2f3bc",
+    "libvirt_network_log_integration_test_go": "57c9f5975595cb560eb1af0b7977d1d1ca05478c3036290f9bb1527c263cb766",
+    "libvirt_network_packet_integration_test_go": "11ce3034505ba564d3733c90f8daad7c3fd889ee7133d4cdca8f94871d02b7ea"
+  },
+  "kernel_tests": [
+    {"name": "TestIsolatedKernelNetworkLog", "seconds": 0.03, "passed": true},
+    {"name": "TestIsolatedKernelNetworkLogHookFailure", "seconds": 0.03, "passed": true}
+  ],
+  "kernel_test_boundary": "Root in a fresh network namespace distinct from PID 1; real nft creation, exact snapshot, duplicate refusal, missing/recreated logger rejection and handle-scoped cleanup. Journal readiness is injected in these tests, not evidence of real guest traffic or journal availability.",
+  "lifecycle_test": {
+    "name": "TestDedicatedLibvirtNetworkProvisioning",
+    "seconds": 4.86,
+    "passed": true,
+    "cases": "Normal provisioning and cancellation after activation, each followed by recovery in a separate OS process",
+    "vm_or_real_api_claim": false
+  },
+  "guest_test": {
+    "name": "TestDedicatedLibvirtLoggedControlPackets",
+    "seconds": 63.96,
+    "passed": true,
+    "run_uuid": "48073962-7690-469e-8de7-d0ad8f69c181",
+    "tls_endpoint": "Credential-free HTTPS HEAD to example.com at an explicitly supplied public IPv4; transport positive control, not a dedicated production API listener",
+    "forbidden_tcp_attempts": 8,
+    "tap_drop_before": 0,
+    "tap_drop_after": 8,
+    "journal_match": ["run UUID", "bridge", "source IPv4", "destination IPv4", "TCP", "destination port"],
+    "exact_live_kernel_fingerprint_and_handle_match": true,
+    "root_stopped_receipt_and_logging_table_absence_before_local_release": true,
+    "runner_or_real_api_acceptance": false,
+    "release": "Synthetic local release only"
+  },
+  "root_receipts": [
+    {
+      "run_uuid": "9669123d-0d0f-4333-b676-55e9943628ec",
+      "kernel_handle": 50,
+      "pending_sha256": "f3fd1b56b367942483a5100b5e1bc4dd7638669165321810da508f8f7fa36e16",
+      "active_sha256": "840476450e3a63b194b43dfdab0d7b9994fd768b1167a18d9f745fed021265ac",
+      "stopped_sha256": "2302f352102f2427a147c484fffd8e49521d6b16d86d93186f03724824148e68"
+    },
+    {
+      "run_uuid": "4a8efc6c-cb50-4f24-bc83-d02571fde030",
+      "kernel_handle": 51,
+      "pending_sha256": "0858e9000204a95c02963c1561bd246b2dbc289895059bd39f4cf746d6e20c00",
+      "active_sha256": "1f2ffe26b4bad0688eb48dda49e0ccfa3061c505452bb35e1781301d68be54d5",
+      "stopped_sha256": "b712e9bbe5998b9eddf16c34d8a74acb74789cd386b2a54143b813ec4ddf2f60"
+    },
+    {
+      "run_uuid": "48073962-7690-469e-8de7-d0ad8f69c181",
+      "kernel_handle": 52,
+      "pending_sha256": "5bf05dc65626c65de7efe30ad3c87c210bbd9172cb7704208b1edb42112c3006",
+      "active_sha256": "9e4287016c819d1f4fb62a71e51914a9d6e964823857b1bd0e9480d7d1f5aa35",
+      "stopped_sha256": "b7b78d973bb0e31496e0f00a0d6a074a9b7130e6aad8361936d454952bc7baef"
+    }
+  ],
+  "receipt_checks": "All nine records are root:root, regular single-link 0644 files. Each run retains matching network and boot identities; active and stopped handles/fingerprints match. Records are retained, not deleted.",
+  "post_cleanup": {
+    "domains": 0,
+    "active_networks": 0,
+    "kelpie_logging_tables": 0,
+    "default_network": "inactive, persistent, autostart enabled; unchanged",
+    "owned_vm_network_filter_bridge_and_disks_absent": true,
+    "existing_network_inventory_preserved": true,
+    "base_image_sha256": "2fc312a6335a5919f5a0d4e3cfe2e40eae6915cce47b79801f559afc251035d8",
+    "base_image_owner_and_private_acl_restored": true,
+    "four_image_ancestor_acls_restored": true,
+    "original_hook_inode_hash_owner_and_mode_restored": true,
+    "original_hook_sha256": "348cd4a7e67cf780b784e978a47ad096670a69bd2463d0dfe3255177c9b1b74f",
+    "tested_hook_and_maintenance_receipts_preserved": true
+  },
+  "installation_boundary": "Guest-flow acceptance used an exact reversible binary swap. A subsequent separate acceptance ran the final production first-install script after preserving the existing hook/guard directories, then restored all originals; these are distinct runs.",
+  "first_install": {
+    "production_commit": "502b32bc272192785d6d6735acaf71a58b310f76",
+    "installer_sha256": "a8729c9dcf83f53a5aab53ec1f87fb8c3bb8b1f0e6aa02f68e1b18b964e0d49a",
+    "test_binary_linux_arm64_sha256": "a117db23905d3bf0fb3f27ecdfc424605a602ff1d92741b299e92c5e8d8982ea",
+    "quiescence_test_source_sha256": "dc6eb29f09728a56416197e76842970b1f2819cdb84841e5c23631c8c51476ce",
+    "unit_initial_and_restored_state": "not-found, inactive, MainPID 0; no local unit or runtime mask",
+    "actual_runtime_mask_and_worker_start_rejection": true,
+    "actual_root_first_install_exit_code": 0,
+    "approved_installed_binary_hash_and_root_0755_metadata_verified": true,
+    "actual_libvirtd_restart_and_health_verified": true,
+    "subsequent_network_provisioning_test_seconds": 4.86,
+    "network_cases": "Normal and cancel-after-activation, each with new OS-process recovery; six exact root pending/active/stopped receipts retained",
+    "source_pin_and_quiescence_test_groups_passed_on_linux": 9,
+    "source_validation_seconds": 0.10,
+    "source_race_seconds": 0.56,
+    "regression_red": "Approved-digest requirement before source fix; quiescence before its implementation; missing MainPID and three command-failure propagation cases with their specific guards removed. All guards restored before successful tests and installation.",
+    "original_hook_and_guard_full_inode_hash_owner_mode_manifests_restored": true,
+    "original_unit_state_restored": true,
+    "new_installed_files_and_root_receipts_archived_not_deleted": true,
+    "receipt_sha256": {
+      "source": "1bdbc37657b1bb4de9fe68c4cc447e63767325ba7149c095d4c4949129a2a4db",
+      "install_result": "4c0749006d680907155753ceb241653d141c710bf183b0a054f4f388cbc8944f",
+      "installed": "9b98e4a7ee6a7194642cc2fc4d9e21b70038b07876dad45e09d57a07c3d29c84",
+      "restored": "0d498a56f559f0726a75e651b301c0e64fa05c7fe091a3400661962e08519d73"
+    },
+    "network_root_receipts": [
+      {
+        "run_uuid": "416617c3-bdb4-4ab9-8c50-e4388304fb75",
+        "pending_sha256": "fad13343d8103a1a5e4bda20fc56c7749935b94b0fb40fcfb87d50c1f30de8fc",
+        "active_sha256": "e67bc9f22cb4c4c8498dba4ca7c0cc72f22c47917fb211df4f8b9b230adfc2f8",
+        "stopped_sha256": "88e47105fb232933c4d95a49675c503ee273acc8069611946976a2a8a1079bde"
+      },
+      {
+        "run_uuid": "ccfaa298-d832-4c4b-ace8-212d04238669",
+        "pending_sha256": "3af86c4e6aeb657bb5e316febf6551bf03db0894d9cb75af1e97781d641325af",
+        "active_sha256": "8222d172cb28121bc515db00c4a19412e6f8be364d63f64ba4c5c734a8d944d9",
+        "stopped_sha256": "37565f3b8ad00e6822140ccf1112837e9aed8360183af7b00efc6608bd15ef26"
+      }
+    ]
+  },
+  "not_verified": [
+    "Lossless logging, runtime journal loss/flood detection, storage retention and partial-create recovery",
+    "General repository/model internet egress or a dedicated production API destination",
+    "Complete sealed Golden Image/Runner, GUI, preview/console or concurrent two-work acceptance",
+    "Real amd64 VM boot, total VM time budgets and automatic nonterminal recovery"
+  ]
+}
