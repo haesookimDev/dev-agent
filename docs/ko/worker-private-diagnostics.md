@@ -25,7 +25,7 @@ make lint
 
 - `client_privacy_test.go`: HTTP 401/403/409/422/500/503, 임의 Status·본문, 직렬화·전송·응답 오류, 실제 TCP 임대 분리, 취소.
 - `execution_privacy_test.go`: 실제 셸의 양쪽 출력·종료 코드·시작 실패, 임의 오류와 제목, 실패 이벤트, 해제 실패 시 예약 유지, 안전한 오류의 Wrapper.
-- `cmd/kelpie-worker/privacy_test.go`: 새로 빌드한 실제 Worker 바이너리의 등록 거부·이미지 부재·명령 실패. HTTP 서버와 실패용 `qemu-img`만 합성이며 VM은 만들지 않습니다. Header 분리, Correlation ID, 실패 전환 Version, 해제 1회, 원문 없는 로그·이벤트, SIGTERM 종료를 검사합니다.
+- `cmd/kelpie-worker/privacy_test.go`: 새로 빌드한 실제 Worker 바이너리의 등록 거부·이미지 부재·명령 실패. HTTP 서버·실패용 `qemu-img`·빈 도메인 목록만 반환하는 `virsh`가 합성이며 VM은 만들지 않습니다. Header 분리, Correlation ID, 실패 전환 Version, 해제 1회, 원문 없는 로그·이벤트, SIGTERM 종료를 검사합니다. 실제 VM 정리 검증은 [수명주기 기록](worker-lifecycle.md)과 구분합니다.
 
 수정 전 HTTP 경계 회귀 4개와 실행 경계 회귀 3개가 실패했습니다. 구현 `5c2b259`·`5a506c1`, 프로세스 회귀 `66a78ec`에서 위 검증이 통과했습니다. 전용 PostgreSQL DB의 전체 `make test`는 API 1,270개(237.51초), Runner 45개, Worker/Gateway, Web 125개와 타입 검사를 통과했습니다. Mac의 Linux 서비스 구문 검사 1개만 Skip이며 Linux CI가 검사합니다. 기존 Go CI가 새 회귀를 자동 실행하므로 Job·Matrix·8분 Timeout을 늘리지 않습니다.
 

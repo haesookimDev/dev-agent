@@ -13,7 +13,7 @@ The API lets an individually authenticated Worker inspect and reconcile an **alr
 - Lease expiry is not required: a restart can happen before expiry, and expiry does not prove VM shutdown. The endpoint neither renews expiry nor reissues a run token.
 - Revoked/expired Worker credentials and quarantined Workers are denied. Even development shared tokens cannot use this route. No new environment variables or authentication relaxation are introduced.
 
-Follow-up Worker integration must use the API-issued lease UUID as its VM run UUID and persist it with the work ID/resources before VM creation. Do not assume the independent run UUID records in [Draft PR #58](https://github.com/haesookimDev/dev-agent/pull/58) already satisfy this contract. Automatic adoption of legacy/ambiguous records, terminating nonterminal work, and recovery when the Claim response itself is lost remain separate work.
+Follow-up [Worker restart integration](worker-restart-recovery.md) persists the API-issued lease UUID as the schema-2 VM run UUID and has been verified with a real VM/API/PostgreSQL. Do not assume independent schema-1 run UUIDs satisfy this contract. Automatic adoption of legacy/ambiguous records, terminating nonterminal work, and recovery when the Claim response itself is lost remain separate work.
 
 ## API contract
 
@@ -38,7 +38,7 @@ Authorization: Bearer <individual-worker-credential>
 }
 ```
 
-Inspection returns no token, hash, user requirements or repository contents. Compare its IDs, resources and version against durable records and complete physical cleanup before sending:
+Inspection returns no token, hash, user requirements or repository contents. Compare its IDs/resources against durable records and complete physical cleanup, then use the response's current version when sending:
 
 ```http
 POST /api/workers/33333333-3333-4333-8333-333333333333/leases/11111111-1111-4111-8111-111111111111/reconcile
@@ -80,4 +80,4 @@ make test
 make lint
 ```
 
-Without that URL, PostgreSQL checks skip and are not counted as passing. Actual Worker restart/VM-cleanup integration, per-work networking/time budgets, Preview/Console and two-work acceptance remain incomplete.
+Without that URL, PostgreSQL checks skip and are not counted as passing. Follow-up actual Worker/VM terminal-lease recovery has [separate evidence](worker-restart-recovery.md). Nonterminal/lost-Claim recovery, per-work networking/time budgets, Preview/Console and two-work acceptance remain incomplete.

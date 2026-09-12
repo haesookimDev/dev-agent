@@ -2,6 +2,10 @@
 
 한국어 | [English](../en/development.md)
 
+## Worker 물리 자원 반환 검증
+
+[VM 소유권·정리 절차](worker-lifecycle.md)는 기존 `make test-worker`와 Go CI에서 파일·상태·실패·동시성 경계를 검증합니다. 실제 Linux libvirt 검사는 명시적 폐기 가능 호스트 동의와 별도 Build Tag로 실행하며 기본 CI에 VM을 생성하지 않습니다. 빈 VM의 강제 정리 성공과 Golden Image·Runner·브라우저 전체 Acceptance를 구분하고, 미확인 정리나 API 해제 응답 유실을 용량 반환으로 처리하지 않습니다.
+
 ## Mac 로컬 KVM 개발
 
 [전용 ARM64 Lima 호스트](macos-kvm-lab.md)에서 실제 중첩 KVM을 검증합니다. `make test-lab`은 템플릿·실패 경계·QMP 프로토콜을 검사하고 기존 `Python` CI/`make test`에 포함됩니다. 실제 Linux 부팅·종료는 별도 `kvm_smoke.py`로 증명하며 합성 테스트나 Lima의 `READY`로 대체하지 않습니다. 새 CI Job/VM 빌드/Timeout은 추가하지 않습니다. 이 개발 호스트의 관리자 권한을 제품 작업 VM에 옮기지 않습니다.

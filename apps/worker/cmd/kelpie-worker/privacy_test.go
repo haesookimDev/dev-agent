@@ -49,6 +49,13 @@ func TestWorkerProcessPrivateDiagnostics(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(root, "qemu-img"), []byte(script), 0700); err != nil {
 					t.Fatal(err)
 				}
+				// This fixture fails before VM creation. The lifecycle path must
+				// still obtain a successful empty inventory, not infer absence from
+				// a missing virsh command. No destructive command is accepted here.
+				inventory := "#!/bin/sh\ncase \"$*\" in\n'--connect qemu:///system list --all --uuid'|'--connect qemu:///system list --all --uuid --persistent') exit 0;;\n*) exit 9;;\nesac\n"
+				if err := os.WriteFile(filepath.Join(root, "virsh"), []byte(inventory), 0700); err != nil {
+					t.Fatal(err)
+				}
 			}
 			workerToken, leaseToken := strings.Repeat(runtimePrivate, 2), "synthetic-runtime-lease"
 			work := daemon.WorkItem{ID: "33333333-3333-4333-8333-333333333333",
@@ -75,14 +82,18 @@ func TestWorkerProcessPrivateDiagnostics(t *testing.T) {
 						w.WriteHeader(http.StatusForbidden)
 						_, _ = io.WriteString(w, workerToken)
 					} else {
-						_ = json.NewEncoder(w).Encode(daemon.Worker{ID: "test-worker"})
+						_ = json.NewEncoder(w).Encode(map[string]any{
+							"id": "11111111-1111-4111-8111-111111111111", "name": "privacy-worker", "state": "online",
+							"cpu_total": 4, "cpu_available": 4, "memory_mb_total": 8192, "memory_mb_available": 8192,
+							"disk_gb_available": 60, "active_runs": 0,
+						})
 					}
 				case strings.HasSuffix(r.URL.Path, "/claim"):
 					if claimed {
 						_, _ = io.WriteString(w, "null")
 					} else {
 						claimed = true
-						_ = json.NewEncoder(w).Encode(daemon.Claim{WorkItem: work, LeaseToken: leaseToken})
+						_ = json.NewEncoder(w).Encode(daemon.Claim{WorkItem: work, LeaseID: "55555555-5555-4555-8555-555555555555", LeaseToken: leaseToken})
 					}
 				case strings.HasSuffix(r.URL.Path, "/events"):
 					var event daemon.AgentEvent
@@ -119,8 +130,9 @@ func TestWorkerProcessPrivateDiagnostics(t *testing.T) {
 			defer server.Close()
 			process := exec.Command(binary)
 			process.Env = []string{"PATH=" + root, "KELPIE_CONTROL_URL=" + server.URL,
-				"KELPIE_WORKER_TOKEN=" + workerToken, "KELPIE_WORKER_NAME=private-diagnostic-test",
+				"KELPIE_WORKER_TOKEN=" + workerToken, "KELPIE_WORKER_NAME=privacy-worker",
 				"KELPIE_EXECUTOR=libvirt", "KELPIE_BASE_IMAGE=" + image,
+				"KELPIE_CPU_TOTAL=4", "KELPIE_MEMORY_MB_TOTAL=8192", "KELPIE_DISK_GB_TOTAL=60",
 				"KELPIE_WORK_ROOT=" + filepath.Join(root, "runs"), "KELPIE_POLL_SECONDS=1"}
 			var logs bytes.Buffer
 			process.Stdout, process.Stderr = &logs, &logs

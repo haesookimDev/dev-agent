@@ -25,7 +25,7 @@ make lint
 
 - `client_privacy_test.go`: HTTP 401/403/409/422/500/503, arbitrary Status/body, encoding/transport/response failures, real TCP lease isolation and cancellation.
 - `execution_privacy_test.go`: both streams from real shell processes, exit/start failures, arbitrary errors/titles, failure events, reservation retention and wrapped safe errors.
-- `cmd/kelpie-worker/privacy_test.go`: builds and runs the actual Worker binary through rejected registration, missing image and command failure. Only its HTTP server and failing `qemu-img` are synthetic; it creates no VM. It verifies header isolation, correlation, transition version, one release, private-free logs/events and SIGTERM shutdown.
+- `cmd/kelpie-worker/privacy_test.go`: builds and runs the actual Worker binary through rejected registration, missing image and command failure. Its HTTP server, failing `qemu-img` and empty-inventory-only `virsh` are synthetic; it creates no VM. It verifies header isolation, correlation, transition version, one release, private-free logs/events and SIGTERM shutdown. Actual VM cleanup is recorded separately in the [lifecycle verification](worker-lifecycle.md).
 
 Four HTTP-boundary regressions and three execution-boundary regressions failed before their fixes. The commands above passed for implementations `5c2b259`/`5a506c1` and process regression `66a78ec`. Full `make test` with an owned PostgreSQL database passed API 1,270 (237.51s), Runner 45, Worker/Gateway, Web 125 and type checks. Only one Linux service syntax check was skipped on macOS; Linux CI runs it. Existing Go CI includes the new tests automatically without extra jobs, matrices or longer 8-minute timeouts.
 
