@@ -98,6 +98,31 @@ class ControlClient:
         response.raise_for_status()
         return response.json()
 
+    async def fail_execution(self) -> None:
+        # A stale assignment must not overwrite cancellation, approval waiting,
+        # or central delivery. Re-read once on an optimistic-lock conflict;
+        # preserve the API's authority instead of forcing a terminal state.
+        for attempt in range(2):
+            response = await self.client.get(f"/api/runs/{self.work_id}")
+            response.raise_for_status()
+            work = response.json()
+            if (
+                not isinstance(work, dict)
+                or work.get("id") != self.work_id
+                or type(work.get("status")) is not str
+                or type(work.get("version")) is not int
+                or work["version"] < 1
+            ):
+                return
+            if work["status"] not in {"provisioning", "analyzing", "implementing", "verifying"}:
+                return
+            try:
+                await self.transition("failed", work["version"], "Runner execution failed")
+                return
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != 409 or attempt == 1:
+                    raise
+
     async def upload_delivery_bundle(self, content: bytes) -> dict:
         response = await self.client.post(
             f"/api/runs/{self.work_id}/delivery-bundle",
@@ -538,8 +563,17 @@ async def run() -> None:
     except Exception as error:
         try:
             await control.event("runner.failed", str(error), level="error")
-        finally:
-            raise
+        except Exception:
+            # Event transport failure must not prevent the independent state
+            # update or replace the original execution error.
+            pass
+        try:
+            await control.fail_execution()
+        except Exception:
+            # No unbounded retries or release from inside the VM. The Worker
+            # remains responsible for physical cleanup and lease accounting.
+            pass
+        raise
     finally:
         if session:
             await session.close()
