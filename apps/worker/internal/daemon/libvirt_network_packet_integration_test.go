@@ -26,6 +26,22 @@ import (
 // counters and generated frames on the exact owned bridge. Worker privileges,
 // host firewall policy and existing resources are never changed by this test.
 func TestDedicatedLibvirtQuarantinePackets(t *testing.T) {
+	dedicatedNetworkPackets(t, nil, false)
+}
+
+func TestDedicatedLibvirtControlPackets(t *testing.T) {
+	if os.Getenv("KELPIE_LIBVIRT_TEST_ACK") != "disposable-host-only" || os.Getenv("KELPIE_LIBVIRT_CONTROL_ORIGIN") == "" {
+		t.Skip("requires a dedicated host and explicit credential-free HTTPS test endpoint")
+	}
+	control, err := parseGuestControl(os.Getenv("KELPIE_LIBVIRT_CONTROL_ORIGIN"), os.Getenv("KELPIE_LIBVIRT_CONTROL_IPV4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dedicatedNetworkPackets(t, &control, false)
+}
+
+func dedicatedNetworkPackets(t *testing.T, control *guestControl, requireLogs bool) {
+	t.Helper()
 	base := os.Getenv("KELPIE_LIBVIRT_PACKET_IMAGE")
 	if os.Getenv("KELPIE_LIBVIRT_TEST_ACK") != "disposable-host-only" || base == "" {
 		t.Skip("requires dedicated-host acknowledgement and an explicitly prepared Golden Image")
@@ -70,7 +86,12 @@ func TestDedicatedLibvirtQuarantinePackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := store.CreateNetworked(storeTestWork, strings.TrimSpace(string(lease)), testResources, "10.240.0.0/24", inventory.excluded)
+	var run ownedRun
+	if control == nil {
+		run, err = store.CreateNetworked(storeTestWork, strings.TrimSpace(string(lease)), testResources, "10.240.0.0/24", inventory.excluded)
+	} else {
+		run, err = store.CreateControlled(storeTestWork, strings.TrimSpace(string(lease)), testResources, "10.240.0.0/24", inventory.excluded, *control)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +125,13 @@ func TestDedicatedLibvirtQuarantinePackets(t *testing.T) {
 	tools := t.TempDir() // Contains no disk, socket or other live VM source.
 	netConfig := filepath.Join(tools, "network-config")
 	netBody := fmt.Sprintf("version: 2\nethernets:\n  fixture:\n    match:\n      macaddress: '%s'\n    set-name: fixture0\n    dhcp4: false\n    dhcp6: false\n    accept-ra: false\n    optional: true\n    addresses: ['%s/30']\n", network.GuestMAC, network.Guest)
+	if control != nil {
+		body, err := network.guestNetworkConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		netBody = string(body)
+	}
 	if err := os.WriteFile(netConfig, []byte(netBody), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -166,32 +194,52 @@ func TestDedicatedLibvirtQuarantinePackets(t *testing.T) {
 	// A successful in-guest loopback packet is a positive transport control,
 	// independent of the intentionally denied external NIC.
 	packetGuestExec(t, ctx, run.Record.RunID, "/usr/bin/python3", "-c", packetLoopbackControl)
-	for _, direction := range []string{"out", "in"} {
-		chain := "libvirt-I-" + tap
-		srcMAC, dstMAC, srcIP, dstIP, device := network.GuestMAC, network.GatewayMAC, network.Guest, network.Gateway, "fixture0"
-		if direction == "in" {
-			chain = "libvirt-O-" + tap
-			srcMAC, dstMAC, srcIP, dstIP, device = network.GatewayMAC, network.GuestMAC, network.Gateway, network.Guest, network.Bridge
+	if control != nil {
+		initial := packetReadDropCounter(t, ctx, "libvirt-I-"+tap, false)
+		result := packetGuestExecWithin(t, ctx, 30*time.Second, run.Record.RunID, "/usr/bin/python3", "-c", packetControlProbe,
+			control.Host, control.IPv4, fmt.Sprint(control.Port), network.Gateway)
+		if strings.TrimSpace(string(result)) != "tls-control=verified forbidden-tcp=8" {
+			t.Fatal("control transport checks incomplete")
 		}
-		initial := packetDropCounter(t, ctx, chain)
-		args := []string{"-c", packetFrameProbe, device, srcMAC, dstMAC, srcIP, dstIP}
-		var sent []byte
-		if direction == "out" {
-			sent = packetGuestExec(t, ctx, run.Record.RunID, "/usr/bin/python3", args...)
-		} else {
-			sent = packetHostQuery(t, ctx, "/usr/bin/sudo", append([]string{"-n", "/usr/bin/python3"}, args...)...)
+		final := packetReadDropCounter(t, ctx, "libvirt-I-"+tap, false)
+		if final < initial+8 {
+			t.Fatal("forbidden connection attempts were not accounted for by the TAP firewall")
 		}
-		if strings.TrimSpace(string(sent)) != "frames-sent=12" {
-			t.Fatal("frame generator did not confirm every packet transmission")
+		t.Logf("actual guest verified TLS to the explicit control endpoint; 8 forbidden TCP destinations/ports rejected; TAP DROP %d -> %d", initial, final)
+		if requireLogs {
+			packetVerifyNetworkLog(t, ctx, network, control, false)
 		}
-		final := packetDropCounter(t, ctx, chain)
-		if final < initial+12 {
-			t.Fatalf("%s quarantine did not account for all 12 transmitted frames: %d -> %d", direction, initial, final)
+	} else {
+		for _, direction := range []string{"out", "in"} {
+			chain := "libvirt-I-" + tap
+			srcMAC, dstMAC, srcIP, dstIP, device := network.GuestMAC, network.GatewayMAC, network.Guest, network.Gateway, "fixture0"
+			if direction == "in" {
+				chain = "libvirt-O-" + tap
+				srcMAC, dstMAC, srcIP, dstIP, device = network.GatewayMAC, network.GuestMAC, network.Gateway, network.Guest, network.Bridge
+			}
+			initial := packetDropCounter(t, ctx, chain)
+			args := []string{"-c", packetFrameProbe, device, srcMAC, dstMAC, srcIP, dstIP}
+			var sent []byte
+			if direction == "out" {
+				sent = packetGuestExec(t, ctx, run.Record.RunID, "/usr/bin/python3", args...)
+			} else {
+				sent = packetHostQuery(t, ctx, "/usr/bin/sudo", append([]string{"-n", "/usr/bin/python3"}, args...)...)
+			}
+			if strings.TrimSpace(string(sent)) != "frames-sent=12" {
+				t.Fatal("frame generator did not confirm every packet transmission")
+			}
+			final := packetDropCounter(t, ctx, chain)
+			if final < initial+12 {
+				t.Fatalf("%s quarantine did not account for all 12 transmitted frames: %d -> %d", direction, initial, final)
+			}
+			t.Logf("%s: 12 guest/bridge frames sent; exact TAP DROP counter %d -> %d", direction, initial, final)
 		}
-		t.Logf("%s: 12 guest/bridge frames sent; exact TAP DROP counter %d -> %d", direction, initial, final)
 	}
 	if err := cleanup.Cleanup(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if requireLogs {
+		packetVerifyNetworkLog(t, ctx, network, control, true)
 	}
 	if err := cleanup.Released(); err != nil {
 		t.Fatal(err)
@@ -201,8 +249,29 @@ func TestDedicatedLibvirtQuarantinePackets(t *testing.T) {
 	if err != nil || string(before) != string(after) {
 		t.Fatal("packet fixture changed pre-existing network inventory")
 	}
-	t.Log("actual Golden Image boot and bidirectional Ethernet quarantine verified; owned VM/network/filter/bridge/disks absent; synthetic local release only")
+	t.Log("actual Golden Image transport checks completed; owned VM/network/filter/bridge/disks absent; synthetic local release only, not Runner/API acceptance")
 }
+
+const packetControlProbe = `
+import socket, ssl, sys
+host, address, port, gateway = sys.argv[1:]
+port = int(port)
+with socket.create_connection((address, port), timeout=12) as raw:
+    with ssl.create_default_context().wrap_socket(raw, server_hostname=host) as conn:
+        conn.sendall(('HEAD / HTTP/1.1\r\nHost: ' + host + '\r\nConnection: close\r\n\r\n').encode())
+        assert conn.recv(4096).startswith(b'HTTP/'), 'TLS endpoint did not return HTTP'
+for target, blocked_port in [(address, 22), (address, 80), (gateway, port),
+        ('192.168.5.15', port), ('169.254.169.254', 80), ('10.0.0.1', port),
+        ('172.16.0.1', port), ('192.168.1.1', port)]:
+    try:
+        conn = socket.create_connection((target, blocked_port), timeout=0.5)
+    except (TimeoutError, OSError):
+        pass
+    else:
+        conn.close()
+        raise AssertionError('forbidden TCP connection succeeded')
+print('tls-control=verified forbidden-tcp=8')
+`
 
 func packetFixtureNIC(t *testing.T, ctx context.Context, record runRecord) string {
 	t.Helper()
