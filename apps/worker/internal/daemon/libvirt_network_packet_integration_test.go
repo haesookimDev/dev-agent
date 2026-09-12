@@ -23,10 +23,11 @@ import (
 // An explicit, credential-free Golden Image fixture, not the production
 // Executor/Runner path. It uses the production journal/provisioner/NIC template
 // and cleanup. Root is used ONLY by this opt-in test for read-only firewall
-// counters and generated frames on the exact owned bridge. Worker privileges,
-// host firewall policy and existing resources are never changed by this test.
+// counters and scoped packet probes (public ingress uses a fresh owned veth
+// and namespace). Worker privileges, host firewall policy and pre-existing
+// resources are never changed by this test.
 func TestDedicatedLibvirtQuarantinePackets(t *testing.T) {
-	dedicatedNetworkPackets(t, nil, false)
+	dedicatedNetworkPackets(t, nil, false, nil)
 }
 
 func TestDedicatedLibvirtControlPackets(t *testing.T) {
@@ -37,10 +38,10 @@ func TestDedicatedLibvirtControlPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dedicatedNetworkPackets(t, &control, false)
+	dedicatedNetworkPackets(t, &control, false, nil)
 }
 
-func dedicatedNetworkPackets(t *testing.T, control *guestControl, requireLogs bool) {
+func dedicatedNetworkPackets(t *testing.T, control *guestControl, requireLogs bool, internet *guestInternet) {
 	t.Helper()
 	base := os.Getenv("KELPIE_LIBVIRT_PACKET_IMAGE")
 	if os.Getenv("KELPIE_LIBVIRT_TEST_ACK") != "disposable-host-only" || base == "" {
@@ -87,7 +88,9 @@ func dedicatedNetworkPackets(t *testing.T, control *guestControl, requireLogs bo
 		t.Fatal(err)
 	}
 	var run ownedRun
-	if control == nil {
+	if internet != nil && control != nil && requireLogs {
+		run, err = store.CreateInternet(storeTestWork, strings.TrimSpace(string(lease)), testResources, "10.240.0.0/24", inventory, *control, *internet)
+	} else if control == nil {
 		run, err = store.CreateNetworked(storeTestWork, strings.TrimSpace(string(lease)), testResources, "10.240.0.0/24", inventory.excluded)
 	} else {
 		run, err = store.CreateControlled(storeTestWork, strings.TrimSpace(string(lease)), testResources, "10.240.0.0/24", inventory.excluded, *control)
@@ -194,20 +197,35 @@ func dedicatedNetworkPackets(t *testing.T, control *guestControl, requireLogs bo
 	// A successful in-guest loopback packet is a positive transport control,
 	// independent of the intentionally denied external NIC.
 	packetGuestExec(t, ctx, run.Record.RunID, "/usr/bin/python3", "-c", packetLoopbackControl)
+	cloneIPv4 := ""
+	if internet != nil {
+		cloneIPv4 = packetInternetClone(t, ctx, run.Record)
+		packetInternetSpoofing(t, ctx, run.Record, tap)
+	}
 	if control != nil {
-		initial := packetReadDropCounter(t, ctx, "libvirt-I-"+tap, false)
+		var initial uint64
+		if internet != nil {
+			initial = packetInternetDropCounter(t, ctx, "libvirt-I-"+tap)
+		} else {
+			initial = packetReadDropCounter(t, ctx, "libvirt-I-"+tap, false)
+		}
 		result := packetGuestExecWithin(t, ctx, 30*time.Second, run.Record.RunID, "/usr/bin/python3", "-c", packetControlProbe,
 			control.Host, control.IPv4, fmt.Sprint(control.Port), network.Gateway)
 		if strings.TrimSpace(string(result)) != "tls-control=verified forbidden-tcp=8" {
 			t.Fatal("control transport checks incomplete")
 		}
-		final := packetReadDropCounter(t, ctx, "libvirt-I-"+tap, false)
+		var final uint64
+		if internet != nil {
+			final = packetInternetDropCounter(t, ctx, "libvirt-I-"+tap)
+		} else {
+			final = packetReadDropCounter(t, ctx, "libvirt-I-"+tap, false)
+		}
 		if final < initial+8 {
 			t.Fatal("forbidden connection attempts were not accounted for by the TAP firewall")
 		}
 		t.Logf("actual guest verified TLS to the explicit control endpoint; 8 forbidden TCP destinations/ports rejected; TAP DROP %d -> %d", initial, final)
 		if requireLogs {
-			packetVerifyNetworkLog(t, ctx, network, control, false)
+			packetVerifyNetworkLog(t, ctx, network, control, cloneIPv4, false)
 		}
 	} else {
 		for _, direction := range []string{"out", "in"} {
@@ -239,7 +257,7 @@ func dedicatedNetworkPackets(t *testing.T, control *guestControl, requireLogs bo
 		t.Fatal(err)
 	}
 	if requireLogs {
-		packetVerifyNetworkLog(t, ctx, network, control, true)
+		packetVerifyNetworkLog(t, ctx, network, control, cloneIPv4, true)
 	}
 	if err := cleanup.Released(); err != nil {
 		t.Fatal(err)
