@@ -27,6 +27,7 @@ const maxRunRecord = 4096
 // random UUID and remains readable for physical cleanup, never API recovery.
 // Schema 3 additionally owns the per-run network; older schemas cannot acquire
 // that authority by appending a network field.
+// Schema 4 records network version 2 with an explicit HTTPS control exception.
 type runRecord struct {
 	Schema    int         `json:"schema"`
 	RunID     string      `json:"run_id"`
@@ -140,6 +141,23 @@ func (s *runStore) Create(workID, leaseID string, resources Resources) (ownedRun
 // The caller must also supply a freshly verified host exclusion inventory;
 // this operation neither creates libvirt resources nor certifies isolation.
 func (s *runStore) CreateNetworked(workID, leaseID string, resources Resources, pool string, excluded []netip.Prefix) (ownedRun, error) {
+	return s.createNetworked(workID, leaseID, resources, pool, excluded, nil)
+}
+
+// CreateControlled records the sole permitted control endpoint before any
+// network effects. Schema 3 / network version 1 remain deny-all forever.
+func (s *runStore) CreateControlled(workID, leaseID string, resources Resources, pool string, excluded []netip.Prefix, control guestControl) (ownedRun, error) {
+	verified, err := parseGuestControl(control.Origin, control.IPv4)
+	prefix, poolErr := privateNetworkPool(pool)
+	if err != nil || verified != control || poolErr != nil || prefix.Contains(netip.MustParseAddr(verified.IPv4)) {
+		return ownedRun{}, errRunNetwork
+	}
+	// A control exception must never target this Worker's present or future
+	// task VMs, including a different /30 from the one allocated below.
+	return s.createNetworked(workID, leaseID, resources, pool, excluded, &control)
+}
+
+func (s *runStore) createNetworked(workID, leaseID string, resources Resources, pool string, excluded []netip.Prefix, control *guestControl) (ownedRun, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	runs, err := s.list()
@@ -160,6 +178,12 @@ func (s *runStore) CreateNetworked(workID, leaseID string, resources Resources, 
 	if err != nil {
 		return ownedRun{}, err
 	}
+	if control != nil {
+		network.Version, network.ControlOrigin, network.ControlIPv4 = 2, control.Origin, control.IPv4
+		if !network.valid(leaseID) {
+			return ownedRun{}, errRunNetwork
+		}
+	}
 	return s.create(workID, leaseID, resources, &network)
 }
 
@@ -177,6 +201,9 @@ func (s *runStore) create(workID, leaseID string, resources Resources, network *
 		Resources: resources, CreatedAt: time.Now().UTC()}
 	if network != nil {
 		record.Schema, record.Network = 3, network
+		if network.Version == 2 {
+			record.Schema = 4
+		}
 	}
 	if err := s.writeExclusive(leaseID+"/run.json", record); err != nil {
 		// A partial record is preserved and fails recovery closed, never reused.
@@ -205,12 +232,12 @@ func (s *runStore) load(uuid string) (ownedRun, error) {
 	if err := s.readRecord(uuid+"/run.json", &record); err != nil {
 		return ownedRun{}, err
 	}
-	if (record.Schema != 1 && record.Schema != 2 && record.Schema != 3) || record.RunID != uuid || !workUUID.MatchString(record.WorkID) ||
+	if (record.Schema < 1 || record.Schema > 4) || record.RunID != uuid || !workUUID.MatchString(record.WorkID) ||
 		record.Domain != "kelpie-"+uuid || record.Resources.CPU < 1 || record.Resources.MemoryMB < 1 ||
 		record.Resources.DiskGB < 1 || record.CreatedAt.IsZero() || record.CreatedAt.Location() != time.UTC {
 		return ownedRun{}, errRunStore
 	}
-	if record.Schema == 3 && (record.Network == nil || !record.Network.valid(uuid)) || record.Schema != 3 && record.Network != nil {
+	if record.Schema >= 3 && (record.Network == nil || !record.Network.valid(uuid) || record.Network.Version != record.Schema-2) || record.Schema < 3 && record.Network != nil {
 		return ownedRun{}, errRunStore
 	}
 	result := ownedRun{Record: record, Phase: "prepared", At: record.CreatedAt}

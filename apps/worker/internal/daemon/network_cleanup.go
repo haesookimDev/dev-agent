@@ -113,7 +113,7 @@ func (c *vmCleanup) inspectFilter(ctx context.Context, network runNetwork) (bool
 	if err != nil {
 		return false, err
 	}
-	expected, err := network.quarantineXML()
+	expected, err := network.policyXML()
 	if err != nil {
 		return false, errVMCleanup
 	}
@@ -215,7 +215,7 @@ func (c *vmCleanup) networkCreationRecorded(network runNetwork) bool {
 	for _, definition := range []struct {
 		name string
 		body func() ([]byte, error)
-	}{{"network.xml", network.definitionXML}, {"filter.xml", network.quarantineXML}} {
+	}{{"network.xml", network.definitionXML}, {"filter.xml", network.policyXML}} {
 		expected, err := definition.body()
 		if err != nil {
 			return false

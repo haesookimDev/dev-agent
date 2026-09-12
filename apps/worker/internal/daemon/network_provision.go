@@ -19,12 +19,13 @@ type networkProvisioner struct {
 // The caller must bind this recorded run to its lifecycle before invoking
 // create, and join this operation before cleanup. Errors retain ownership for
 // that cleanup; no resource is adopted or automatically redefined on retry.
-// This prepares a deny-all network, not an authorized production egress path.
+// Version 1 stays deny-all; version 2 installs the recorded control-only policy
+// before any NIC may attach. Neither version grants general internet access.
 func (p networkProvisioner) create(ctx context.Context, runID string) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	run, err := p.store.Load(runID)
-	if err != nil || run.Phase != "prepared" || run.Record.Schema != 3 || run.Record.Network == nil {
+	if err != nil || run.Phase != "prepared" || run.Record.Schema < 3 || run.Record.Network == nil {
 		return errRunNetwork
 	}
 	network := *run.Record.Network
@@ -53,7 +54,7 @@ func (p networkProvisioner) create(ctx context.Context, runID string) error {
 	for _, definition := range []struct {
 		name string
 		body func() ([]byte, error)
-	}{{"filter.xml", network.quarantineXML}, {"network.xml", network.definitionXML}} {
+	}{{"filter.xml", network.policyXML}, {"network.xml", network.definitionXML}} {
 		body, err := definition.body()
 		if err != nil || p.writeDefinition(runID, definition.name, body) != nil {
 			return errRunNetwork

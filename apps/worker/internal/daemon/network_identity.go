@@ -12,18 +12,21 @@ var errRunNetwork = errors.New("VM network identity unavailable or invalid")
 
 // A proposal, not proof that any network is owned or isolated. Callers must
 // persist it before creating resources and verify live ownership on cleanup.
-// No URL, credential, DNS lookup or caller-supplied device name belongs here.
+// Version 2 adds only a validated, credential-free control origin and IP pin.
+// No credential, DNS lookup or caller-supplied device name belongs here.
 type runNetwork struct {
-	Version    int    `json:"version"`
-	UUID       string `json:"uuid"`
-	Name       string `json:"name"`
-	Filter     string `json:"filter"`
-	Bridge     string `json:"bridge"`
-	CIDR       string `json:"cidr"`
-	Gateway    string `json:"gateway"`
-	Guest      string `json:"guest"`
-	GatewayMAC string `json:"gateway_mac"`
-	GuestMAC   string `json:"guest_mac"`
+	Version       int    `json:"version"`
+	UUID          string `json:"uuid"`
+	Name          string `json:"name"`
+	Filter        string `json:"filter"`
+	Bridge        string `json:"bridge"`
+	CIDR          string `json:"cidr"`
+	Gateway       string `json:"gateway"`
+	Guest         string `json:"guest"`
+	GatewayMAC    string `json:"gateway_mac"`
+	GuestMAC      string `json:"guest_mac"`
+	ControlOrigin string `json:"control_origin,omitempty"`
+	ControlIPv4   string `json:"control_ipv4,omitempty"`
 }
 
 func privateNetworkPool(value string) (netip.Prefix, error) {
@@ -58,6 +61,13 @@ func (network runNetwork) valid(runID string) bool {
 		return false
 	}
 	want, err := networkAt(runID, subnet)
+	if network.Version == 2 {
+		control, controlErr := parseGuestControl(network.ControlOrigin, network.ControlIPv4)
+		if controlErr != nil || subnet.Contains(netip.MustParseAddr(control.IPv4)) {
+			return false
+		}
+		want.Version, want.ControlOrigin, want.ControlIPv4 = 2, control.Origin, control.IPv4
+	}
 	return err == nil && network == want
 }
 

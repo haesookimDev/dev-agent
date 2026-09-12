@@ -56,7 +56,7 @@ func TestDedicatedLibvirtNetworkRecovery(t *testing.T) {
 	}
 	defer store.Close()
 	runs, err := store.List()
-	if err != nil || len(runs) != 1 || runs[0].Record.Schema != 3 || runs[0].Record.WorkID != storeTestWork {
+	if err != nil || len(runs) != 1 || runs[0].Record.Schema < 3 || runs[0].Record.WorkID != storeTestWork {
 		t.Fatal("requires one canonical fixture network journal")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

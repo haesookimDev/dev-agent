@@ -18,6 +18,7 @@ import (
 type networkHostInventory struct {
 	complete   bool
 	excluded   []netip.Prefix
+	hostIPv4   []netip.Addr
 	interfaces []net.Interface
 	xml        []*networkXMLNode
 }
@@ -54,6 +55,9 @@ func (inventory *networkHostInventory) exclude(prefix netip.Prefix) error {
 func (inventory networkHostInventory) available(network runNetwork) bool {
 	if !inventory.complete || !network.valid(network.UUID) {
 		return false
+	}
+	if network.Version == 2 && slices.Contains(inventory.hostIPv4, netip.MustParseAddr(network.ControlIPv4)) {
+		return false // An explicit endpoint never grants access to the Worker host.
 	}
 	subnet, _ := netip.ParsePrefix(network.CIDR)
 	for _, prefix := range inventory.excluded {
@@ -123,6 +127,12 @@ func (reader networkInventoryReader) read(ctx context.Context) (networkHostInven
 			prefix, err := netip.ParsePrefix(address.String())
 			if err != nil || inventory.exclude(prefix) != nil {
 				return networkHostInventory{}, errRunNetwork
+			}
+			if prefix.Addr().Is4() && !slices.Contains(inventory.hostIPv4, prefix.Addr()) {
+				if len(inventory.hostIPv4) >= 4096 {
+					return networkHostInventory{}, errRunNetwork
+				}
+				inventory.hostIPv4 = append(inventory.hostIPv4, prefix.Addr())
 			}
 		}
 	}
