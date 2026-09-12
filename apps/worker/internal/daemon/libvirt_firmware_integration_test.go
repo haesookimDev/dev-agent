@@ -46,7 +46,9 @@ func TestDedicatedLibvirtExecutorFirmware(t *testing.T) {
 	tools := t.TempDir() // No VM artifact is placed in this recursively cleaned directory.
 	shim := `#!/usr/bin/python3
 import os
+import subprocess
 import sys
+import time
 args = sys.argv[1:]
 for option, expected in (("--network", "network=default,model=virtio"),
                          ("--graphics", "vnc,listen=127.0.0.1")):
@@ -56,14 +58,24 @@ for option, expected in (("--network", "network=default,model=virtio"),
     if index >= len(args) or args[index] != expected:
         sys.exit(92)
     args[index] = "none"
-os.execve("/usr/bin/virt-install", ["virt-install", *args],
-          {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
+command = ["/usr/bin/virt-install", *args]
+environment = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
+ready = os.environ.get("KELPIE_TEST_LAUNCH_READY")
+if ready:
+    result = subprocess.run(command, env=environment)
+    if result.returncode:
+        sys.exit(result.returncode)
+    descriptor = os.open(ready, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(descriptor)
+    time.sleep(120)
+else:
+    os.execve(command[0], command, environment)
 `
 	if err := os.WriteFile(filepath.Join(tools, "virt-install"), []byte(shim), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", tools+":/usr/sbin:/usr/bin:/sbin:/bin")
-	for _, scenario := range []string{"terminal", "transition-rejected"} {
+	for _, scenario := range []string{"terminal", "transition-rejected", "launch-cancelled"} {
 		if !t.Run(scenario, func(t *testing.T) { realExecutorFirmware(t, ctx, scenario) }) {
 			break
 		}
@@ -194,12 +206,44 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 	d.tracker = NewTracker(d.config.RunResources)
 	d.tracker.Reserve(d.config.RunResources)
 	d.executor = LibvirtExecutor{config: d.config, logger: d.logger, store: store}
-	d.execute(ctx, claim)
-	wantProvisioned, wantFailures := int32(1), int32(0)
+	if scenario == "launch-cancelled" {
+		ready := filepath.Join(t.TempDir(), "launch-ready") // No VM artifact.
+		t.Setenv("KELPIE_TEST_LAUNCH_READY", ready)
+		runCtx, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() { d.execute(runCtx, claim); close(done) }()
+		deadline := time.Now().Add(15 * time.Second)
+		observed := false
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(ready); err == nil {
+				run, err := store.Load(claim.LeaseID)
+				nvram, identityErr := cleanup.verifyDomain(ctx, run.Record)
+				stopped, stateErr := cleanup.stopped(ctx)
+				observed = err == nil && run.Phase == "prepared" && identityErr == nil && nvram && stateErr == nil && !stopped
+				break
+			}
+			select {
+			case <-done:
+				deadline = time.Now()
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		stop()
+		<-done // Join bounded physical cleanup before closing the store/server.
+		if !observed {
+			t.Fatal("did not observe owned running VM while the launch command was still pending")
+		}
+	} else {
+		d.execute(ctx, claim)
+	}
+	wantRunning, wantProvisioned, wantFailures := int32(1), int32(1), int32(0)
 	if scenario == "transition-rejected" {
 		wantProvisioned, wantFailures = 0, 1
 	}
-	if running.Load() != 1 || provisioned.Load() != wantProvisioned || failures.Load() != wantFailures || releases.Load() != 1 {
+	if scenario == "launch-cancelled" {
+		wantRunning, wantProvisioned, wantFailures = 0, 0, 1
+	}
+	if running.Load() != wantRunning || provisioned.Load() != wantProvisioned || failures.Load() != wantFailures || releases.Load() != 1 {
 		t.Fatalf("unexpected lifecycle counts: running=%d provisioned=%d failures=%d releases=%d", running.Load(), provisioned.Load(), failures.Load(), releases.Load())
 	}
 	run, err := store.Load(claim.LeaseID)

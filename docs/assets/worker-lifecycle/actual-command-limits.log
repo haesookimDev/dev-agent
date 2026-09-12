@@ -1,0 +1,25 @@
+=== RUN   TestVMCommandHasItsOwnDeadline
+--- PASS: TestVMCommandHasItsOwnDeadline (0.04s)
+=== RUN   TestVMCommandDoesNotExtendParentDeadline
+--- PASS: TestVMCommandDoesNotExtendParentDeadline (0.04s)
+=== RUN   TestVMCommandExpiredLimitNeverStarts
+--- PASS: TestVMCommandExpiredLimitNeverStarts (0.00s)
+=== RUN   TestVMCommandCancellationStopsOrdinaryDescendants
+--- PASS: TestVMCommandCancellationStopsOrdinaryDescendants (1.21s)
+=== RUN   TestCommandFailureOmitsOutputArgumentsAndPath
+--- PASS: TestCommandFailureOmitsOutputArgumentsAndPath (0.00s)
+=== RUN   TestDedicatedLibvirtExecutorFirmware
+=== RUN   TestDedicatedLibvirtExecutorFirmware/terminal
+    libvirt_firmware_integration_test.go:122: preserved ownership journal: /var/tmp/kelpie-firmware-2855169881/4b511652-97ba-46b7-a046-d13c5549d479
+    libvirt_firmware_integration_test.go:259: production Executor -> real KVM/owned UEFI -> physical cleanup -> synthetic API ACK -> durable release
+=== RUN   TestDedicatedLibvirtExecutorFirmware/transition-rejected
+    libvirt_firmware_integration_test.go:122: preserved ownership journal: /var/tmp/kelpie-firmware-3762343060/089e2a5d-b422-4b68-bb66-1c656c089ff5
+    libvirt_firmware_integration_test.go:259: production Executor -> real KVM/owned UEFI -> physical cleanup -> synthetic API ACK -> durable release
+=== RUN   TestDedicatedLibvirtExecutorFirmware/launch-cancelled
+    libvirt_firmware_integration_test.go:122: preserved ownership journal: /var/tmp/kelpie-firmware-731363718/b5c1ba45-9956-48af-a60f-6d3caf9b9681
+    libvirt_firmware_integration_test.go:259: production Executor -> real KVM/owned UEFI -> physical cleanup -> synthetic API ACK -> durable release
+--- PASS: TestDedicatedLibvirtExecutorFirmware (70.64s)
+    --- PASS: TestDedicatedLibvirtExecutorFirmware/terminal (27.27s)
+    --- PASS: TestDedicatedLibvirtExecutorFirmware/transition-rejected (21.68s)
+    --- PASS: TestDedicatedLibvirtExecutorFirmware/launch-cancelled (21.63s)
+PASS

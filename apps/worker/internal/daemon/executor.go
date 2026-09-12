@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 )
 
@@ -249,7 +250,18 @@ func libvirtBootArguments(architecture, runDir string) ([]string, error) {
 }
 
 func run(ctx context.Context, name string, args ...string) error {
+	return runWithLimit(ctx, 45*time.Second, name, args...)
+}
+
+func runWithLimit(ctx context.Context, limit time.Duration, name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
 	command := exec.CommandContext(ctx, name, args...)
+	// Stop ordinary helper descendants as well as their parent. The actual VM
+	// belongs to libvirt and must still go through the owned physical cleanup.
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+	command.WaitDelay = time.Second
 	// Nil stdout/stderr go to the null device: never buffer or retain potentially
 	// sensitive command output. Exit status remains available for diagnosis.
 	if err := command.Run(); err != nil {
