@@ -12,6 +12,8 @@ Startup is `ownership record → network/seed → VM → Runner TLS/lease authen
 
 Clone has a 120-second default limit. Normal exit, error, timeout and cancellation all clean the clone's own process group. Output containing credential-bearing URLs is not retained; only exit codes are reported. Runner re-reads current execution state/version when failing, with one conflict re-read. It does not overwrite cancellation, approval waiting or delivery states, or release leases itself. Worker remains responsible for physical cleanup before API release and local capacity return only after the API acknowledgement.
 
+Worker likewise fails only execution states (`provisioning/analyzing/implementing/verifying`) after an error. It preserves approval, input, feedback, budget waiting and delivery states. If the VM has been cleaned while work remains in one of these protected nonterminal states, its lease and local reservation remain retained. The terminal-only API release policy is not bypassed; automatic recovery here remains part of the unfinished active-run recovery work. Invalid claim states/versions are rejected before host commands or seed generation.
+
 ## Configuration contract
 
 | Location / variable | Default and rollout |
@@ -36,6 +38,35 @@ Old Workers cannot recover Schema 4. Before rollback, use the new Worker to clea
 
 Repeatable actual tests are the [Worker/VM](../../apps/worker/internal/daemon/libvirt_runner_api_integration_test.go) and [API/PostgreSQL](../../apps/api/tests/test_guest_runner_postgres.py) fixtures. They use production Executor NIC/seed generation and the real API in the dedicated Mac/Lima ARM64 environment. Current Runner source executes through a temporary guest systemd override; this is not verification of a newly sealed Golden Image.
 
+Prepare a dedicated lab with empty domain inventory, read-only image access, an isolated PostgreSQL `KELPIE_TEST_POSTGRES_URL`, and a private lab JSON. Its fields specify the fixture's explicit acknowledgement, SSH config/host, ARM64 test binary, base image, unused forwarding port and guest-visible Mac host address. Each invocation uses fresh work, CAs and credentials; run `trusted`, `untrusted-ca`, `wrong-hostname` and `cancelled` individually. An environment-gated skip is not an actual verification pass.
+
+```sh
+KELPIE_TEST_LIBVIRT_RECOVERY_CONFIG=/absolute/private/lab.json \
+  .venv/bin/python -m pytest -q \
+  'apps/api/tests/test_guest_runner_postgres.py::test_actual_guest_control_bootstrap_preserves_tls_and_release_gates[trusted]' -s
+```
+
+GitHub CI compiles and vets `libvirt_integration` code in the existing Go job but does not run VMs. Actual verification uses the dedicated environment above; host credentials or QEMU permissions are not provided to public CI.
+
 Authenticated execution-cancellation verification uses the real lease-scoped transition API. The administrative cancellation API currently supports only unassigned queued work; **this is not user-interface cancellation of a running task**. That separate MVP condition remains open.
 
 Control bootstrap does not complete general cloning, model execution, GUI, preview/console, total VM budgets or concurrent two-work acceptance. General internet egress is deliberately denied by this policy; its successor will use a separate feature branch, verification and PR.
+
+## Actual acceptance — 2026-09-13
+
+Verification used production source `9d1c56f798837a2543756eb7f2049a62d6233231` and test source `f6bfdff11761a3d69e80515c683838796ca344cd` in the dedicated environment above. The [receipt](../assets/guest-control-bootstrap/macos-acceptance.json) records image, binary, fixture and private-log SHA-256 values and per-run differences. Subsequent CI/documentation commits do not change production code.
+
+| Actual path | Observed result | Duration |
+| --- | --- | --- |
+| Correct CA/hostname | TLS/lease authentication, Runner-owned `analyzing`, then intentionally denied clone and `failed` v4. Eight forbidden TCP attempts; actual TAP DROP 0→8. | 93.19s |
+| Wrong CA | Certificate verification error in the current Runner invocation; zero API HTTP/lease-header requests; initial-connection deadline then `failed` v3. | 203.13s |
+| Wrong hostname | Hostname verification error in the current Runner invocation; zero API HTTP/lease-header requests; `failed` v3. | 206.48s |
+| Authenticated execution cancellation | Actual API cancellation immediately after `analyzing`; Runner error does not replace `cancelled` v4; zero `failed` transitions. | 89.80s |
+
+Every path checked that the domain, owned network/filter, bridge, writable disk, seed, network config and other owned artifacts were absent **immediately before** the API release request. Actual PostgreSQL recorded one release, followed by local `released` after acknowledgement. The base image hash, inode, owner and `0600` ACL were preserved; temporary ancestor access was restored. The 24 pre-existing filters and inactive default network remained. Owned servers, SSH forwarders, CA/key files and fresh test databases/roles were cleaned.
+
+Initial failures remain recorded. SSH health-check wildcard expansion was corrected with argument quoting. Observed cloud-init timing failures changed only fixture waiting to 60 seconds/a 90-second command context; the production 180-second deadline and acceptance assertions remain. Hostname rejection passed with the earlier wait settings, explicitly identified by binary in the receipt. Three synthetic regressions reproduced pytest reprinting private values on failure, then passed with fixed diagnostics. The final trusted run uses both fixture corrections.
+
+`make test` and `make lint` passed: API 1196/157 conditional skips, Runner 102, Web 125/type checking, Worker/Gateway and Lab 18. After the diagnostic regressions were added, `make test-api` passed again with **1199/157**, alongside Ruff. Worker state/claim/ACK regressions, focused race checks and Linux ARM64/amd64 tagged compilation/vet passed. Earlier actual ARM firmware checks (three paths/78.91s) and preservation of a pre-existing control filter (1.55s) also passed; blank firmware VMs are not combined into full guest-execution evidence.
+
+Independent security review identified the state-overwrite and early claim-validation issues, which were corrected with regressions. Follow-up review of production code and actual fixtures found no further blockers. New browser/native-screen verification is not applicable to this backend-only feature; this does not waive the unfinished GUI, full-image or concurrent-work gates above.

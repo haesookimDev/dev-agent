@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-09-13",
+  "purpose": "Actual guest control bootstrap, TLS rejection and cleanup-before-release",
+  "production_commit": "9d1c56f798837a2543756eb7f2049a62d6233231",
+  "test_commit": "f6bfdff11761a3d69e80515c683838796ca344cd",
+  "base_main_commit": "474ba82246cacf9be82c22f4a714317e0c1ebcb4",
+  "environment": "Dedicated macOS M4 Pro / Lima Ubuntu ARM64 / nested KVM / libvirt / isolated PostgreSQL 17",
+  "runner_source_sha256": "d2c2b6e37e2a4a13772450adb323e79a9056e113d0042a434863e5bfa5b46fdb",
+  "runner_delivery": "Explicit temporary guest systemd override; production NIC, network and cloud-init assignment are not replaced",
+  "image": {
+    "sha256": "2fc312a6335a5919f5a0d4e3cfe2e40eae6915cce47b79801f559afc251035d8",
+    "size_bytes": 5095489536,
+    "owner_uid": 1000,
+    "owner_gid": 1000,
+    "mode": "0600",
+    "link_count": 1,
+    "device": 64769,
+    "inode": 526352,
+    "new_sealed_image_verified": false,
+    "release_eligible": false
+  },
+  "fixtures": {
+    "worker_final_sha256": "6dc3a9a30066fe97d901a01eb03436e5f859fc3a1dbe5c1bc2fda1eae458dc5d",
+    "packet_helper_final_sha256": "feafb37a5f0fcd8844a293c58697630ab9c3b7fb8ac8e5eba4a35574c41f96e9",
+    "api_final_sha256": "fce76304b48c3eea3e6e79c57b58b89669582f0781c27e5bfb2d7d59cc62e0f1",
+    "api_before_diagnostic_guard_sha256": "84feafd05d5080a45af817d02235c6a697c214b3b003328d93a434a3afbb98a3",
+    "worker_before_boot_wait_adjustment_sha256": "035bd178b76aed59572e1be2d83d206373b668423a210913a5ac68f14369bb89"
+  },
+  "binaries": {
+    "07": "aac800156b6bc262285a7f7768c0be9eaedd470bae49c4bff9e5a25a9ee6a9e2",
+    "08": "af3dba791e356894359d458254b02f3bcf048325fbbb6bd5c604ffead1ae4889"
+  },
+  "runs": [
+    {
+      "scenario": "trusted",
+      "binary": "08",
+      "api_fixture": "final",
+      "passed": true,
+      "pytest_seconds": 93.19,
+      "worker_seconds": 92.06,
+      "log_sha256": "548607162f35e3f804f313a14d4fe59a09018f2c7533fb40f2ce04408104ef44",
+      "authenticated_bootstrap": true,
+      "status": "failed",
+      "version": 4,
+      "release_count": 1,
+      "forbidden_tcp_attempts": 8,
+      "tap_drop_before": 0,
+      "tap_drop_after": 8,
+      "reason": "Control-only egress intentionally denies repository cloning"
+    },
+    {
+      "scenario": "untrusted-ca",
+      "binary": "08",
+      "api_fixture": "before_diagnostic_guard",
+      "passed": true,
+      "pytest_seconds": 203.13,
+      "worker_seconds": 202.32,
+      "log_sha256": "f0bb15f1e72d33d4c73b2c53fe5846a51ad5cfe1fd904c0d1c3504a68801eeab",
+      "current_runner_invocation_tls_error": "CERTIFICATE_VERIFY_FAILED: self-signed certificate",
+      "http_requests": 0,
+      "lease_header_requests": 0,
+      "status": "failed",
+      "version": 3,
+      "release_count": 1
+    },
+    {
+      "scenario": "wrong-hostname",
+      "binary": "07",
+      "api_fixture": "before_diagnostic_guard",
+      "passed": true,
+      "pytest_seconds": 206.48,
+      "worker_seconds": 206.49,
+      "log_sha256": "0fdd5196fb9ac0056b810b3960b1d3a88a26cf546485603498d570add0bd3a4f",
+      "current_runner_invocation_tls_error": "CERTIFICATE_VERIFY_FAILED: Hostname mismatch",
+      "http_requests": 0,
+      "lease_header_requests": 0,
+      "status": "failed",
+      "version": 3,
+      "release_count": 1
+    },
+    {
+      "scenario": "cancelled",
+      "binary": "08",
+      "api_fixture": "before_diagnostic_guard",
+      "passed": true,
+      "pytest_seconds": 89.80,
+      "worker_seconds": 88.73,
+      "log_sha256": "ff36f44202f9bc3fedf4e4f800a5e0909a11307d38e839ee3d6f20f6a00434d0",
+      "authenticated_bootstrap": true,
+      "authenticated_cancellation_count": 1,
+      "failed_state_transitions": 0,
+      "status": "cancelled",
+      "version": 4,
+      "release_count": 1,
+      "user_interface_running_cancellation_verified": false
+    }
+  ],
+  "evidence_applicability": [
+    "All four runs use the same production Worker and Runner source at production_commit.",
+    "Binary 08 changes only fixture boot waiting: cloud-init 10 to 60 seconds and a bounded 90-second guest command context; the production 180-second bootstrap deadline and acceptance assertions are unchanged.",
+    "The final API fixture changes only sensitive-output failure reporting: raw/base64 values cannot be rendered by pytest assertion rewriting. Three synthetic regressions failed with the old assertion and pass with the fixed diagnostic. TLS, cancellation, database and release assertions are unchanged.",
+    "The trusted run exercises both final fixture revisions; earlier per-scenario binary and API fixture revisions are explicitly retained above."
+  ],
+  "every_run_verified": {
+    "physical_cleanup_before_release_http_request": true,
+    "owned_domain_network_filter_bridge_and_vm_artifacts_absent": true,
+    "api_release_ack_before_local_released_phase": true,
+    "base_image_hash_identity_owner_and_private_acl_preserved": true
+  },
+  "post_cleanup": {
+    "domains": 0,
+    "nwfilter_bindings": 0,
+    "preexisting_filter_inventory_count": 24,
+    "default_network": "inactive",
+    "image_ancestor_acl_restored": true,
+    "temporary_ca_and_private_key_files_removed": true,
+    "owned_api_servers_and_ssh_forwarders_stopped": true,
+    "fresh_test_databases_and_roles_removed": true,
+    "private_recovery_journals_and_logs_retained": true
+  },
+  "not_verified": [
+    "Sealed final Golden Image and real amd64 boot",
+    "General repository/model egress or coding-agent success",
+    "Full GUI, preview/console or concurrent two-work acceptance",
+    "Total VM time budgets and automatic nonterminal recovery",
+    "User-interface cancellation of running work"
+  ]
+}
