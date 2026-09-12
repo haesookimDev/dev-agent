@@ -1,0 +1,18 @@
+{
+  "actual_client_processes": 6,
+  "api_vm_acceptance": false,
+  "cases_passed": [
+    "trusted",
+    "untrusted",
+    "wrong-name",
+    "missing-ca",
+    "malformed-ca",
+    "default-trust-unchanged"
+  ],
+  "ephemeral_cert_key_removed": true,
+  "platform": "macOS ARM64",
+  "rejected_request_headers": 0,
+  "source_sha": "33c5ba87babfe76d410c00a81967c168214d6919",
+  "tls_port_closed": true,
+  "valid_http_events": 1
+}

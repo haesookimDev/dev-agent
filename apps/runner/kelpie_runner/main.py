@@ -4,6 +4,7 @@ import json
 import mimetypes
 import os
 import shlex
+import ssl
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,10 @@ class ControlClient:
     def __init__(self, base_url: str, work_id: str, lease: str, correlation_id: str):
         self.work_id = work_id
         self._lease = lease
+        ca_file = os.environ.get("KELPIE_CONTROL_CA_FILE")
+        # Explicit per-API trust only. Never disable certificate/name checks or
+        # alter the guest system/model provider's trust configuration.
+        verify = ssl.create_default_context(cafile=ca_file) if ca_file else True
         self.client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             headers={
@@ -42,6 +47,7 @@ class ControlClient:
                 "X-Kelpie-Correlation-ID": correlation_id,
             },
             timeout=30,
+            verify=verify,
         )
 
     async def close(self) -> None:

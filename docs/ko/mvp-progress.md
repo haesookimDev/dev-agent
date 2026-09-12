@@ -4,7 +4,7 @@
 
 ## 기준과 진행률
 
-제품 기준 코드: `main`의 `2b7e76d84ea56416c39f00dde1ee2bfa298f3b27` ([PR #62](https://github.com/haesookimDev/dev-agent/pull/62) 병합). 선행 PR #58/#59/#60/#61/#65과 기능별 완료 지침 PR #64도 포함합니다. 임대 복구 API의 검증 소스는 `f5d9da32c6500c413c4340d914997cda53b4e479`입니다. 병합된 Worker 수명주기 PR #58의 후속 코드 `b9fdd484f4d7777345e89694c0c2a00b42f87816`에서 종료 임대의 실제 VM·새 Worker 프로세스·API·PostgreSQL 복구까지 검증했습니다. 전체 Executor와 실행 중 작업 복구는 남아 있습니다. 아래 평가는 코드·테스트·실제 구동 기록을 대조한 시점별 기록이며 Draft 브랜치나 계획은 완료로 세지 않습니다.
+제품 기준 코드: `main`의 `d5fb7fc40e3f0d820db1539d5d47792a130707ff` ([PR #63](https://github.com/haesookimDev/dev-agent/pull/63) 병합). 선행 PR #58/#59/#60/#61/#62/#65과 기능별 완료 지침 PR #64도 포함합니다. 임대 복구 API의 검증 소스는 `f5d9da32c6500c413c4340d914997cda53b4e479`입니다. 병합된 Worker 수명주기 PR #58의 후속 코드 `b9fdd484f4d7777345e89694c0c2a00b42f87816`에서 종료 임대의 실제 VM·새 Worker 프로세스·API·PostgreSQL 복구까지 검증했습니다. 전체 Executor와 실행 중 작업 복구는 남아 있습니다. 아래 평가는 코드·테스트·실제 구동 기록을 대조한 시점별 기록이며 Draft 브랜치나 계획은 완료로 세지 않습니다.
 
 [바로 다음 Release](roadmap-summary.md#바로-다음-release)에 명시된 7단계를 고정된 분모로 사용합니다. **검증 완료 1/7 = 14.3%**, 부분 완료 3/7, 미완료 3/7입니다. 부분 구현에는 임의 점수를 주지 않습니다. 이 수치는 릴리즈 단계의 검증 완료율이며 코드 작성량·투입 공수·남은 일정의 비율이 아닙니다. 전체 개발 공수의 정확한 완료율은 현재 근거로 산정하지 않습니다.
 
@@ -51,6 +51,10 @@ Worker 후속 코드의 `make test`는 API 1195 통과/153 Skip(155.48초), Runn
 10. 다음은 허용 통신과 Host·Metadata·다른 VM 차단을 함께 검증하고 Executor에 연결한 뒤 전체 Golden Image/Runner 경로와 VM 시간 예산을 검증하는 단계입니다. 실행 중 작업의 복구 정책과 Claim 응답 유실도 별도 검증합니다. [Draft PR #21](https://github.com/haesookimDev/dev-agent/pull/21)의 Preview는 아직 `main`에 없습니다. 작업별 네트워크·TLS·Console·동시 두 작업이 입증되기 전에는 완료로 계산하거나 강제 병합하지 않습니다. 기존 운영 Host나 주변 자격증명을 임의로 찾아 사용하지 않습니다.
 
 ## 갱신 방법
+
+PR #63은 최종 Head `86001e9dab43f79619a9f7da82eb3d8cc5614223`의 [CI 5개](https://github.com/haesookimDev/dev-agent/actions/runs/34714629376)(첫 실행 5분 55초), 실제 패킷·정리 증거와 리뷰 확인 후 위 기준으로 병합됐습니다. 병합된 `main`에서도 `make test`(API 1196/153 조건부 Skip, Runner 45, Web 125, Go, Lab 18)와 [CI 5개](https://github.com/haesookimDev/dev-agent/actions/runs/34714951672)를 통과했습니다.
+
+다음 VM 제어 통신의 선행 의존성으로 [Runner 전용 CA](runner-control-tls.md)를 별도 기능 브랜치에서 검증했습니다. 소스 `33c5ba87babfe76d410c00a81967c168214d6919`에서 회귀 3개 수정 전 실패→Runner 48개·정적 검사 통과, 별도 Mac TLS 클라이언트 프로세스 6개의 성공/거부와 임시 자원 정리를 확인했습니다. 이 PR의 최신 CI·리뷰·병합 상태는 PR에 기록합니다. 아직 Worker의 Guest 주소/IP Pin·CA Seed·허용 송신 정책·전체 Runner 실행을 검증한 것은 아니며, 다음 기능에서 연결합니다. 완료율 **1/7(14.3%)**과 나머지 Gate는 유지합니다.
 
 2026-09-13 [네트워크 PR #62의 CI](https://github.com/haesookimDev/dev-agent/actions/runs/34712642565)에서 기존 백업 대상 링크의 접근 시간 변경이 발견됐습니다. 병합을 멈추고 동기화한 기준 `294dbbb7c633d1cfe999e649d97f99487115c828`에서 별도 수정 `dd35a8e26c9cf4953984015c344a6d6827860d14`를 만들었습니다. [백업 검증](artifact-backup.md)은 회귀의 수정 전 실패, API 1196 통과/153 조건부 Skip, 정적 검사와 실제 Mac CLI의 정상/기존 대상 거부·원본 보존을 기록합니다. 수정 PR #65는 최종 Head `ec3ecc6ddf8afe073e9d1c62c8a5ec878fd0204b`의 [CI 5개](https://github.com/haesookimDev/dev-agent/actions/runs/34713453621)가 첫 실행 5분 34초에 통과해 병합됐습니다. #62에 `fca5e482d181284e4de79a1398bebdcc2bb0ce65`로 통합했고 Worker·백업 회귀 51개·정적 검사와 검증 소스 동일성을 확인했습니다. #62의 최종 CI·리뷰·병합은 위에 기록했습니다. 이 선행 회귀 수정으로 남은 실행기·네트워크·GUI·동시 작업 조건이나 1/7(14.3%)은 바뀌지 않습니다.
 

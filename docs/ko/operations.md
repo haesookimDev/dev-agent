@@ -178,6 +178,8 @@ KELPIE_WORK_ROOT=/var/lib/kelpie/runs
 
 Golden Image에는 `kelpie` 사용자, Codex, `kelpie-runner`, Git, 언어 Toolchain, Desktop/Browser Stack, qemu-guest-agent, Runner systemd Unit이 있어야 합니다. 봉인된 Template에서 ChatGPT Device Login을 수행하고 인증 자료는 Boot 시 VM별 tmpfs에 복사합니다. Screenshot, cloud-init Log, 보존 Artifact에 인증 자료가 남지 않도록 확인합니다.
 
+Runner가 사설 CA 기반 HTTPS 제어 API에 접속해야 하면 선택적인 `KELPIE_CONTROL_CA_FILE`을 **Runner 프로세스에만** 설정합니다. 기본값·Guest 경로·실패 동작·Rollback과 실제 TLS 검증은 [Runner 전용 CA](runner-control-tls.md)를 참조합니다. Worker→Guest 전달은 별도 후속 기능입니다.
+
 ## 사고 대응
 
 - 유지보수 전 Worker 상태를 `draining`으로 변경합니다. 실행 중인 VM을 무조건 종료하지 않습니다.
