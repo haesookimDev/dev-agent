@@ -230,9 +230,12 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if _, err := e.store.Advance(owned.Record.RunID, "running"); err != nil {
 		return err
 	}
-	work, err := client.Transition(ctx, claim.WorkItem.ID, claim.LeaseToken, "analyzing", claim.WorkItem.Version, "KVM VM provisioned")
+	work, err := waitGuestBootstrap(ctx, client, claim, newVMCleanup(e.store, claim.LeaseID), guestBootstrapTimeout, time.Second)
 	if err != nil {
 		return err
+	}
+	if terminalRun(work.Status) {
+		return client.Release(ctx, work.ID, claim.LeaseToken)
 	}
 	e.logger.Info(
 		"vm provisioned",
@@ -241,7 +244,7 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 		"domain", name,
 	)
 	if err := client.Event(ctx, work.ID, claim.LeaseToken, AgentEvent{
-		EventType: "vm.provisioned", Source: "libvirt", Level: "info", Message: "VM is ready",
+		EventType: "vm.provisioned", Source: "libvirt", Level: "info", Message: "Runner control connection verified",
 		Payload: map[string]any{"domain": name, "run_dir": runDir},
 	}); err != nil {
 		return err

@@ -65,6 +65,7 @@ def exercise(monkeypatch, tmp_path):
         session = SimpleNamespace(start=AsyncMock(), close=AsyncMock(), run_turn=control.run_turn)
         assignment = main.Assignment("owned-work", "owned-correlation", "Owned work",
                                      "Revise the fixture", "example/fixture", 2, 60, replan_limit)
+        monkeypatch.delenv("KELPIE_CONTROL_BOOTSTRAP", raising=False)
         monkeypatch.setenv("KELPIE_CONTROL_URL", "http://runner.invalid")
         monkeypatch.setenv("KELPIE_LEASE_TOKEN", "owned-noncredential-placeholder")
         monkeypatch.setenv("KELPIE_WORK_ROOT", str(tmp_path))

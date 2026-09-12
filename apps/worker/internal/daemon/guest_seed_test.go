@@ -40,7 +40,7 @@ func TestGuestSeedUsesSeparatePinnedControlEndpoint(t *testing.T) {
 		}
 		values[key] = value
 	}
-	if len(values) != 5 || values["KELPIE_CONTROL_URL"] != control.Origin || values["KELPIE_LEASE_TOKEN"] != claim.LeaseToken ||
+	if len(values) != 6 || values["KELPIE_CONTROL_BOOTSTRAP"] != "1" || values["KELPIE_CONTROL_URL"] != control.Origin || values["KELPIE_LEASE_TOKEN"] != claim.LeaseToken ||
 		values["KELPIE_WORK_ROOT"] != "/workspace" {
 		t.Fatal("guest environment used host control configuration")
 	}

@@ -22,6 +22,7 @@ const (
 	vmAssignment
 	vmSeedData
 	vmImageCapacity
+	vmControlBootstrap
 )
 
 // Only fixed classifications and numeric codes cross the diagnostic boundary.
@@ -52,6 +53,8 @@ func (e diagnosticError) Error() string {
 		return "VM base image unavailable"
 	case vmImageCapacity:
 		return "VM disk reservation is smaller than the base image"
+	case vmControlBootstrap:
+		return "VM Runner control bootstrap was not confirmed"
 	case vmRunDirectory:
 		return "VM run directory unavailable"
 	case vmAssignment:

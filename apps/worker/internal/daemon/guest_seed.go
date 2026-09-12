@@ -20,7 +20,7 @@ func guestUserData(control guestControl, claim Claim, ca []byte) ([]byte, error)
 		return nil, privateFailure(err, vmAssignment)
 	}
 	environment := fmt.Sprintf(
-		"KELPIE_CONTROL_URL=%s\nKELPIE_LEASE_TOKEN=%s\nKELPIE_CORRELATION_ID=%s\nKELPIE_ASSIGNMENT=%s\nKELPIE_WORK_ROOT=/workspace\n",
+		"KELPIE_CONTROL_URL=%s\nKELPIE_LEASE_TOKEN=%s\nKELPIE_CORRELATION_ID=%s\nKELPIE_ASSIGNMENT=%s\nKELPIE_WORK_ROOT=/workspace\nKELPIE_CONTROL_BOOTSTRAP=1\n",
 		control.Origin, claim.LeaseToken, work.CorrelationID, base64.URLEncoding.EncodeToString(assignment),
 	)
 	caFile := ""

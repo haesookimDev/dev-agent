@@ -92,6 +92,55 @@ class ControlClient:
         response.raise_for_status()
         return response.json()
 
+    async def read_work(self) -> dict:
+        response = await self.client.get(f"/api/runs/{self.work_id}")
+        response.raise_for_status()
+        return response.json()
+
+    async def bootstrap(self, assignment: Assignment) -> dict:
+        if type(assignment.version) is not int or assignment.version < 2:
+            raise RuntimeError("control bootstrap rejected assignment version")
+
+        work = await self.read_work()
+        if self._is_bootstrapped_work(work, assignment):
+            return work
+        if self._is_provisioning_work(work, assignment):
+            try:
+                transitioned = await self.transition(
+                    "analyzing",
+                    assignment.version - 1,
+                    "Runner control bootstrap completed",
+                )
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != 409:
+                    raise
+                # One conflict re-read permits an idempotent concurrent bootstrap,
+                # but never allows Runner to overwrite cancellation or approval.
+                transitioned = await self.read_work()
+            if self._is_bootstrapped_work(transitioned, assignment):
+                return transitioned
+        raise RuntimeError("control bootstrap rejected run identity, version, or status")
+
+    @staticmethod
+    def _is_bootstrapped_work(work: Any, assignment: Assignment) -> bool:
+        return (
+            isinstance(work, dict)
+            and work.get("id") == assignment.id
+            and work.get("status") == "analyzing"
+            and type(work.get("version")) is int
+            and work["version"] == assignment.version
+        )
+
+    @staticmethod
+    def _is_provisioning_work(work: Any, assignment: Assignment) -> bool:
+        return (
+            isinstance(work, dict)
+            and work.get("id") == assignment.id
+            and work.get("status") == "provisioning"
+            and type(work.get("version")) is int
+            and work["version"] == assignment.version - 1
+        )
+
     async def commands(self, after_feedback: int, after_approval: int) -> dict:
         response = await self.client.get(
             f"/api/runs/{self.work_id}/commands",
@@ -523,11 +572,19 @@ async def run() -> None:
     )
     session: CodexAppServer | None = None
     try:
+        bootstrap_mode = os.getenv("KELPIE_CONTROL_BOOTSTRAP")
+        if bootstrap_mode not in {None, "", "1"}:
+            raise RuntimeError("unsupported KELPIE_CONTROL_BOOTSTRAP mode")
+        work = (
+            await control.bootstrap(assignment)
+            if bootstrap_mode == "1"
+            else {"version": assignment.version}
+        )
         work_root = Path(os.getenv("KELPIE_WORK_ROOT", "/workspace")) / assignment.id
         work_root.mkdir(parents=True, exist_ok=True)
         repository = await clone_repository(assignment, work_root)
         await control.event("repository.cloned", assignment.repository)
-        work = await control.transition("implementing", assignment.version, "Repository ready")
+        work = await control.transition("implementing", work["version"], "Repository ready")
         session = CodexAppServer(repository, control)
         await session.start()
         prompt = initial_prompt(assignment)

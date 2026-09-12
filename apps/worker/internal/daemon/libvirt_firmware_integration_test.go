@@ -175,7 +175,7 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 	var running, provisioned, releases, failures atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/transition"):
+		case r.Method == http.MethodGet && failures.Load() == 0 && provisioned.Load() == 0 && scenario != "launch-cancelled":
 			run, err := store.Load(claim.LeaseID)
 			nvram, identityErr := cleanup.verifyDomain(r.Context(), run.Record)
 			stopped, stateErr := cleanup.stopped(r.Context())
@@ -197,7 +197,9 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 			}
 			running.Add(1)
 			if scenario == "transition-rejected" {
-				w.WriteHeader(http.StatusConflict)
+				// Synthetic API refusal of the initial control read. No guest
+				// OS/Runner is present in this firmware-only fixture.
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(WorkItem{ID: storeTestWork, Status: "analyzing", Version: 3})
