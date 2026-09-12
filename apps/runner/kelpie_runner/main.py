@@ -4,8 +4,10 @@ import json
 import mimetypes
 import os
 import shlex
+import signal
 import ssl
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -426,7 +428,62 @@ independent verification.
 """
 
 
-async def clone_repository(assignment: Assignment, root: Path) -> Path:
+def process_group_exists(process_group: int) -> bool:
+    try:
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Lack of signal permission is not proof of absence.
+    return True
+
+
+def wait_for_process_group_exit(process_group: int, timeout: float) -> bool:
+    deadline = time.monotonic() + max(0, timeout)
+    while process_group_exists(process_group):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.02, remaining))
+    return True
+
+
+async def join_process_group(
+    process: asyncio.subprocess.Process, process_group: int, join_seconds: float,
+) -> bool:
+    deadline = asyncio.get_running_loop().time() + max(0, join_seconds)
+    try:
+        await asyncio.wait_for(process.wait(), timeout=max(0, join_seconds))
+    except TimeoutError:
+        return False
+    remaining = max(0, deadline - asyncio.get_running_loop().time())
+    return await asyncio.to_thread(wait_for_process_group_exit, process_group, remaining)
+
+
+async def terminate_process_group(
+    process: asyncio.subprocess.Process,
+    *,
+    terminate_timeout: float = 5,
+    kill_timeout: float = 5,
+) -> None:
+    process_group = process.pid
+    try:
+        os.killpg(process_group, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        await join_process_group(process, process_group, terminate_timeout)
+        return
+    if await join_process_group(process, process_group, terminate_timeout):
+        return
+    try:
+        os.killpg(process_group, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    await join_process_group(process, process_group, kill_timeout)
+
+
+async def clone_repository(
+    assignment: Assignment, root: Path, timeout_seconds: float = 120,
+) -> Path:
     target = root / "repository"
     clone_url = os.getenv("KELPIE_CLONE_URL", f"https://github.com/{assignment.repository}.git")
     process = await asyncio.create_subprocess_exec(
@@ -435,12 +492,24 @@ async def clone_repository(assignment: Assignment, root: Path) -> Path:
         "--",
         clone_url,
         str(target),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
     )
-    output, _ = await process.communicate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+    except TimeoutError as error:
+        raise RuntimeError(
+            f"git clone timed out after {timeout_seconds:g} seconds"
+        ) from error
+    finally:
+        # A helper can outlive a parent which exited normally or failed. Every
+        # exit path must settle this clone's private process group.
+        await terminate_process_group(process)
     if process.returncode != 0:
-        raise RuntimeError(f"git clone failed: {output.decode(errors='replace')[-4000:]}")
+        # Clone output can echo credential-bearing URLs. Keep the exit code for
+        # diagnosis without retaining or emitting subprocess output.
+        raise RuntimeError(f"git clone failed with exit code {process.returncode}")
     return target
 
 
