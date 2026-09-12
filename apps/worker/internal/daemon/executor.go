@@ -130,6 +130,9 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if err := run(ctx, "qemu-img", "check", "-f", "qcow2", e.config.BaseImage); err != nil {
 		return err
 	}
+	if err := validateBaseCapacity(ctx, e.config.BaseImage, e.config.RunResources.DiskGB); err != nil {
+		return err
+	}
 	reader := hostNetworkReader()
 	if e.networkReader != nil {
 		reader = *e.networkReader

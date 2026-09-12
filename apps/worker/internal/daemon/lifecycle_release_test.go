@@ -86,7 +86,7 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	commandDir := os.Getenv("PATH")
 	arguments := filepath.Join(commandDir, "launch-arguments")
 	for name, body := range map[string]string{
-		"qemu-img":      "#!/bin/sh\n[ \"$1\" = check ] && exit 0\nwhile [ \"$#\" -gt 2 ]; do shift; done\n: > \"$1\"\n",
+		"qemu-img":      "#!/bin/sh\n[ \"$1\" = check ] && exit 0\nif [ \"$1\" = info ]; then printf '%s' '{\"format\":\"qcow2\",\"virtual-size\":67108864}'; exit 0; fi\nwhile [ \"$#\" -gt 2 ]; do shift; done\n: > \"$1\"\n",
 		"cloud-localds": "#!/bin/sh\n[ \"$1\" = --network-config ] || exit 8\nshift 2\n: > \"$1\"\n",
 		"virt-install":  "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + arguments + "'\nexit 7\n",
 	} {
