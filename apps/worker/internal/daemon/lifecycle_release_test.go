@@ -86,8 +86,8 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	commandDir := os.Getenv("PATH")
 	arguments := filepath.Join(commandDir, "launch-arguments")
 	for name, body := range map[string]string{
-		"qemu-img":      "#!/bin/sh\nwhile [ \"$#\" -gt 2 ]; do shift; done\n: > \"$1\"\n",
-		"cloud-localds": "#!/bin/sh\n: > \"$1\"\n",
+		"qemu-img":      "#!/bin/sh\n[ \"$1\" = check ] && exit 0\nif [ \"$1\" = info ]; then printf '%s' '{\"format\":\"qcow2\",\"virtual-size\":67108864}'; exit 0; fi\nwhile [ \"$#\" -gt 2 ]; do shift; done\n: > \"$1\"\n",
+		"cloud-localds": "#!/bin/sh\n[ \"$1\" = --network-config ] || exit 8\nshift 2\n: > \"$1\"\n",
 		"virt-install":  "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + arguments + "'\nexit 7\n",
 	} {
 		if err := os.WriteFile(filepath.Join(commandDir, name), []byte(body), 0700); err != nil {
@@ -100,6 +100,7 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	}
 	claim := resourceClaim()
 	claim.WorkItem.ID = storeTestWork
+	claim.WorkItem.Status, claim.WorkItem.Version = "provisioning", 2
 	claim.LeaseID = "55555555-5555-4555-8555-555555555555"
 	var releasePhase string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -122,17 +123,27 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 	defer server.Close()
 	d := resourceDaemon(server)
 	d.config.BaseImage, d.config.WorkRoot = image, store.root.Name()
+	d.config.GuestControlURL, d.config.GuestControlIPv4 = "https://control.example.test", "192.0.2.7"
+	d.config.NetworkPool = "10.240.0.0/24"
+	reader := inventoryFixture(t)
 	// Launch commands and the Linux permission boundary are synthetic in this
 	// cross-platform identity test; the opt-in Linux suite covers real libvirt.
 	d.executor = LibvirtExecutor{config: d.config, logger: d.logger, store: store,
-		prepareAccess: func(*runStore, string) error { return nil }}
+		prepareAccess: func(*runStore, string) error { return nil }, networkReader: &reader,
+		prepareNetwork: func(_ context.Context, id string) error {
+			run, err := store.Load(id)
+			if err != nil || run.Record.Schema != 4 || run.Phase != "prepared" {
+				t.Fatal("network effects preceded durable control policy")
+			}
+			return nil
+		}}
 	d.tracker.Reserve(testResources)
 	d.execute(context.Background(), claim)
 	runs, err := store.List()
 	if err != nil || len(runs) != 1 || runs[0].Phase != "released" || releasePhase != "cleaned" {
 		t.Fatal("launch failure did not clean and durably release its exact run")
 	}
-	if runs[0].Record.Schema != 2 || runs[0].Record.RunID != claim.LeaseID {
+	if runs[0].Record.Schema != 4 || runs[0].Record.RunID != claim.LeaseID {
 		t.Fatal("durable run identity is not bound to the claimed API lease")
 	}
 	data, err := os.ReadFile(arguments)
@@ -140,6 +151,11 @@ func TestLibvirtAttemptUsesRecordedIdentityBeforeAnyLaunch(t *testing.T) {
 		t.Fatal("launch command was not reached")
 	}
 	args := string(data)
+	network := runs[0].Record.Network
+	if strings.Contains(args, "network=default") || !strings.Contains(args, "network="+network.Name+",model=virtio,mac="+network.GuestMAC+",filterref.filter="+network.Filter) ||
+		!strings.Contains(args, "./devices/disk[1]/backingStore/source/seclabel/@relabel=no") {
+		t.Fatal("launch lost owned NIC or immutable backing image boundary")
+	}
 	if !strings.Contains(args, "--uuid\n"+runs[0].Record.RunID+"\n") ||
 		!strings.Contains(args, "--name\n"+runs[0].Record.Domain+"\n") ||
 		!strings.Contains(args, "description="+domainOwner(runs[0].Record)+"\n") || strings.Contains(args, claim.LeaseToken) {

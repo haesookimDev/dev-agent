@@ -191,6 +191,7 @@ func runRecoveryWorkerProcess(t *testing.T, ctx context.Context, binary string, 
 	process.Env = []string{
 		"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "KELPIE_EXECUTOR=libvirt",
 		"KELPIE_CONTROL_URL=" + config.ControlURL, "KELPIE_WORKER_NAME=" + config.WorkerName,
+		"KELPIE_GUEST_CONTROL_URL=https://control.example.test", "KELPIE_GUEST_CONTROL_IPV4=192.0.2.7",
 		"KELPIE_WORKER_TOKEN_FILE=" + config.WorkerTokenFile, "KELPIE_WORK_ROOT=" + root,
 		"KELPIE_CPU_TOTAL=4", "KELPIE_MEMORY_MB_TOTAL=8192", "KELPIE_DISK_GB_TOTAL=60",
 		"KELPIE_POLL_SECONDS=3600",

@@ -254,10 +254,15 @@ func packetHostQuery(t *testing.T, ctx context.Context, name string, args ...str
 }
 
 func packetDropCounter(t *testing.T, ctx context.Context, chain string) uint64 {
+	return packetReadDropCounter(t, ctx, chain, true)
+}
+
+func packetReadDropCounter(t *testing.T, ctx context.Context, chain string, quarantine bool) uint64 {
 	t.Helper()
 	data := packetHostQuery(t, ctx, "/usr/bin/sudo", "-n", "/usr/sbin/ebtables", "-t", "nat", "-L", chain, "--Lc")
 	matches := regexp.MustCompile(`(?m)^-j DROP\s*,\s*pcnt\s*=\s*([0-9]+)\s*--\s*bcnt\s*=\s*[0-9]+\s*$`).FindAllSubmatch(data, -1)
-	if len(matches) != 1 || !strings.Contains(string(data), "Bridge chain: "+chain+", entries: 1,") {
+	if len(matches) != 1 || !strings.Contains(string(data), "Bridge chain: "+chain+", entries: ") ||
+		quarantine && !strings.Contains(string(data), "Bridge chain: "+chain+", entries: 1,") {
 		t.Fatalf("expected one unconditional drop in the exact TAP chain; observed:\n%s", data)
 	}
 	value, err := strconv.ParseUint(string(matches[0][1]), 10, 64)
@@ -269,6 +274,13 @@ func packetDropCounter(t *testing.T, ctx context.Context, chain string) uint64 {
 
 func packetGuestExec(t *testing.T, ctx context.Context, uuid, path string, args ...string) []byte {
 	t.Helper()
+	return packetGuestExecWithin(t, ctx, 15*time.Second, uuid, path, args...)
+}
+
+func packetGuestExecWithin(t *testing.T, ctx context.Context, limit time.Duration, uuid, path string, args ...string) []byte {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
 	request, _ := json.Marshal(map[string]any{"execute": "guest-exec", "arguments": map[string]any{"path": path, "arg": args, "capture-output": true}})
 	data, err := queryVirsh(ctx, "qemu-agent-command", uuid, string(request))
 	var started struct {
@@ -279,7 +291,6 @@ func packetGuestExec(t *testing.T, ctx context.Context, uuid, path string, args 
 	if err != nil || json.Unmarshal(data, &started) != nil || started.Return.PID <= 0 {
 		t.Fatal("fixture guest command did not start")
 	}
-	deadline := time.Now().Add(15 * time.Second)
 	for {
 		request, _ := json.Marshal(map[string]any{"execute": "guest-exec-status", "arguments": map[string]any{"pid": started.Return.PID}})
 		data, err := queryVirsh(ctx, "qemu-agent-command", uuid, string(request))
@@ -296,12 +307,15 @@ func packetGuestExec(t *testing.T, ctx context.Context, uuid, path string, args 
 		}
 		if status.Return.Exited {
 			output, decodeErr := base64.StdEncoding.DecodeString(status.Return.Output)
+			if status.Return.ExitCode != nil && *status.Return.ExitCode != 0 {
+				t.Fatalf("fixture guest command failed with exit code %d; guest output withheld", *status.Return.ExitCode)
+			}
 			if status.Return.ExitCode == nil || *status.Return.ExitCode != 0 || status.Return.Truncated || decodeErr != nil {
 				t.Fatal("fixture guest command failed or output was incomplete")
 			}
 			return output
 		}
-		if ctx.Err() != nil || !time.Now().Before(deadline) {
+		if ctx.Err() != nil {
 			t.Fatal("fixture guest command timed out; VM cleanup will stop it")
 		}
 		time.Sleep(100 * time.Millisecond)

@@ -76,7 +76,7 @@ func TestExecutionLogsAndFailureEventExcludePrivateDiagnostics(t *testing.T) {
 
 func TestBaseImageFailureOmitsPrivatePath(t *testing.T) {
 	executor := LibvirtExecutor{config: Config{BaseImage: filepath.Join(t.TempDir(), privateFixture)}}
-	err := executor.Execute(context.Background(), nil, Claim{WorkItem: WorkItem{ID: "33333333-3333-4333-8333-333333333333"}})
+	err := executor.Execute(context.Background(), nil, Claim{WorkItem: WorkItem{ID: "33333333-3333-4333-8333-333333333333", Status: "provisioning", Version: 2}})
 	assertPrivateError(t, err, "VM base image unavailable")
 }
 

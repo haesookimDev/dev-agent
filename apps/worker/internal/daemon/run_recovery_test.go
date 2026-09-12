@@ -18,7 +18,7 @@ import (
 func emptyDomainInventory(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
-	body := "#!/bin/sh\ncase \"$*\" in\n'--connect qemu:///system list --all --uuid'|'--connect qemu:///system list --all --uuid --persistent') exit 0;;\n*) exit 9;;\nesac\n"
+	body := "#!/bin/sh\ncase \"$*\" in\n'--connect qemu:///system list --all --uuid'|'--connect qemu:///system list --all --uuid --persistent'|'--connect qemu:///system net-list --uuid --all'|'--connect qemu:///system net-list --uuid --all --persistent'|'--connect qemu:///system net-list --uuid --all --autostart') exit 0;;\n'--connect qemu:///system nwfilter-list') printf ' UUID Name\\n----------\\n';;\n'--connect qemu:///system nwfilter-binding-list') printf ' Port Dev Filter\\n----------\\n';;\n*) exit 9;;\nesac\n"
 	if err := os.WriteFile(filepath.Join(dir, "virsh"), []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}

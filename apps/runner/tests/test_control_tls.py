@@ -28,7 +28,8 @@ def control_ca(tmp_path, monkeypatch):
     return cert, key
 
 
-def test_control_ca_is_scoped_and_tls_checks_remain_enabled(control_ca, monkeypatch):
+@pytest.mark.parametrize("operation", ["event", "read_work"])
+def test_control_ca_is_scoped_and_tls_checks_remain_enabled(control_ca, monkeypatch, operation):
     cert, key = control_ca
 
     async def scenario():
@@ -59,17 +60,24 @@ def test_control_ca_is_scoped_and_tls_checks_remain_enabled(control_ca, monkeypa
                 else:
                     monkeypatch.delenv("KELPIE_CONTROL_CA_FILE", raising=False)
                 control = ControlClient(f"https://{host}:{port}", "work", "test-lease", "trace")
-                try:
-                    if succeeds:
+                async def request(control=control):
+                    if operation == "event":
                         await control.event("runner.connected", "TLS verified")
                     else:
+                        await control.read_work()
+                try:
+                    if succeeds:
+                        await request()
+                    else:
                         with pytest.raises(httpx.ConnectError):
-                            await control.event("must.not.arrive", "Rejected before credentials")
+                            await request()
                 finally:
                     await control.close()
             # Only the explicitly trusted, name-matching request sent headers.
             assert len(seen) == 1
-            assert seen[0].startswith(b"POST /api/runs/work/events HTTP/1.1\r\n")
+            expected = (b"POST /api/runs/work/events HTTP/1.1\r\n" if operation == "event"
+                        else b"GET /api/runs/work HTTP/1.1\r\n")
+            assert seen[0].startswith(expected)
             assert b"X-Kelpie-Lease: test-lease\r\n" in seen[0]
             assert b"X-Kelpie-Correlation-ID: trace\r\n" in seen[0]
             with pytest.raises(ssl.SSLCertVerificationError):

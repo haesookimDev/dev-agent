@@ -9,33 +9,41 @@ import (
 )
 
 type Config struct {
-	ControlURL      string
-	WorkerToken     string
-	WorkerTokenFile string
-	WorkerName      string
-	Executor        string
-	BaseImage       string
-	WorkRoot        string
-	CPUTotal        int
-	MemoryMBTotal   int
-	DiskGBTotal     int
-	PollInterval    time.Duration
-	RunResources    Resources
+	ControlURL         string
+	GuestControlURL    string
+	GuestControlIPv4   string
+	GuestControlCAFile string
+	NetworkPool        string
+	WorkerToken        string
+	WorkerTokenFile    string
+	WorkerName         string
+	Executor           string
+	BaseImage          string
+	WorkRoot           string
+	CPUTotal           int
+	MemoryMBTotal      int
+	DiskGBTotal        int
+	PollInterval       time.Duration
+	RunResources       Resources
 }
 
 func ConfigFromEnv() (Config, error) {
 	config := Config{
-		ControlURL:      env("KELPIE_CONTROL_URL", "http://localhost:8000"),
-		WorkerToken:     os.Getenv("KELPIE_WORKER_TOKEN"),
-		WorkerTokenFile: os.Getenv("KELPIE_WORKER_TOKEN_FILE"),
-		WorkerName:      env("KELPIE_WORKER_NAME", hostname()),
-		Executor:        env("KELPIE_EXECUTOR", "mock"),
-		BaseImage:       env("KELPIE_BASE_IMAGE", "/var/lib/kelpie/images/ubuntu-desktop.qcow2"),
-		WorkRoot:        env("KELPIE_WORK_ROOT", "/var/lib/kelpie/runs"),
-		CPUTotal:        envInt("KELPIE_CPU_TOTAL", runtime.NumCPU()),
-		MemoryMBTotal:   envInt("KELPIE_MEMORY_MB_TOTAL", 16384),
-		DiskGBTotal:     envInt("KELPIE_DISK_GB_TOTAL", 100),
-		PollInterval:    time.Duration(envInt("KELPIE_POLL_SECONDS", 3)) * time.Second,
+		ControlURL:         env("KELPIE_CONTROL_URL", "http://localhost:8000"),
+		GuestControlURL:    os.Getenv("KELPIE_GUEST_CONTROL_URL"),
+		GuestControlIPv4:   os.Getenv("KELPIE_GUEST_CONTROL_IPV4"),
+		GuestControlCAFile: os.Getenv("KELPIE_GUEST_CONTROL_CA_FILE"),
+		NetworkPool:        env("KELPIE_NETWORK_POOL", "10.240.0.0/16"),
+		WorkerToken:        os.Getenv("KELPIE_WORKER_TOKEN"),
+		WorkerTokenFile:    os.Getenv("KELPIE_WORKER_TOKEN_FILE"),
+		WorkerName:         env("KELPIE_WORKER_NAME", hostname()),
+		Executor:           env("KELPIE_EXECUTOR", "mock"),
+		BaseImage:          env("KELPIE_BASE_IMAGE", "/var/lib/kelpie/images/ubuntu-desktop.qcow2"),
+		WorkRoot:           env("KELPIE_WORK_ROOT", "/var/lib/kelpie/runs"),
+		CPUTotal:           envInt("KELPIE_CPU_TOTAL", runtime.NumCPU()),
+		MemoryMBTotal:      envInt("KELPIE_MEMORY_MB_TOTAL", 16384),
+		DiskGBTotal:        envInt("KELPIE_DISK_GB_TOTAL", 100),
+		PollInterval:       time.Duration(envInt("KELPIE_POLL_SECONDS", 3)) * time.Second,
 		RunResources: Resources{
 			CPU:      envInt("KELPIE_RUN_CPU", 2),
 			MemoryMB: envInt("KELPIE_RUN_MEMORY_MB", 4096),
@@ -50,6 +58,17 @@ func ConfigFromEnv() (Config, error) {
 	}
 	if config.Executor != "mock" && config.Executor != "libvirt" {
 		return Config{}, errors.New("KELPIE_EXECUTOR must be mock or libvirt")
+	}
+	if config.Executor == "libvirt" {
+		if _, err := parseGuestControl(config.GuestControlURL, config.GuestControlIPv4); err != nil {
+			return Config{}, err
+		}
+		if _, err := privateNetworkPool(config.NetworkPool); err != nil {
+			return Config{}, err
+		}
+		if _, err := readGuestControlCA(config.GuestControlCAFile); err != nil {
+			return Config{}, err
+		}
 	}
 	return config, nil
 }

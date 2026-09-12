@@ -4,8 +4,10 @@ import json
 import mimetypes
 import os
 import shlex
+import signal
 import ssl
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -90,6 +92,55 @@ class ControlClient:
         response.raise_for_status()
         return response.json()
 
+    async def read_work(self) -> dict:
+        response = await self.client.get(f"/api/runs/{self.work_id}")
+        response.raise_for_status()
+        return response.json()
+
+    async def bootstrap(self, assignment: Assignment) -> dict:
+        if type(assignment.version) is not int or assignment.version < 2:
+            raise RuntimeError("control bootstrap rejected assignment version")
+
+        work = await self.read_work()
+        if self._is_bootstrapped_work(work, assignment):
+            return work
+        if self._is_provisioning_work(work, assignment):
+            try:
+                transitioned = await self.transition(
+                    "analyzing",
+                    assignment.version - 1,
+                    "Runner control bootstrap completed",
+                )
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != 409:
+                    raise
+                # One conflict re-read permits an idempotent concurrent bootstrap,
+                # but never allows Runner to overwrite cancellation or approval.
+                transitioned = await self.read_work()
+            if self._is_bootstrapped_work(transitioned, assignment):
+                return transitioned
+        raise RuntimeError("control bootstrap rejected run identity, version, or status")
+
+    @staticmethod
+    def _is_bootstrapped_work(work: Any, assignment: Assignment) -> bool:
+        return (
+            isinstance(work, dict)
+            and work.get("id") == assignment.id
+            and work.get("status") == "analyzing"
+            and type(work.get("version")) is int
+            and work["version"] == assignment.version
+        )
+
+    @staticmethod
+    def _is_provisioning_work(work: Any, assignment: Assignment) -> bool:
+        return (
+            isinstance(work, dict)
+            and work.get("id") == assignment.id
+            and work.get("status") == "provisioning"
+            and type(work.get("version")) is int
+            and work["version"] == assignment.version - 1
+        )
+
     async def commands(self, after_feedback: int, after_approval: int) -> dict:
         response = await self.client.get(
             f"/api/runs/{self.work_id}/commands",
@@ -97,6 +148,31 @@ class ControlClient:
         )
         response.raise_for_status()
         return response.json()
+
+    async def fail_execution(self) -> None:
+        # A stale assignment must not overwrite cancellation, approval waiting,
+        # or central delivery. Re-read once on an optimistic-lock conflict;
+        # preserve the API's authority instead of forcing a terminal state.
+        for attempt in range(2):
+            response = await self.client.get(f"/api/runs/{self.work_id}")
+            response.raise_for_status()
+            work = response.json()
+            if (
+                not isinstance(work, dict)
+                or work.get("id") != self.work_id
+                or type(work.get("status")) is not str
+                or type(work.get("version")) is not int
+                or work["version"] < 1
+            ):
+                return
+            if work["status"] not in {"provisioning", "analyzing", "implementing", "verifying"}:
+                return
+            try:
+                await self.transition("failed", work["version"], "Runner execution failed")
+                return
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != 409 or attempt == 1:
+                    raise
 
     async def upload_delivery_bundle(self, content: bytes) -> dict:
         response = await self.client.post(
@@ -401,7 +477,62 @@ independent verification.
 """
 
 
-async def clone_repository(assignment: Assignment, root: Path) -> Path:
+def process_group_exists(process_group: int) -> bool:
+    try:
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Lack of signal permission is not proof of absence.
+    return True
+
+
+def wait_for_process_group_exit(process_group: int, timeout: float) -> bool:
+    deadline = time.monotonic() + max(0, timeout)
+    while process_group_exists(process_group):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.02, remaining))
+    return True
+
+
+async def join_process_group(
+    process: asyncio.subprocess.Process, process_group: int, join_seconds: float,
+) -> bool:
+    deadline = asyncio.get_running_loop().time() + max(0, join_seconds)
+    try:
+        await asyncio.wait_for(process.wait(), timeout=max(0, join_seconds))
+    except TimeoutError:
+        return False
+    remaining = max(0, deadline - asyncio.get_running_loop().time())
+    return await asyncio.to_thread(wait_for_process_group_exit, process_group, remaining)
+
+
+async def terminate_process_group(
+    process: asyncio.subprocess.Process,
+    *,
+    terminate_timeout: float = 5,
+    kill_timeout: float = 5,
+) -> None:
+    process_group = process.pid
+    try:
+        os.killpg(process_group, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        await join_process_group(process, process_group, terminate_timeout)
+        return
+    if await join_process_group(process, process_group, terminate_timeout):
+        return
+    try:
+        os.killpg(process_group, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    await join_process_group(process, process_group, kill_timeout)
+
+
+async def clone_repository(
+    assignment: Assignment, root: Path, timeout_seconds: float = 120,
+) -> Path:
     target = root / "repository"
     clone_url = os.getenv("KELPIE_CLONE_URL", f"https://github.com/{assignment.repository}.git")
     process = await asyncio.create_subprocess_exec(
@@ -410,12 +541,24 @@ async def clone_repository(assignment: Assignment, root: Path) -> Path:
         "--",
         clone_url,
         str(target),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
     )
-    output, _ = await process.communicate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+    except TimeoutError as error:
+        raise RuntimeError(
+            f"git clone timed out after {timeout_seconds:g} seconds"
+        ) from error
+    finally:
+        # A helper can outlive a parent which exited normally or failed. Every
+        # exit path must settle this clone's private process group.
+        await terminate_process_group(process)
     if process.returncode != 0:
-        raise RuntimeError(f"git clone failed: {output.decode(errors='replace')[-4000:]}")
+        # Clone output can echo credential-bearing URLs. Keep the exit code for
+        # diagnosis without retaining or emitting subprocess output.
+        raise RuntimeError(f"git clone failed with exit code {process.returncode}")
     return target
 
 
@@ -429,11 +572,19 @@ async def run() -> None:
     )
     session: CodexAppServer | None = None
     try:
+        bootstrap_mode = os.getenv("KELPIE_CONTROL_BOOTSTRAP")
+        if bootstrap_mode not in {None, "", "1"}:
+            raise RuntimeError("unsupported KELPIE_CONTROL_BOOTSTRAP mode")
+        work = (
+            await control.bootstrap(assignment)
+            if bootstrap_mode == "1"
+            else {"version": assignment.version}
+        )
         work_root = Path(os.getenv("KELPIE_WORK_ROOT", "/workspace")) / assignment.id
         work_root.mkdir(parents=True, exist_ok=True)
         repository = await clone_repository(assignment, work_root)
         await control.event("repository.cloned", assignment.repository)
-        work = await control.transition("implementing", assignment.version, "Repository ready")
+        work = await control.transition("implementing", work["version"], "Repository ready")
         session = CodexAppServer(repository, control)
         await session.start()
         prompt = initial_prompt(assignment)
@@ -538,8 +689,17 @@ async def run() -> None:
     except Exception as error:
         try:
             await control.event("runner.failed", str(error), level="error")
-        finally:
-            raise
+        except Exception:
+            # Event transport failure must not prevent the independent state
+            # update or replace the original execution error.
+            pass
+        try:
+            await control.fail_execution()
+        except Exception:
+            # No unbounded retries or release from inside the VM. The Worker
+            # remains responsible for physical cleanup and lease accounting.
+            pass
+        raise
     finally:
         if session:
             await session.close()

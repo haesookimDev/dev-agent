@@ -21,8 +21,8 @@ import (
 )
 
 // Exercise production image/seed preparation, virt-install boot arguments and
-// cleanup. Only NIC/graphics attachment is replaced with "none" for this blank
-// fixture: never activate the host's shared default network. HTTP is synthetic;
+// cleanup, including its real owned network. NIC/graphics attachment is
+// replaced with "none" for this blank fixture. HTTP is synthetic;
 // this is NOT Golden Image/Runner/guest OS or production-network acceptance.
 func TestDedicatedLibvirtExecutorFirmware(t *testing.T) {
 	if os.Getenv("KELPIE_LIBVIRT_TEST_ACK") != "disposable-host-only" {
@@ -50,14 +50,22 @@ import subprocess
 import sys
 import time
 args = sys.argv[1:]
-for option, expected in (("--network", "network=default,model=virtio"),
-                         ("--graphics", "vnc,listen=127.0.0.1")):
+run_id = args[args.index("--uuid") + 1]
+network = args[args.index("--network") + 1]
+assert network.startswith("network=kelpie-net-" + run_id + ",model=virtio,mac=")
+assert network.endswith(",filterref.filter=kelpie-filter-" + run_id + ",trustGuestRxFilters=no")
+for option, expected in (("--network", network), ("--graphics", "vnc,listen=127.0.0.1")):
     if args.count(option) != 1:
         sys.exit(91)
     index = args.index(option) + 1
     if index >= len(args) or args[index] != expected:
         sys.exit(92)
     args[index] = "none"
+# The no-NIC fixture must not recreate an interface through XML parameters.
+# Keep the production backing-image protection and every other device setting.
+args = [value for index, value in enumerate(args)
+        if not (value == "--xml" and args[index + 1].startswith("./devices/interface"))
+        and not (index > 0 and args[index - 1] == "--xml" and value.startswith("./devices/interface"))]
 command = ["/usr/bin/virt-install", *args]
 environment = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"}
 ready = os.environ.get("KELPIE_TEST_LAUNCH_READY")
@@ -110,6 +118,19 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 		t.Fatal(err)
 	}
 	labCommand(t, ctx, "qemu-img", "create", "-f", "qcow2", basePath, "64M")
+	baseFile, err := os.Open(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer baseFile.Close()
+	baseInfo, err := baseFile.Stat()
+	if err != nil || !privateOwned(baseInfo, false) {
+		t.Fatal("fixture base is not private")
+	}
+	baseACL := "user::rw-,user:" + uid + ":r--,group::---,mask::r--,other::---"
+	if _, err := aclCommand(baseFile, "setfacl", "--set="+baseACL); err != nil || baseFile.Sync() != nil {
+		t.Fatal("fixture QEMU read grant failed")
+	}
 	claim := resourceClaim()
 	claim.WorkItem = WorkItem{ID: storeTestWork, Status: "provisioning", Version: 2}
 	var id [16]byte
@@ -133,7 +154,17 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 			return
 		}
 		info, err := os.Lstat(basePath)
-		if err != nil || !(privateOwned(info, false) || privateHypervisorArtifact(info)) || baseRoot.Remove("base.qcow2") != nil {
+		acl, aclErr := readDirectoryACL(baseFile)
+		if err != nil || !os.SameFile(baseInfo, info) || aclErr != nil || strings.ReplaceAll(strings.TrimSpace(string(acl)), "\n", ",") != baseACL {
+			t.Error("fixture base identity or read-only ACL changed; preserve it")
+			return
+		}
+		if _, err := aclCommand(baseFile, "setfacl", "--set=user::rw-,group::---,other::---"); err != nil || baseFile.Sync() != nil {
+			t.Error("base ACL restoration failed")
+			return
+		}
+		info, err = os.Lstat(basePath)
+		if err != nil || !privateOwned(info, false) || baseRoot.Remove("base.qcow2") != nil {
 			t.Error("could not remove the exact private fixture base")
 			return
 		}
@@ -144,7 +175,7 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 	var running, provisioned, releases, failures atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/transition"):
+		case r.Method == http.MethodGet && failures.Load() == 0 && provisioned.Load() == 0 && scenario != "launch-cancelled":
 			run, err := store.Load(claim.LeaseID)
 			nvram, identityErr := cleanup.verifyDomain(r.Context(), run.Record)
 			stopped, stateErr := cleanup.stopped(r.Context())
@@ -166,7 +197,9 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 			}
 			running.Add(1)
 			if scenario == "transition-rejected" {
-				w.WriteHeader(http.StatusConflict)
+				// Synthetic API refusal of the initial control read. No guest
+				// OS/Runner is present in this firmware-only fixture.
+				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(WorkItem{ID: storeTestWork, Status: "analyzing", Version: 3})
@@ -202,6 +235,8 @@ func realExecutorFirmware(t *testing.T, ctx context.Context, scenario string) {
 	defer server.Close()
 	d := resourceDaemon(server)
 	d.config.BaseImage, d.config.WorkRoot, d.config.ControlURL = basePath, root, server.URL
+	d.config.GuestControlURL, d.config.GuestControlIPv4 = "https://control.example.test", "192.0.2.7"
+	d.config.NetworkPool = "10.240.0.0/24"
 	d.config.RunResources = Resources{CPU: 1, MemoryMB: 512, DiskGB: 1}
 	d.tracker = NewTracker(d.config.RunResources)
 	d.tracker.Reserve(d.config.RunResources)

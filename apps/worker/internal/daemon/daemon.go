@@ -2,8 +2,11 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -113,21 +116,51 @@ func (d *Daemon) execute(ctx context.Context, claim Claim) {
 		_ = client.Event(failureContext, claim.WorkItem.ID, claim.LeaseToken, AgentEvent{
 			EventType: "worker.failed", Source: "worker", Level: "error", Message: safeDiagnostic(err), Payload: map[string]any{},
 		})
-		current, readErr := client.ReadRun(failureContext, claim.WorkItem.ID, claim.LeaseToken)
-		if readErr != nil {
+		d.settleExecutionFailure(failureContext, client, claim)
+	}
+}
+
+func (d *Daemon) settleExecutionFailure(ctx context.Context, client *reservedRunClient, claim Claim) {
+	for attempt := 0; attempt < 2; attempt++ {
+		current, err := client.ReadRun(ctx, claim.WorkItem.ID, claim.LeaseToken)
+		if err != nil || current.ID != claim.WorkItem.ID || current.Version < 1 || current.Version < claim.WorkItem.Version {
 			return
 		}
-		if current.Status != "completed" && current.Status != "failed" && current.Status != "cancelled" {
-			_, transitionErr := client.Transition(
-				failureContext, claim.WorkItem.ID, claim.LeaseToken,
-				"failed", current.Version, "Worker executor failed",
-			)
-			if transitionErr != nil {
+		switch current.Status {
+		case "completed", "failed", "cancelled":
+			d.releaseFailedExecution(ctx, client, claim)
+			return
+		case "provisioning", "analyzing", "implementing", "verifying":
+			if current.Version == math.MaxInt {
 				return
 			}
+			acknowledged, transitionErr := client.Transition(
+				ctx, claim.WorkItem.ID, claim.LeaseToken,
+				"failed", current.Version, "Worker executor failed",
+			)
+			if transitionErr == nil {
+				if acknowledged.ID != current.ID || acknowledged.Status != "failed" || acknowledged.Version != current.Version+1 {
+					return
+				}
+				d.releaseFailedExecution(ctx, client, claim)
+				return
+			}
+			var diagnostic diagnosticError
+			if attempt == 0 && errors.As(transitionErr, &diagnostic) && diagnostic.kind == controlStatus && diagnostic.code == http.StatusConflict {
+				continue
+			}
+			return
+		default:
+			// Physical cleanup has completed, but approval, input, feedback,
+			// budget and delivery states remain API-owned. Retain the lease
+			// until active-run recovery can safely settle those states.
+			return
 		}
-		if err := client.Release(failureContext, claim.WorkItem.ID, claim.LeaseToken); err != nil {
-			d.logger.Warn("resource release failed; reservation retained", "work_id", claim.WorkItem.ID, "error", safeDiagnostic(err))
-		}
+	}
+}
+
+func (d *Daemon) releaseFailedExecution(ctx context.Context, client *reservedRunClient, claim Claim) {
+	if err := client.Release(ctx, claim.WorkItem.ID, claim.LeaseToken); err != nil {
+		d.logger.Warn("resource release failed; reservation retained", "work_id", claim.WorkItem.ID, "error", safeDiagnostic(err))
 	}
 }
