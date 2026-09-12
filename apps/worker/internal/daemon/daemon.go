@@ -134,16 +134,19 @@ func (d *Daemon) settleExecutionFailure(ctx context.Context, client *reservedRun
 			if current.Version == math.MaxInt {
 				return
 			}
-			_, err = client.Transition(
+			acknowledged, transitionErr := client.Transition(
 				ctx, claim.WorkItem.ID, claim.LeaseToken,
 				"failed", current.Version, "Worker executor failed",
 			)
-			if err == nil {
+			if transitionErr == nil {
+				if acknowledged.ID != current.ID || acknowledged.Status != "failed" || acknowledged.Version != current.Version+1 {
+					return
+				}
 				d.releaseFailedExecution(ctx, client, claim)
 				return
 			}
 			var diagnostic diagnosticError
-			if attempt == 0 && errors.As(err, &diagnostic) && diagnostic.kind == controlStatus && diagnostic.code == http.StatusConflict {
+			if attempt == 0 && errors.As(transitionErr, &diagnostic) && diagnostic.kind == controlStatus && diagnostic.code == http.StatusConflict {
 				continue
 			}
 			return

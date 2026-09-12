@@ -205,3 +205,42 @@ func assertFailureStateRequest(t *testing.T, r *http.Request) {
 		t.Error("privileged operation omitted its assigned lease")
 	}
 }
+
+func TestDaemonFailureRequiresExactTransitionAcknowledgement(t *testing.T) {
+	for _, response := range []string{
+		``,
+		`{}`,
+		`{"id":"other-work","status":"failed","version":5}`,
+		`{"id":"test-work","status":"awaiting_approval","version":5}`,
+		`{"id":"test-work","status":"failed","version":4}`,
+		`{"id":"test-work","status":"failed","version":6}`,
+	} {
+		t.Run(response, func(t *testing.T) {
+			releases := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet:
+					_ = json.NewEncoder(w).Encode(WorkItem{ID: "test-work", Status: "implementing", Version: 4})
+				case strings.HasSuffix(r.URL.Path, "/transition"):
+					_, _ = w.Write([]byte(response))
+				case strings.HasSuffix(r.URL.Path, "/release"):
+					releases++
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					w.WriteHeader(http.StatusNoContent)
+				}
+			}))
+			defer server.Close()
+			d := resourceDaemon(server)
+			d.tracker.Reserve(testResources)
+			d.executor = executorFunc(func(context.Context, RunClient, Claim) error {
+				return errors.New("synthetic executor failure")
+			})
+			d.execute(context.Background(), resourceClaim())
+			if releases != 0 {
+				t.Fatal("unconfirmed transition acknowledged as terminal work")
+			}
+			assertResources(t, d, Resources{}, 1)
+		})
+	}
+}

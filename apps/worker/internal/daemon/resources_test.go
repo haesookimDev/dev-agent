@@ -221,8 +221,10 @@ func TestExecutionReturnsResourcesOnlyAfterAcknowledgedTerminalRelease(t *testin
 					return
 				}
 				switch operation {
-				case "read", "transition":
+				case "read":
 					_ = json.NewEncoder(w).Encode(WorkItem{ID: "test-work", Status: scenario.status, Version: 3})
+				case "transition":
+					_ = json.NewEncoder(w).Encode(WorkItem{ID: "test-work", Status: "failed", Version: 4})
 				case "release":
 					releases++
 					w.WriteHeader(http.StatusNoContent)
