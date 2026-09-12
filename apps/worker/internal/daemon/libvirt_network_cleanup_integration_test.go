@@ -104,18 +104,21 @@ func realNetworkCleanup(t *testing.T, ctx context.Context, active bool) {
 		}
 	}()
 	network := *run.Record.Network
+	provisioner := networkProvisioner{store: store}
 	for _, definition := range []struct {
-		command string
-		body    func() ([]byte, error)
-	}{{"nwfilter-define", network.quarantineXML}, {"net-define", network.definitionXML}} {
+		name string
+		body func() ([]byte, error)
+	}{{"filter.xml", network.quarantineXML}, {"network.xml", network.definitionXML}} {
 		body, err := definition.body()
 		if err != nil {
 			t.Fatal(err)
 		}
-		path := filepath.Join(t.TempDir(), definition.command+".xml")
-		if err := os.WriteFile(path, body, 0600); err != nil {
+		if err := provisioner.writeDefinition(run.Record.RunID, definition.name, body); err != nil {
 			t.Fatal(err)
 		}
+	}
+	for _, definition := range []struct{ command, name string }{{"nwfilter-define", "filter.xml"}, {"net-define", "network.xml"}} {
+		path := filepath.Join(root, run.Record.RunID, definition.name)
 		if _, err := cleanup.command(ctx, definition.command, path, "--validate"); err != nil {
 			t.Fatalf("generated definition rejected: %s", definition.command)
 		}

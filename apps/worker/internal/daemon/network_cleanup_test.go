@@ -22,6 +22,18 @@ type networkCleanupFixture struct {
 
 func newNetworkCleanupFixture(t *testing.T) *networkCleanupFixture {
 	t.Helper()
+	f := networkCleanupReservationFixture(t)
+	p := networkProvisioner{store: f.cleanup.store}
+	for name, body := range map[string][]byte{"network.xml": f.networkXML, "filter.xml": f.filterXML} {
+		if err := p.writeDefinition(f.run.Record.RunID, name, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return f
+}
+
+func networkCleanupReservationFixture(t *testing.T) *networkCleanupFixture {
+	t.Helper()
 	store := newTestRunStore(t)
 	run, err := store.CreateNetworked(storeTestWork, networkTestRun, testResources, "10.240.0.0/30", nil)
 	if err != nil {
@@ -42,6 +54,56 @@ func newNetworkCleanupFixture(t *testing.T) *networkCleanupFixture {
 		t.Fatal(err)
 	}
 	return f
+}
+
+func TestRunNetworkCleanupRequiresPrivateCreationIntent(t *testing.T) {
+	for _, scenario := range []string{"absent", "partial", "tampered", "public", "symlink", "hardlink", "directory"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newNetworkCleanupFixture(t)
+			path := filepath.Join(f.cleanup.store.root.Name(), networkTestRun, "network.xml")
+			switch scenario {
+			case "absent", "partial", "symlink", "directory":
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "absent" {
+					if err := os.Remove(filepath.Join(filepath.Dir(path), "filter.xml")); err != nil {
+						t.Fatal(err)
+					}
+				} else if scenario == "symlink" {
+					if err := os.Symlink("filter.xml", path); err != nil {
+						t.Fatal(err)
+					}
+				} else if scenario == "directory" {
+					if err := os.Mkdir(path, 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case "tampered":
+				body := strings.Replace(string(f.networkXML), "stp='off'", "stp='on' ", 1)
+				if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "public":
+				if err := os.Chmod(path, 0644); err != nil {
+					t.Fatal(err)
+				}
+			case "hardlink":
+				if err := os.Link(path, filepath.Join(t.TempDir(), "linked.xml")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := f.cleanup.Cleanup(context.Background()); err == nil {
+				t.Fatal("accepted missing or untrusted creation intent")
+			}
+			if !f.active || !f.defined || !f.filter || !f.bridge || slices.Contains(f.calls, "net-destroy") || slices.Contains(f.calls, "net-undefine") || slices.Contains(f.calls, "nwfilter-undefine") {
+				t.Fatal("mutated resources without private creation intent")
+			}
+			if err := f.cleanup.Released(); err == nil {
+				t.Fatal("released an unconfirmed reservation")
+			}
+		})
+	}
 }
 
 func (f *networkCleanupFixture) query(ctx context.Context, args ...string) ([]byte, error) {
