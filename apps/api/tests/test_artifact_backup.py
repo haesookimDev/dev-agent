@@ -177,8 +177,9 @@ def test_malformed_or_duplicate_manifest_fields_fail_safely(source, tmp_path, ra
         backup.verify_snapshot(snapshot, [record], DATABASE_DIGEST, backup.digest(raw))
 
 
-@pytest.mark.parametrize("kind", ["file", "directory", "symlink"])
-def test_existing_destination_is_never_adopted_or_modified(source, tmp_path, kind):
+@pytest.mark.parametrize("kind", ["file", "directory", "symlink", "dangling-symlink"])
+def test_existing_destination_is_never_adopted_or_modified(source, tmp_path, kind,
+                                                         monkeypatch):
     root, record, _ = source
     snapshot, sha = create(source, tmp_path)
     target = tmp_path / "existing"
@@ -186,9 +187,19 @@ def test_existing_destination_is_never_adopted_or_modified(source, tmp_path, kin
         target.write_bytes(b"preserve")
     elif kind == "directory":
         target.mkdir()
-    else:
+    elif kind == "symlink":
         target.symlink_to(root, target_is_directory=True)
+    else:
+        target.symlink_to(tmp_path / "missing", target_is_directory=True)
     before = target.lstat()
+    original_resolve = type(target).resolve
+
+    def reject_existing_resolution(path, *args, **kwargs):
+        # Resolving a link may mutate its access time; reject before traversal.
+        assert path != target, "existing destination was resolved before rejection"
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(target), "resolve", reject_existing_resolution)
     for operation in (
         lambda: backup.create_snapshot(root, [record], target, DATABASE_DIGEST),
         lambda: backup.restore_snapshot(snapshot, [record], target, DATABASE_DIGEST, sha),
