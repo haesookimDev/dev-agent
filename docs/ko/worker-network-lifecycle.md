@@ -82,3 +82,5 @@ KELPIE_LIBVIRT_TEST_ACK=disposable-host-only /tmp/worker-network-ownership.test 
 ```
 
 Schema 3 형식은 바꾸지 않습니다. 이전 생산 생성기의 정상 기록은 이미 두 XML을 먼저 영속 저장했으므로 호환됩니다. 외부 자원이 남았는데 생성 기록이 없거나 손상되면 자동 정리를 거부하고 기록·예약을 보존합니다. 기록을 수동 생성하거나 삭제하여 우회하지 않습니다. 롤백은 호환 Worker로 물리 정리·API 확인 후 수행하며 이번 거부 경계를 모르는 이전 바이너리로 미해결 충돌을 복구하지 않습니다. 읽기 전용 보안 리뷰가 제기한 동시 관리자 재설정의 확인/변경 경쟁은 기존 미지원 Host 계약의 한계로 유지합니다. 이번 수정은 동시 관리자 변경 없이 재현된 기존 Filter 인수만 해결하며 Host 전역 원자성을 주장하지 않습니다. 새 의존성·환경변수·CI Job은 없습니다. Worker 한정 변경이라 로컬 전체 `make test`는 반복하지 않았고, UI/Guest NIC 변경이 없어 브라우저·GUI·패킷 검사는 해당하지 않습니다.
+
+후속 최종 CI에서 드러난 기존 API 백업 회귀는 별도 [PR #65](https://github.com/haesookimDev/dev-agent/pull/65)에서 실제 CLI·최신 CI를 통과해 병합됐습니다. 통합 `fca5e482d181284e4de79a1398bebdcc2bb0ce65` 이후 Worker·Runner·Gateway·Web·Host/CI 설정은 실제 검증 소스 `d5547cb3e8499f35d7b0c1f59335071d17efa697`와 동일하고, API는 검증된 기준 `0385120011601fc589f7f503f5213057353e8ee2`와 동일합니다. 통합 후 Worker·백업 회귀 51개·정적 검사·다국어 동기화가 통과했습니다. API 선행 변경을 새로운 Worker 실제 실행으로 표현하지 않으며, PR #62의 새 Head CI·리뷰까지 확인한 뒤 병합합니다.
