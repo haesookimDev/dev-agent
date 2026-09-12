@@ -12,6 +12,7 @@ type Config struct {
 	ControlURL       string
 	GuestControlURL  string
 	GuestControlIPv4 string
+	NetworkPool      string
 	WorkerToken      string
 	WorkerTokenFile  string
 	WorkerName       string
@@ -30,6 +31,7 @@ func ConfigFromEnv() (Config, error) {
 		ControlURL:       env("KELPIE_CONTROL_URL", "http://localhost:8000"),
 		GuestControlURL:  os.Getenv("KELPIE_GUEST_CONTROL_URL"),
 		GuestControlIPv4: os.Getenv("KELPIE_GUEST_CONTROL_IPV4"),
+		NetworkPool:      env("KELPIE_NETWORK_POOL", "10.240.0.0/16"),
 		WorkerToken:      os.Getenv("KELPIE_WORKER_TOKEN"),
 		WorkerTokenFile:  os.Getenv("KELPIE_WORKER_TOKEN_FILE"),
 		WorkerName:       env("KELPIE_WORKER_NAME", hostname()),
@@ -57,6 +59,9 @@ func ConfigFromEnv() (Config, error) {
 	}
 	if config.Executor == "libvirt" {
 		if _, err := parseGuestControl(config.GuestControlURL, config.GuestControlIPv4); err != nil {
+			return Config{}, err
+		}
+		if _, err := privateNetworkPool(config.NetworkPool); err != nil {
 			return Config{}, err
 		}
 	}

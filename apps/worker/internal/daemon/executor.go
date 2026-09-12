@@ -100,10 +100,12 @@ func (MockExecutor) Execute(ctx context.Context, client RunClient, claim Claim) 
 }
 
 type LibvirtExecutor struct {
-	config        Config
-	logger        *slog.Logger
-	store         *runStore
-	prepareAccess func(*runStore, string) error // nil uses the real Linux permission boundary.
+	config         Config
+	logger         *slog.Logger
+	store          *runStore
+	prepareAccess  func(*runStore, string) error       // nil uses the real Linux permission boundary.
+	networkReader  *networkInventoryReader             // nil uses the real host inventory.
+	prepareNetwork func(context.Context, string) error // nil provisions the recorded network.
 }
 
 func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Claim) error {
@@ -120,12 +122,27 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if err != nil {
 		return err
 	}
-	owned, err := e.store.Create(claim.WorkItem.ID, claim.LeaseID, e.config.RunResources)
+	// Validate the backing image without changing it before creating resources.
+	if err := run(ctx, "qemu-img", "check", "-f", "qcow2", e.config.BaseImage); err != nil {
+		return err
+	}
+	reader := hostNetworkReader()
+	if e.networkReader != nil {
+		reader = *e.networkReader
+	}
+	inventory, err := reader.read(ctx)
+	if err != nil {
+		return err
+	}
+	owned, err := e.store.CreateControlled(claim.WorkItem.ID, claim.LeaseID, e.config.RunResources, e.config.NetworkPool, inventory.excluded, control)
 	if err != nil {
 		return err
 	}
 	if err := client.BindResources(newVMCleanup(e.store, owned.Record.RunID)); err != nil {
 		return err
+	}
+	if !inventory.available(*owned.Record.Network) {
+		return errRunNetwork
 	}
 	runDir := filepath.Join(e.store.root.Name(), owned.Record.RunID)
 	boot, err := libvirtBootArguments(runtime.GOARCH, runDir)
@@ -136,6 +153,7 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	seed := filepath.Join(runDir, "seed.iso")
 	meta := filepath.Join(runDir, "meta-data")
 	user := filepath.Join(runDir, "user-data")
+	netConfig := filepath.Join(runDir, "network-config")
 	if err := run(ctx, "qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", e.config.BaseImage, overlay, fmt.Sprintf("%dG", e.config.RunResources.DiskGB)); err != nil {
 		return err
 	}
@@ -152,7 +170,14 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 	if err := os.WriteFile(user, cloudConfig, 0600); err != nil {
 		return privateFailure(err, vmSeedData)
 	}
-	if err := run(ctx, "cloud-localds", seed, user, meta); err != nil {
+	netBody, err := owned.Record.Network.guestNetworkConfig()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(netConfig, netBody, 0600); err != nil {
+		return privateFailure(err, vmSeedData)
+	}
+	if err := run(ctx, "cloud-localds", "--network-config", netConfig, seed, user, meta); err != nil {
 		return err
 	}
 	if err := privateRunArtifact(e.store, owned.Record.RunID+"/seed.iso"); err != nil {
@@ -163,6 +188,13 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 		prepareAccess = grantHypervisorSearch
 	}
 	if err := prepareAccess(e.store, owned.Record.RunID); err != nil {
+		return err
+	}
+	prepareNetwork := e.prepareNetwork
+	if prepareNetwork == nil {
+		prepareNetwork = (networkProvisioner{store: e.store, reader: reader}).create
+	}
+	if err := prepareNetwork(ctx, owned.Record.RunID); err != nil {
 		return err
 	}
 	name := owned.Record.Domain
@@ -177,8 +209,13 @@ func (e LibvirtExecutor) Execute(ctx context.Context, client RunClient, claim Cl
 		"--memory", fmt.Sprint(e.config.RunResources.MemoryMB), "--vcpus", fmt.Sprint(e.config.RunResources.CPU),
 		"--import", "--noautoconsole", "--os-variant", "ubuntu24.04",
 		"--disk", overlay + ",format=qcow2,bus=virtio", "--disk", seedDisk,
-		"--network", "network=default,model=virtio", "--graphics", "vnc,listen=127.0.0.1",
+		"--graphics", "vnc,listen=127.0.0.1",
 	}
+	networkArgs, err := libvirtOwnedDeviceArguments(*owned.Record.Network, e.config.BaseImage)
+	if err != nil {
+		return err
+	}
+	args = append(args, networkArgs...)
 	args = append(args, boot...)
 	if err := run(ctx, "virt-install", args...); err != nil {
 		return err

@@ -324,7 +324,7 @@ func (c *vmCleanup) verifyXMLReferences(data []byte) error {
 	return nil
 }
 
-var runArtifacts = []string{"root.qcow2", "seed.iso", "meta-data", "user-data", "nvram.fd", "network.xml", "filter.xml"}
+var runArtifacts = []string{"root.qcow2", "seed.iso", "meta-data", "user-data", "nvram.fd", "network.xml", "filter.xml", "network-config"}
 
 func (c *vmCleanup) removeArtifacts() error {
 	dir, err := c.store.root.Open(c.runID)
