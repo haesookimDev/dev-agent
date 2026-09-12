@@ -56,7 +56,17 @@ Seven [scheduled-retention](scheduled-retention.md) cases in `test_retention_job
 
 ## Definition of done
 
-Develop on a task branch and commit each logical unit with a Korean message after its relevant tests pass. Once automated tests and hands-on verification pass, create a PR with evidence and inspect CI and reviews for the latest commit. When the user delegates merging, the agent merges with a merge commit and fast-forwards local `main`. Keep a PR in Draft when required verification cannot run.
+Develop on a feature-specific task branch and commit each logical unit with a Korean message after its relevant tests pass. Once automated tests and hands-on verification pass, create a PR with evidence and inspect CI and reviews for the latest commit. When the user delegates merging, the agent merges with a merge commit, fast-forwards local `main`, then creates the next feature branch. Creating a Draft is not task completion.
+
+### Finish each feature PR before moving on
+
+1. Before implementation, define the PR's single purpose, prerequisite dependencies, normal/failure paths and actual runtime verification. Do not keep accumulating multiple features on one long-lived integration branch.
+2. Fix that PR's test, hands-on, CI and review failures, then rerun affected verification. Do not keep creating new Drafts while actionable problems remain.
+3. Keep a PR in Draft only while its own required implementation or verification is incomplete. Once those conditions are satisfied, mark it Ready, verify required CI and reviews for the exact latest head, and perform the delegated merge.
+4. When progress requires external input, record the blocker, verification already attempted, required input and resumption conditions in the PR, and report them to the user. Only then may independent work proceed on a separate branch. Never remove Draft status by skipping verification or bypassing protection.
+5. Finish stacked PRs in dependency order. After a prerequisite merges, inspect the successor's base, remaining diff/commits, required revalidation and latest CI. Do not erase feature boundaries through squashing, history rewriting or bulk merging.
+
+**A feature PR merge is distinct from whole-MVP release approval.** For example, a Worker cleanup/recovery PR verifies its affected VM/API paths; unfinished separate GUI work alone must not hold it in Draft. Conversely, verification of GUI, authorization or recovery paths changed by that PR cannot be deferred to a follow-up. Keep remaining whole-MVP criteria and the fixed completion percentage separately in the [progress record](mvp-progress.md).
 
 Continuous MVP development uses the roadmap's [next release](roadmap-summary.md#immediate-next-release) as its acceptance boundary. Do not automatically include P3 and later expansion work. Merge delegation for the current MVP does not authorize production deployment, paid infrastructure, bypassing branch protection, or removing the product's user-approval gates.
 
